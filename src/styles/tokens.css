@@ -1,0 +1,98 @@
+/* ===================================================================
+   توکن‌های طراحی — هویت بصری: «اتاق کنترل حفاری»
+   پالت برگرفته از دیتای ژئوفیزیکی: مس اکسیدشده، خاکستری دودکش، کهربای
+   هشدار، سبز عمق‌سنج. تایپوگرافی: وزیرمتن برای فارسی + JetBrains Mono
+   برای اعداد/مختصات (تمایز بصری بین متن و داده خام).
+=================================================================== */
+
+:root {
+  /* پالت رنگی */
+  --bg-deep: #f0f4f2;
+  --bg-panel: #ffffff;
+  --bg-panel-raised: #e8eeeb;
+  --bg-input: #f5f8f6;
+  --border-subtle: #d0dbd4;
+  --border-strong: #b0c4b8;
+
+  --text-primary: #1a2e24;
+  --text-secondary: #4a6b58;
+  --text-muted: #7a9b88;
+
+  --accent-copper: #c97a4a;
+  --accent-copper-bright: #e89868;
+  --accent-depth: #2e7d6b;
+  --accent-amber: #c4952a;
+  --accent-danger: #c0563f;
+
+  --map-grid: #1e2924;
+
+  /* تایپوگرافی */
+  --font-fa: 'Vazirmatn', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* فاصله‌گذاری */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
+
+  --shadow-panel: 0 4px 24px rgba(0, 0, 0, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: var(--font-fa);
+  font-feature-settings: 'ss01';
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  direction: ltr;
+  unicode-bidi: plaintext;
+}
+
+::selection {
+  background: var(--accent-copper);
+  color: var(--bg-deep);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-panel);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-copper);
+}
+
+button {
+  font-family: var(--font-fa);
+  cursor: pointer;
+}
+
+input,
+select {
+  font-family: var(--font-fa);
+}
+
+input[type='number'] {
+  font-family: var(--font-mono);
+}
