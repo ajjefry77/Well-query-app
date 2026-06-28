@@ -12,36 +12,92 @@ function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url)
 }
 
-export function useExport(getFeaturesAsGeoJson) {
-  // getFeaturesAsGeoJson یه تابع که GeoJSON features می‌ده
+// ─── تبدیل یک geometry به KML string ─────────────────────
+function geometryToKML(geometry) {
+  switch (geometry.type) {
+    case 'Point': {
+      const [lng, lat, alt = 0] = geometry.coordinates
+      return `<Point><coordinates>${lng},${lat},${alt}</coordinates></Point>`
+    }
+    case 'MultiPoint':
+      return geometry.coordinates
+        .map(([lng, lat, alt = 0]) => `<Point><coordinates>${lng},${lat},${alt}</coordinates></Point>`)
+        .join('\n')
 
-  async function exportKML() {
-    const features = getFeaturesAsGeoJson()
-    const placemarks = features.map(f => {
-      const [lng, lat] = f.geometry.coordinates
-      return `<Placemark><name>${f.properties.name ?? ''}</name>
-        <Point><coordinates>${lng},${lat},0</coordinates></Point>
-      </Placemark>`
-    }).join('\n')
-    const kml = `<?xml version="1.0" encoding="UTF-8"?>
+    case 'LineString': {
+      const coords = geometry.coordinates
+        .map(([lng, lat, alt = 0]) => `${lng},${lat},${alt}`)
+        .join(' ')
+      return `<LineString><tessellate>1</tessellate><coordinates>${coords}</coordinates></LineString>`
+    }
+    case 'MultiLineString':
+      return geometry.coordinates
+        .map(ring => {
+          const coords = ring.map(([lng, lat, alt = 0]) => `${lng},${lat},${alt}`).join(' ')
+          return `<LineString><tessellate>1</tessellate><coordinates>${coords}</coordinates></LineString>`
+        })
+        .join('\n')
+
+    case 'Polygon': {
+      const [outer, ...holes] = geometry.coordinates
+      const outerCoords = outer.map(([lng, lat, alt = 0]) => `${lng},${lat},${alt}`).join(' ')
+      const holeKML = holes
+        .map(hole => {
+          const c = hole.map(([lng, lat, alt = 0]) => `${lng},${lat},${alt}`).join(' ')
+          return `<innerBoundaryIs><LinearRing><coordinates>${c}</coordinates></LinearRing></innerBoundaryIs>`
+        })
+        .join('\n')
+      return `<Polygon>
+        <outerBoundaryIs><LinearRing><coordinates>${outerCoords}</coordinates></LinearRing></outerBoundaryIs>
+        ${holeKML}
+      </Polygon>`
+    }
+    case 'MultiPolygon':
+      return geometry.coordinates
+        .map(poly => {
+          const [outer, ...holes] = poly
+          const outerCoords = outer.map(([lng, lat, alt = 0]) => `${lng},${lat},${alt}`).join(' ')
+          const holeKML = holes
+            .map(hole => {
+              const c = hole.map(([lng, lat, alt = 0]) => `${lng},${lat},${alt}`).join(' ')
+              return `<innerBoundaryIs><LinearRing><coordinates>${c}</coordinates></LinearRing></innerBoundaryIs>`
+            })
+            .join('\n')
+          return `<Polygon>
+            <outerBoundaryIs><LinearRing><coordinates>${outerCoords}</coordinates></LinearRing></outerBoundaryIs>
+            ${holeKML}
+          </Polygon>`
+        })
+        .join('\n')
+
+    default:
+      return ''
+  }
+}
+
+function buildKML(features) {
+  const placemarks = features
+    .map(f => {
+      const name = f.properties?.name ?? f.properties?.id ?? ''
+      const geomKML = geometryToKML(f.geometry)
+      return `<Placemark><name>${name}</name>${geomKML}</Placemark>`
+    })
+    .join('\n')
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>${placemarks}</Document>
 </kml>`
+}
+
+export function useExport(getFeaturesAsGeoJson) {
+  async function exportKML() {
+    const kml = buildKML(getFeaturesAsGeoJson())
     downloadBlob(new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' }), 'export.kml')
   }
 
   async function exportKMZ() {
-    const features = getFeaturesAsGeoJson()
-    const placemarks = features.map(f => {
-      const [lng, lat] = f.geometry.coordinates
-      return `<Placemark><name>${f.properties.name ?? ''}</name>
-        <Point><coordinates>${lng},${lat},0</coordinates></Point>
-      </Placemark>`
-    }).join('\n')
-    const kml = `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-  <Document>${placemarks}</Document>
-</kml>`
+    const kml = buildKML(getFeaturesAsGeoJson())
     const zip = new JSZip()
     zip.file('doc.kml', kml)
     const blob = await zip.generateAsync({ type: 'blob' })
@@ -59,17 +115,40 @@ export function useExport(getFeaturesAsGeoJson) {
     const features = getFeaturesAsGeoJson()
     const d = new DxfWriter()
     d.setUnits('Meters')
+
     features.forEach(f => {
       const geom = f.geometry
-      if (geom.type === 'Point') {
-        const [x, y] = geom.coordinates
-        d.drawPoint(x, y)
-      } else if (geom.type === 'Polygon') {
-        d.drawPolyline(geom.coordinates[0].map(([x, y]) => ({ x, y })))
-      } else if (geom.type === 'LineString') {
-        d.drawPolyline(geom.coordinates.map(([x, y]) => ({ x, y })))
+      switch (geom.type) {
+        case 'Point': {
+          const [x, y] = geom.coordinates
+          d.drawPoint(x, y)
+          break
+        }
+        case 'MultiPoint':
+          geom.coordinates.forEach(([x, y]) => d.drawPoint(x, y))
+          break
+
+        case 'LineString':
+          d.drawPolyline(geom.coordinates.map(([x, y]) => ({ x, y })))
+          break
+        case 'MultiLineString':
+          geom.coordinates.forEach(line =>
+            d.drawPolyline(line.map(([x, y]) => ({ x, y })))
+          )
+          break
+
+        case 'Polygon':
+          // outer ring — حلقه‌های داخلی (hole) در DXF معمول پشتیبانی نمیشن
+          d.drawPolyline(geom.coordinates[0].map(([x, y]) => ({ x, y })))
+          break
+        case 'MultiPolygon':
+          geom.coordinates.forEach(poly =>
+            d.drawPolyline(poly[0].map(([x, y]) => ({ x, y })))
+          )
+          break
       }
     })
+
     downloadBlob(new Blob([d.toDxfString()]), 'export.dxf')
   }
 

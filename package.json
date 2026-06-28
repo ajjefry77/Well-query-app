@@ -9,11 +9,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mapbox/mapbox-gl-draw": "^1.5.1",
     "@mapbox/shp-write": "^0.4.3",
+    "@turf/turf": "^7.3.5",
     "dxf-writer": "^1.18.4",
     "jszip": "^3.10.1",
     "leaflet": "^1.9.4",
     "mapbox-gl": "^3.4.0",
+    "utm": "^1.1.1",
     "vue": "^3.4.21"
   },
   "devDependencies": {

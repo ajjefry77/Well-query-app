@@ -63,14 +63,17 @@ export function findNeighborPairs(points, maxDistanceKm) {
 export function toGeoJSON(wells) {
   return {
     type: 'FeatureCollection',
-    features: wells.map((w) => ({
-      type: 'Feature',
-      geometry: {
-        type: 'Point',
-        coordinates: [w.lng, w.lat] // توجه: ترتیب در GeoJSON همیشه [long, lat] است
-      },
-      properties: { ...w }
-    }))
+    features: wells.map((w) => {
+      const { _geometry, lat, lng, ...props } = w;
+      return {
+        type: 'Feature',
+        geometry: _geometry ?? {
+          type: 'Point',
+          coordinates: [lng, lat] // توجه: ترتیب در GeoJSON همیشه [long, lat] است
+        },
+        properties: props
+      };
+    })
   }
 }
 

@@ -360,6 +360,61 @@ function onHoverRow(row) {
   if (row.lat && row.lng) activeWellId.value = row.id;
 }
 
+// ─── تبدیل geometry به KML string ─────────────────────
+function geometryToKML(geometry) {
+  if (!geometry) return "";
+  switch (geometry.type) {
+    case "Point": {
+      const [lng, lat, alt = 0] = geometry.coordinates;
+      return `<Point><coordinates>${lng},${lat},${alt}</coordinates></Point>`;
+    }
+    case "MultiPoint":
+      return geometry.coordinates
+        .map(([lng, lat, alt = 0]) => `<Point><coordinates>${lng},${lat},${alt}</coordinates></Point>`)
+        .join("\n");
+    case "LineString": {
+      const coords = geometry.coordinates
+        .map(([lng, lat, alt = 0]) => `${lng},${lat},${alt}`)
+        .join(" ");
+      return `<LineString><tessellate>1</tessellate><coordinates>${coords}</coordinates></LineString>`;
+    }
+    case "MultiLineString":
+      return geometry.coordinates
+        .map((ring) => {
+          const coords = ring.map(([lng, lat, alt = 0]) => `${lng},${lat},${alt}`).join(" ");
+          return `<LineString><tessellate>1</tessellate><coordinates>${coords}</coordinates></LineString>`;
+        })
+        .join("\n");
+    case "Polygon": {
+      const [outer, ...holes] = geometry.coordinates;
+      const outerCoords = outer.map(([lng, lat, alt = 0]) => `${lng},${lat},${alt}`).join(" ");
+      const holeKML = holes
+        .map((hole) => {
+          const c = hole.map(([lng, lat, alt = 0]) => `${lng},${lat},${alt}`).join(" ");
+          return `<innerBoundaryIs><LinearRing><coordinates>${c}</coordinates></LinearRing></innerBoundaryIs>`;
+        })
+        .join("\n");
+      return `<Polygon><outerBoundaryIs><LinearRing><coordinates>${outerCoords}</coordinates></LinearRing></outerBoundaryIs>${holeKML}</Polygon>`;
+    }
+    case "MultiPolygon":
+      return geometry.coordinates
+        .map((poly) => {
+          const [outer, ...holes] = poly;
+          const outerCoords = outer.map(([lng, lat, alt = 0]) => `${lng},${lat},${alt}`).join(" ");
+          const holeKML = holes
+            .map((hole) => {
+              const c = hole.map(([lng, lat, alt = 0]) => `${lng},${lat},${alt}`).join(" ");
+              return `<innerBoundaryIs><LinearRing><coordinates>${c}</coordinates></LinearRing></innerBoundaryIs>`;
+            })
+            .join("\n");
+          return `<Polygon><outerBoundaryIs><LinearRing><coordinates>${outerCoords}</coordinates></LinearRing></outerBoundaryIs>${holeKML}</Polygon>`;
+        })
+        .join("\n");
+    default:
+      return "";
+  }
+}
+
 function getPrj(features) {
   if (crs.value === "wgs84") {
     return `GEOGCS["WGS 84",
@@ -408,18 +463,26 @@ function handleExport(format) {
   // تبدیل rows به GeoJSON features
   const toFeatures = () =>
     rows
-      .filter((r) => r.lat && r.lng)
+      .filter((r) => r._geometry || (r.lat && r.lng))
       .map((r) => {
+        // اگه geometry اصلی موجوده (Polygon, LineString, ...) ازش استفاده کن
+        const geometry = r._geometry ?? {
+          type: "Point",
+          coordinates: [r.lng, r.lat],
+        };
+        const { _geometry, lat, lng, ...props } = r;
         const base = {
           type: "Feature",
-          properties: { ...r },
-          geometry: { type: "Point", coordinates: [r.lng, r.lat] },
+          properties: props,
+          geometry,
         };
-        return convertFeature(base);
+        // convertFeature فقط برای Point تبدیل مختصات می‌کنه؛ برای geometry‌های دیگه دست نزن
+        if (geometry.type === "Point") return convertFeature(base);
+        return base;
       });
 
   if (format === "geojson") {
-    const geo = toGeoJSON(rows.filter((r) => r.lat && r.lng));
+    const geo = toGeoJSON(rows.filter((r) => r._geometry || (r.lat && r.lng)));
     downloadFile(
       JSON.stringify(geo, null, 2),
       `query-${timestamp}.geojson`,
@@ -434,12 +497,11 @@ function handleExport(format) {
     );
   } else if (format === "kml") {
     const placemarks = toFeatures()
-      .map(
-        (f) =>
-          `<Placemark><name>${f.properties.id ?? ""}</name>
-        <Point><coordinates>${f.geometry.coordinates[0]},${f.geometry.coordinates[1]},0</coordinates></Point>
-      </Placemark>`,
-      )
+      .map((f) => {
+        const name = f.properties?.name ?? f.properties?.id ?? "";
+        const geomKML = geometryToKML(f.geometry);
+        return `<Placemark><name>${name}</name>${geomKML}</Placemark>`;
+      })
       .join("\n");
     const kml = `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
@@ -450,12 +512,11 @@ function handleExport(format) {
     );
   } else if (format === "kmz") {
     const placemarks = toFeatures()
-      .map(
-        (f) =>
-          `<Placemark><name>${f.properties.id ?? ""}</name>
-        <Point><coordinates>${f.geometry.coordinates[0]},${f.geometry.coordinates[1]},0</coordinates></Point>
-      </Placemark>`,
-      )
+      .map((f) => {
+        const name = f.properties?.name ?? f.properties?.id ?? "";
+        const geomKML = geometryToKML(f.geometry);
+        return `<Placemark><name>${name}</name>${geomKML}</Placemark>`;
+      })
       .join("\n");
     const kml = `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
@@ -470,128 +531,49 @@ function handleExport(format) {
       URL.revokeObjectURL(url);
     });
   } else if (format === "shp") {
-    // shp-write جایگزین ساده بدون dependency
+    // از @mapbox/shp-write برای پشتیبانی از همه geometry ها استفاده می‌کنیم
     const features = toFeatures();
     if (!features.length) return;
-
-    let prj;
-
-    try {
-      prj = getPrj(features);
-    } catch (err) {
-      alert(err.message);
-      return;
-    }
-
-    // DBF ساده (جدول attribute)
-    function strToBytes(str, len) {
-      const buf = new Uint8Array(len);
-      for (let i = 0; i < Math.min(str.length, len); i++)
-        buf[i] = str.charCodeAt(i);
-      return buf;
-    }
-
-    // SHP header + records
-    const recCount = features.length;
-    const recSize = 28; // 8 header + 20 point content
-    const fileSize = 50 + recCount * recSize; // words (×2 = bytes)
-
-    const shp = new DataView(new ArrayBuffer(fileSize * 2));
-    // File header
-    shp.setInt32(0, 9994, false);
-    shp.setInt32(24, fileSize, false);
-    shp.setInt32(28, 1000, true);
-    shp.setInt32(32, 1, true); // Point
-    // Bounding box (minX minY maxX maxY minZ maxZ minM maxM)
-    const xs = features.map((f) => f.geometry.coordinates[0]);
-    const ys = features.map((f) => f.geometry.coordinates[1]);
-    shp.setFloat64(36, Math.min(...xs), true);
-    shp.setFloat64(44, Math.min(...ys), true);
-    shp.setFloat64(52, Math.max(...xs), true);
-    shp.setFloat64(60, Math.max(...ys), true);
-    // Records
-    features.forEach((f, i) => {
-      const off = 100 + (i * (recSize * 2)) / 2; // byte offset... ساده‌تر:
-      const o = 100 + i * 28;
-      shp.setInt32(o, i + 1, false); // record number
-      shp.setInt32(o + 4, 10, false); // content length (words)
-      shp.setInt32(o + 8, 1, true); // shape type: Point
-      shp.setFloat64(o + 12, f.geometry.coordinates[0], true); // X
-      shp.setFloat64(o + 20, f.geometry.coordinates[1], true); // Y
-    });
-
-    // SHX
-    const shx = new DataView(new ArrayBuffer(50 * 2 + recCount * 8));
-    shx.setInt32(0, 9994, false);
-    shx.setInt32(24, 50 + recCount * 4, false);
-    shx.setInt32(28, 1000, true);
-    shx.setInt32(32, 1, true);
-    features.forEach((_, i) => {
-      shx.setInt32(100 + i * 8, 50 + i * 14, false); // offset
-      shx.setInt32(104 + i * 8, 10, false); // length
-    });
-
-    // DBF ساده
-    const fields = Object.keys(features[0].properties).slice(0, 10);
-    const headerSize = 32 + fields.length * 32 + 1;
-    const recSize2 = 1 + fields.length * 11;
-    const dbf = new Uint8Array(headerSize + recCount * recSize2);
-    dbf[0] = 3;
-    dbf[4] = recCount & 0xff;
-    dbf[5] = (recCount >> 8) & 0xff;
-    dbf[8] = headerSize & 0xff;
-    dbf[9] = (headerSize >> 8) & 0xff;
-    dbf[10] = recSize2 & 0xff;
-    dbf[11] = (recSize2 >> 8) & 0xff;
-    fields.forEach((name, fi) => {
-      const o = 32 + fi * 32;
-      strToBytes(name.slice(0, 10).toUpperCase(), 10).forEach(
-        (b, i) => (dbf[o + i] = b),
-      );
-      dbf[o + 11] = 67; // 'C' character
-      dbf[o + 16] = 11; // field length
-    });
-    dbf[headerSize - 1] = 13;
-    features.forEach((f, ri) => {
-      const o = headerSize + ri * recSize2;
-      dbf[o] = 32; // valid record
-      fields.forEach((key, fi) => {
-        const val = String(f.properties[key] ?? "").slice(0, 11);
-        strToBytes(val.padEnd(11), 11).forEach(
-          (b, i) => (dbf[o + 1 + fi * 11 + i] = b),
-        );
-      });
-    });
-
-    // ZIP با JSZip
-    const zip = new JSZip();
-    zip.file("export.shp", shp.buffer);
-    zip.file("export.shx", shx.buffer);
-    zip.file("export.dbf", dbf.buffer);
-    zip.file("export.prj", prj);
-    zip.generateAsync({ type: "blob" }).then((blob) => {
-      const url = URL.createObjectURL(blob);
+    const geojson = { type: "FeatureCollection", features };
+    shpwrite.zip(geojson).then((blob) => {
+      const url = URL.createObjectURL(new Blob([blob]));
       const a = document.createElement("a");
       a.href = url;
       a.download = `query-${timestamp}.zip`;
       a.click();
       URL.revokeObjectURL(url);
     });
-    const geojson = { type: "FeatureCollection", features: toFeatures() };
-    // shpwrite.zip(geojson).then((blob) => {
-    //   const url = URL.createObjectURL(new Blob([blob]));
-    //   const a = document.createElement("a");
-    //   a.href = url;
-    //   a.download = `query-${timestamp}.zip`;
-    //   a.click();
-    //   URL.revokeObjectURL(url);
-    // });
   } else if (format === "dxf") {
     const d = new DxfWriter();
     d.setUnits("Meters");
     toFeatures().forEach((f) => {
-      const [x, y] = f.geometry.coordinates;
-      d.drawPoint(x, y);
+      const geom = f.geometry;
+      switch (geom.type) {
+        case "Point": {
+          const [x, y] = geom.coordinates;
+          d.drawPoint(x, y);
+          break;
+        }
+        case "MultiPoint":
+          geom.coordinates.forEach(([x, y]) => d.drawPoint(x, y));
+          break;
+        case "LineString":
+          d.drawPolyline(geom.coordinates.map(([x, y]) => [x, y]));
+          break;
+        case "MultiLineString":
+          geom.coordinates.forEach((line) =>
+            d.drawPolyline(line.map(([x, y]) => [x, y]))
+          );
+          break;
+        case "Polygon":
+          d.drawPolyline(geom.coordinates[0].map(([x, y]) => [x, y]));
+          break;
+        case "MultiPolygon":
+          geom.coordinates.forEach((poly) =>
+            d.drawPolyline(poly[0].map(([x, y]) => [x, y]))
+          );
+          break;
+      }
     });
     downloadFile(d.toDxfString(), `query-${timestamp}.dxf`, "application/dxf");
   }
