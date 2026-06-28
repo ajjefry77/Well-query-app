@@ -4,6 +4,9 @@
 
 const API_BASE = '/api'
 
+// UUID لایه چینه‌شناسی
+const STRAT_LAYER_UUID = '311ba310-95e6-405d-b044-c33879b9abbd'
+
 let accessToken = null;
 let tokenPromise = null;
 
@@ -127,6 +130,68 @@ export async function fetchLayerFeatures(layerUuid, opts = {}) {
     page: String(opts.page ?? 1),
     page_size: String(opts.pageSize ?? 200),
   });
+}
+
+export async function fetchStratigraphyData() {
+  const data = await apiFetch(`/vectorLayers/${STRAT_LAYER_UUID}/features/`, {
+    f: 'json',
+    skip: '0',
+    limit: '2000',
+    page: '1',
+    page_size: '2000',
+    skip_geometry: 'false',
+    out_srid: '4326',
+    select_fields: '[ALL]',
+  })
+
+  const features = Array.isArray(data)
+    ? data
+    : (data.features ?? data.results ?? data.data ?? [])
+
+  // گروه‌بندی بر اساس Name_y (اسم چاه)
+  const wellMap = {}
+
+  for (const f of features) {
+    const p = f.properties ?? {}
+    const wellName = p.Name_y   // اسم چاه مثلاً "Aghar-1"
+    const layerName = p.Name_x  // اسم لایه مثلاً "Gurpi"
+    const top = p.TopHeight     // انتهای لایه (بالاتر = عدد بزرگتر)
+    const base = p.DownHeight   // ابتدای لایه (پایین‌تر)
+    const wellCode = p.WellName // کد عددی چاه
+    const x = p.X
+    const y = p.Y
+
+    if (!wellName || !layerName) continue
+
+    if (!wellMap[wellName]) {
+      wellMap[wellName] = {
+        id: String(wellCode ?? wellName),
+        name: wellName,
+        field: '',
+        x: x ?? 0,
+        y: y ?? 0,
+        td: 0,
+        formations: []
+      }
+    }
+
+    // از تکرار لایه جلوگیری کن
+    const already = wellMap[wellName].formations.find(fm => fm.name === layerName)
+    if (!already) {
+      wellMap[wellName].formations.push({
+        name: layerName,
+        top: top,
+        base: base
+      })
+    }
+  }
+
+  // مرتب‌سازی لایه‌ها از بالا به پایین و محاسبه TD
+  return Object.values(wellMap).map(well => {
+    well.formations.sort((a, b) => b.top - a.top)
+    well.td = Math.min(...well.formations.map(f => f.base))
+    return well
+  })
 }
 
 // ===============================
