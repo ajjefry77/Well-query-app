@@ -1,10 +1,28 @@
 <template>
   <div class="rt">
     <div class="rt__header">
-      <h3>نتایج <span class="mono">({{ rows.length }})</span></h3>
+      <h3>
+        نتایج <span class="mono">({{ rows.length }})</span>
+      </h3>
       <div class="rt__exports">
-        <button class="export-btn" @click="$emit('export', 'geojson')" title="خروجی GeoJSON">GeoJSON</button>
-        <button class="export-btn" @click="$emit('export', 'csv')" title="خروجی CSV">CSV</button>
+        <button
+          class="export-btn"
+          @click="$emit('export', 'geojson')"
+          title="خروجی GeoJSON"
+        >
+          GeoJSON
+        </button>
+        <button
+          class="export-btn"
+          @click="$emit('export', 'csv')"
+          title="خروجی CSV"
+        >
+          CSV
+        </button>
+        <button class="export-btn" @click="$emit('export', 'kml')">KML</button>
+        <button class="export-btn" @click="$emit('export', 'kmz')">KMZ</button>
+        <button class="export-btn" @click="$emit('export', 'shp')">SHP</button>
+        <button class="export-btn" @click="$emit('export', 'dxf')">DXF</button>
       </div>
     </div>
 
@@ -24,7 +42,11 @@
             @click="$emit('select', row)"
             @mouseenter="$emit('hover', row)"
           >
-            <td v-for="col in columns" :key="col.key" :class="{ mono: col.mono }">
+            <td
+              v-for="col in columns"
+              :key="col.key"
+              :class="{ mono: col.mono }"
+            >
               {{ formatCell(row, col) }}
             </td>
           </tr>
@@ -42,17 +64,17 @@
 const props = defineProps({
   rows: { type: Array, required: true },
   columns: { type: Array, required: true },
-  activeId: { type: String, default: null }
-})
-defineEmits(['select', 'hover', 'export'])
+  activeId: { type: String, default: null },
+});
+defineEmits(["select", "hover", "export"]);
 
 function formatCell(row, col) {
-  const val = row[col.key]
-  if (col.key === 'distanceKm') return val !== undefined ? val.toFixed(2) : '—'
-  if (typeof val === 'boolean') return val ? 'بله' : 'خیر'
-  if (val === null || val === undefined) return '—'
-  if (typeof val === 'number') return val.toLocaleString('fa-IR')
-  return val
+  const val = row[col.key];
+  if (col.key === "distanceKm") return val !== undefined ? val.toFixed(2) : "—";
+  if (typeof val === "boolean") return val ? "بله" : "خیر";
+  if (val === null || val === undefined) return "—";
+  if (typeof val === "number") return val.toLocaleString("fa-IR");
+  return val;
 }
 </script>
 
@@ -66,8 +88,8 @@ function formatCell(row, col) {
 }
 .rt__header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;   /* عوض شد */
+  gap: 8px;
   flex-shrink: 0;
 }
 .rt__header h3 {
@@ -81,7 +103,8 @@ function formatCell(row, col) {
 }
 .rt__exports {
   display: flex;
-  gap: 6px;
+  gap: 4px;
+  flex-wrap: wrap;          /* اضافه شد */
 }
 .export-btn {
   background: var(--bg-input);

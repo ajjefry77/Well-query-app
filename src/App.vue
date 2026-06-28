@@ -191,6 +191,9 @@ import SavedQueries from "./components/SavedQueries.vue";
 import StratigraphyChart from "./components/StratigraphyChart.vue";
 import { useWellQuery } from "./composables/useWellQuery.js";
 import { toGeoJSON, toCSV, downloadFile } from "./composables/useGeoUtils.js";
+import JSZip from 'jszip'
+import shpwrite from '@mapbox/shp-write'
+import DxfWriter from 'dxf-writer'
 
 const {
   vectorLayers,
@@ -338,26 +341,75 @@ function onHoverRow(row) {
 }
 
 function handleExport(format) {
-  const rows = displayRows.value;
-  if (!rows.length) return;
-  const timestamp = new Date().toISOString().slice(0, 10);
-  if (format === "geojson") {
-    const wellRows = rows.filter((r) => r.lat && r.lng);
-    const geo = toGeoJSON(wellRows);
-    downloadFile(
-      JSON.stringify(geo, null, 2),
-      `query-${timestamp}.geojson`,
-      "application/geo+json",
-    );
-  } else {
-    const csv = toCSV(rows);
-    downloadFile(
-      "\uFEFF" + csv,
-      `query-${timestamp}.csv`,
-      "text/csv;charset=utf-8",
-    );
+  const rows = displayRows.value
+  if (!rows.length) return
+  const timestamp = new Date().toISOString().slice(0, 10)
+
+  // تبدیل rows به GeoJSON features
+  const toFeatures = () => rows
+    .filter(r => r.lat && r.lng)
+    .map(r => ({
+      type: 'Feature',
+      properties: { ...r },
+      geometry: { type: 'Point', coordinates: [r.lng, r.lat] }
+    }))
+
+  if (format === 'geojson') {
+    const geo = toGeoJSON(rows.filter(r => r.lat && r.lng))
+    downloadFile(JSON.stringify(geo, null, 2), `query-${timestamp}.geojson`, 'application/geo+json')
+
+  } else if (format === 'csv') {
+    const csv = toCSV(rows)
+    downloadFile('\uFEFF' + csv, `query-${timestamp}.csv`, 'text/csv;charset=utf-8')
+
+  } else if (format === 'kml') {
+    const placemarks = toFeatures().map(f =>
+      `<Placemark><name>${f.properties.id ?? ''}</name>
+        <Point><coordinates>${f.geometry.coordinates[0]},${f.geometry.coordinates[1]},0</coordinates></Point>
+      </Placemark>`
+    ).join('\n')
+    const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`
+    downloadFile(kml, `query-${timestamp}.kml`, 'application/vnd.google-earth.kml+xml')
+
+  } else if (format === 'kmz') {
+    const placemarks = toFeatures().map(f =>
+      `<Placemark><name>${f.properties.id ?? ''}</name>
+        <Point><coordinates>${f.geometry.coordinates[0]},${f.geometry.coordinates[1]},0</coordinates></Point>
+      </Placemark>`
+    ).join('\n')
+    const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`
+    const zip = new JSZip()
+    zip.file('doc.kml', kml)
+    zip.generateAsync({ type: 'blob' }).then(blob => {
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = `query-${timestamp}.kmz`; a.click()
+      URL.revokeObjectURL(url)
+    })
+
+  } else if (format === 'shp') {
+    const geojson = { type: 'FeatureCollection', features: toFeatures() }
+    shpwrite.zip(geojson).then(blob => {
+      const url = URL.createObjectURL(new Blob([blob]))
+      const a = document.createElement('a')
+      a.href = url; a.download = `query-${timestamp}.zip`; a.click()
+      URL.revokeObjectURL(url)
+    })
+
+  } else if (format === 'dxf') {
+    const d = new DxfWriter()
+    d.setUnits('Meters')
+    toFeatures().forEach(f => {
+      const [x, y] = f.geometry.coordinates
+      d.drawPoint(x, y)
+    })
+    downloadFile(d.toDxfString(), `query-${timestamp}.dxf`, 'application/dxf')
   }
 }
+
+
 </script>
 
 <style scoped>
