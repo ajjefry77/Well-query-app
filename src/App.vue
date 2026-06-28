@@ -77,6 +77,23 @@
           Mapbox
         </button>
       </div>
+
+      <div class="app-header__crs-switch">
+        <button
+          class="map-switch-btn"
+          :class="{ 'map-switch-btn--active': crs === 'wgs84' }"
+          @click="crs = 'wgs84'"
+        >
+          WGS84
+        </button>
+        <button
+          class="map-switch-btn"
+          :class="{ 'map-switch-btn--active': crs === 'utm' }"
+          @click="crs = 'utm'"
+        >
+          UTM
+        </button>
+      </div>
     </header>
 
     <!-- حالت بدون لایه انتخاب‌شده -->
@@ -191,9 +208,12 @@ import SavedQueries from "./components/SavedQueries.vue";
 import StratigraphyChart from "./components/StratigraphyChart.vue";
 import { useWellQuery } from "./composables/useWellQuery.js";
 import { toGeoJSON, toCSV, downloadFile } from "./composables/useGeoUtils.js";
-import JSZip from 'jszip'
-import shpwrite from '@mapbox/shp-write'
-import DxfWriter from 'dxf-writer'
+import JSZip from "jszip";
+import shpwrite from "@mapbox/shp-write";
+import DxfWriter from "dxf-writer";
+import { useCoordinates } from "./composables/useCoordinates.js";
+
+const { crs, convertFeature, convertRow } = useCoordinates();
 
 const {
   vectorLayers,
@@ -340,76 +360,242 @@ function onHoverRow(row) {
   if (row.lat && row.lng) activeWellId.value = row.id;
 }
 
-function handleExport(format) {
-  const rows = displayRows.value
-  if (!rows.length) return
-  const timestamp = new Date().toISOString().slice(0, 10)
-
-  // تبدیل rows به GeoJSON features
-  const toFeatures = () => rows
-    .filter(r => r.lat && r.lng)
-    .map(r => ({
-      type: 'Feature',
-      properties: { ...r },
-      geometry: { type: 'Point', coordinates: [r.lng, r.lat] }
-    }))
-
-  if (format === 'geojson') {
-    const geo = toGeoJSON(rows.filter(r => r.lat && r.lng))
-    downloadFile(JSON.stringify(geo, null, 2), `query-${timestamp}.geojson`, 'application/geo+json')
-
-  } else if (format === 'csv') {
-    const csv = toCSV(rows)
-    downloadFile('\uFEFF' + csv, `query-${timestamp}.csv`, 'text/csv;charset=utf-8')
-
-  } else if (format === 'kml') {
-    const placemarks = toFeatures().map(f =>
-      `<Placemark><name>${f.properties.id ?? ''}</name>
-        <Point><coordinates>${f.geometry.coordinates[0]},${f.geometry.coordinates[1]},0</coordinates></Point>
-      </Placemark>`
-    ).join('\n')
-    const kml = `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`
-    downloadFile(kml, `query-${timestamp}.kml`, 'application/vnd.google-earth.kml+xml')
-
-  } else if (format === 'kmz') {
-    const placemarks = toFeatures().map(f =>
-      `<Placemark><name>${f.properties.id ?? ''}</name>
-        <Point><coordinates>${f.geometry.coordinates[0]},${f.geometry.coordinates[1]},0</coordinates></Point>
-      </Placemark>`
-    ).join('\n')
-    const kml = `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`
-    const zip = new JSZip()
-    zip.file('doc.kml', kml)
-    zip.generateAsync({ type: 'blob' }).then(blob => {
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url; a.download = `query-${timestamp}.kmz`; a.click()
-      URL.revokeObjectURL(url)
-    })
-
-  } else if (format === 'shp') {
-    const geojson = { type: 'FeatureCollection', features: toFeatures() }
-    shpwrite.zip(geojson).then(blob => {
-      const url = URL.createObjectURL(new Blob([blob]))
-      const a = document.createElement('a')
-      a.href = url; a.download = `query-${timestamp}.zip`; a.click()
-      URL.revokeObjectURL(url)
-    })
-
-  } else if (format === 'dxf') {
-    const d = new DxfWriter()
-    d.setUnits('Meters')
-    toFeatures().forEach(f => {
-      const [x, y] = f.geometry.coordinates
-      d.drawPoint(x, y)
-    })
-    downloadFile(d.toDxfString(), `query-${timestamp}.dxf`, 'application/dxf')
+function getPrj(features) {
+  if (crs.value === "wgs84") {
+    return `GEOGCS["WGS 84",
+DATUM["WGS_1984",
+SPHEROID["WGS 84",6378137,298.257223563]],
+PRIMEM["Greenwich",0],
+UNIT["degree",0.0174532925199433]]`;
   }
+
+  // ---------- UTM ----------
+  const zones = [...new Set(features.map((f) => f.properties.utm_zone))];
+
+  if (zones.length !== 1) {
+    throw new Error(
+      `Cannot export SHP: multiple UTM zones detected (${zones.join(", ")})`,
+    );
+  }
+
+  const zone = zones[0];
+  const zoneNumber = parseInt(zone, 10);
+  const hemisphere = zone.endsWith("N") ? "N" : "S";
+
+  const falseNorthing = hemisphere === "N" ? 0 : 10000000;
+  const centralMeridian = zoneNumber * 6 - 183;
+
+  return `PROJCS["WGS 84 / UTM zone ${zoneNumber}${hemisphere}",
+GEOGCS["WGS 84",
+DATUM["WGS_1984",
+SPHEROID["WGS 84",6378137,298.257223563]],
+PRIMEM["Greenwich",0],
+UNIT["degree",0.0174532925199433]],
+PROJECTION["Transverse_Mercator"],
+PARAMETER["latitude_of_origin",0],
+PARAMETER["central_meridian",${centralMeridian}],
+PARAMETER["scale_factor",0.9996],
+PARAMETER["false_easting",500000],
+PARAMETER["false_northing",${falseNorthing}],
+UNIT["metre",1]]`;
 }
 
+function handleExport(format) {
+  const rows = displayRows.value;
+  if (!rows.length) return;
+  const timestamp = new Date().toISOString().slice(0, 10);
 
+  // تبدیل rows به GeoJSON features
+  const toFeatures = () =>
+    rows
+      .filter((r) => r.lat && r.lng)
+      .map((r) => {
+        const base = {
+          type: "Feature",
+          properties: { ...r },
+          geometry: { type: "Point", coordinates: [r.lng, r.lat] },
+        };
+        return convertFeature(base);
+      });
+
+  if (format === "geojson") {
+    const geo = toGeoJSON(rows.filter((r) => r.lat && r.lng));
+    downloadFile(
+      JSON.stringify(geo, null, 2),
+      `query-${timestamp}.geojson`,
+      "application/geo+json",
+    );
+  } else if (format === "csv") {
+    const csv = toCSV(rows);
+    downloadFile(
+      "\uFEFF" + csv,
+      `query-${timestamp}.csv`,
+      "text/csv;charset=utf-8",
+    );
+  } else if (format === "kml") {
+    const placemarks = toFeatures()
+      .map(
+        (f) =>
+          `<Placemark><name>${f.properties.id ?? ""}</name>
+        <Point><coordinates>${f.geometry.coordinates[0]},${f.geometry.coordinates[1]},0</coordinates></Point>
+      </Placemark>`,
+      )
+      .join("\n");
+    const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
+    downloadFile(
+      kml,
+      `query-${timestamp}.kml`,
+      "application/vnd.google-earth.kml+xml",
+    );
+  } else if (format === "kmz") {
+    const placemarks = toFeatures()
+      .map(
+        (f) =>
+          `<Placemark><name>${f.properties.id ?? ""}</name>
+        <Point><coordinates>${f.geometry.coordinates[0]},${f.geometry.coordinates[1]},0</coordinates></Point>
+      </Placemark>`,
+      )
+      .join("\n");
+    const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
+    const zip = new JSZip();
+    zip.file("doc.kml", kml);
+    zip.generateAsync({ type: "blob" }).then((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `query-${timestamp}.kmz`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  } else if (format === "shp") {
+    // shp-write جایگزین ساده بدون dependency
+    const features = toFeatures();
+    if (!features.length) return;
+
+    let prj;
+
+    try {
+      prj = getPrj(features);
+    } catch (err) {
+      alert(err.message);
+      return;
+    }
+
+    // DBF ساده (جدول attribute)
+    function strToBytes(str, len) {
+      const buf = new Uint8Array(len);
+      for (let i = 0; i < Math.min(str.length, len); i++)
+        buf[i] = str.charCodeAt(i);
+      return buf;
+    }
+
+    // SHP header + records
+    const recCount = features.length;
+    const recSize = 28; // 8 header + 20 point content
+    const fileSize = 50 + recCount * recSize; // words (×2 = bytes)
+
+    const shp = new DataView(new ArrayBuffer(fileSize * 2));
+    // File header
+    shp.setInt32(0, 9994, false);
+    shp.setInt32(24, fileSize, false);
+    shp.setInt32(28, 1000, true);
+    shp.setInt32(32, 1, true); // Point
+    // Bounding box (minX minY maxX maxY minZ maxZ minM maxM)
+    const xs = features.map((f) => f.geometry.coordinates[0]);
+    const ys = features.map((f) => f.geometry.coordinates[1]);
+    shp.setFloat64(36, Math.min(...xs), true);
+    shp.setFloat64(44, Math.min(...ys), true);
+    shp.setFloat64(52, Math.max(...xs), true);
+    shp.setFloat64(60, Math.max(...ys), true);
+    // Records
+    features.forEach((f, i) => {
+      const off = 100 + (i * (recSize * 2)) / 2; // byte offset... ساده‌تر:
+      const o = 100 + i * 28;
+      shp.setInt32(o, i + 1, false); // record number
+      shp.setInt32(o + 4, 10, false); // content length (words)
+      shp.setInt32(o + 8, 1, true); // shape type: Point
+      shp.setFloat64(o + 12, f.geometry.coordinates[0], true); // X
+      shp.setFloat64(o + 20, f.geometry.coordinates[1], true); // Y
+    });
+
+    // SHX
+    const shx = new DataView(new ArrayBuffer(50 * 2 + recCount * 8));
+    shx.setInt32(0, 9994, false);
+    shx.setInt32(24, 50 + recCount * 4, false);
+    shx.setInt32(28, 1000, true);
+    shx.setInt32(32, 1, true);
+    features.forEach((_, i) => {
+      shx.setInt32(100 + i * 8, 50 + i * 14, false); // offset
+      shx.setInt32(104 + i * 8, 10, false); // length
+    });
+
+    // DBF ساده
+    const fields = Object.keys(features[0].properties).slice(0, 10);
+    const headerSize = 32 + fields.length * 32 + 1;
+    const recSize2 = 1 + fields.length * 11;
+    const dbf = new Uint8Array(headerSize + recCount * recSize2);
+    dbf[0] = 3;
+    dbf[4] = recCount & 0xff;
+    dbf[5] = (recCount >> 8) & 0xff;
+    dbf[8] = headerSize & 0xff;
+    dbf[9] = (headerSize >> 8) & 0xff;
+    dbf[10] = recSize2 & 0xff;
+    dbf[11] = (recSize2 >> 8) & 0xff;
+    fields.forEach((name, fi) => {
+      const o = 32 + fi * 32;
+      strToBytes(name.slice(0, 10).toUpperCase(), 10).forEach(
+        (b, i) => (dbf[o + i] = b),
+      );
+      dbf[o + 11] = 67; // 'C' character
+      dbf[o + 16] = 11; // field length
+    });
+    dbf[headerSize - 1] = 13;
+    features.forEach((f, ri) => {
+      const o = headerSize + ri * recSize2;
+      dbf[o] = 32; // valid record
+      fields.forEach((key, fi) => {
+        const val = String(f.properties[key] ?? "").slice(0, 11);
+        strToBytes(val.padEnd(11), 11).forEach(
+          (b, i) => (dbf[o + 1 + fi * 11 + i] = b),
+        );
+      });
+    });
+
+    // ZIP با JSZip
+    const zip = new JSZip();
+    zip.file("export.shp", shp.buffer);
+    zip.file("export.shx", shx.buffer);
+    zip.file("export.dbf", dbf.buffer);
+    zip.file("export.prj", prj);
+    zip.generateAsync({ type: "blob" }).then((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `query-${timestamp}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+    const geojson = { type: "FeatureCollection", features: toFeatures() };
+    // shpwrite.zip(geojson).then((blob) => {
+    //   const url = URL.createObjectURL(new Blob([blob]));
+    //   const a = document.createElement("a");
+    //   a.href = url;
+    //   a.download = `query-${timestamp}.zip`;
+    //   a.click();
+    //   URL.revokeObjectURL(url);
+    // });
+  } else if (format === "dxf") {
+    const d = new DxfWriter();
+    d.setUnits("Meters");
+    toFeatures().forEach((f) => {
+      const [x, y] = f.geometry.coordinates;
+      d.drawPoint(x, y);
+    });
+    downloadFile(d.toDxfString(), `query-${timestamp}.dxf`, "application/dxf");
+  }
+}
 </script>
 
 <style scoped>
@@ -456,6 +642,14 @@ function handleExport(format) {
   margin: 1px 0 0;
   font-size: 11px;
   color: var(--text-muted);
+}
+.app-header__crs-switch {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-input);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
 }
 
 /* ---------- انتخابگر لایه ---------- */
