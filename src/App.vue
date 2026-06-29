@@ -38,78 +38,47 @@
 
       <nav class="app-header__tabs">
         <button
+          v-for="tab in tabs"
+          :key="tab.id"
           class="header-tab"
-          :class="{ 'header-tab--active': queryKind === 'attribute' }"
-          @click="queryKind = 'attribute'"
+          :class="{ 'header-tab--active': queryKind === tab.id }"
+          @click="queryKind = tab.id"
         >
-          کوئری توصیفی
-        </button>
-        <button
-          class="header-tab"
-          :class="{ 'header-tab--active': queryKind === 'spatial' }"
-          @click="queryKind = 'spatial'"
-        >
-          کوئری مکانی
-        </button>
-        <button
-          class="header-tab"
-          :class="{ 'header-tab--active': queryKind === 'stratigraphy' }"
-          @click="queryKind = 'stratigraphy'"
-        >
-          چینه‌شناسی
+          {{ tab.label }}
         </button>
       </nav>
 
       <div class="app-header__map-switch">
-        <button
-          class="map-switch-btn"
-          :class="{ 'map-switch-btn--active': mapProvider === 'leaflet' }"
-          @click="mapProvider = 'leaflet'"
-        >
-          Leaflet
-        </button>
-        <button
-          class="map-switch-btn"
-          :class="{ 'map-switch-btn--active': mapProvider === 'mapbox' }"
-          @click="mapProvider = 'mapbox'"
-        >
-          Mapbox
-        </button>
+        <button class="map-switch-btn" :class="{ 'map-switch-btn--active': mapProvider === 'leaflet' }" @click="mapProvider = 'leaflet'">Leaflet</button>
+        <button class="map-switch-btn" :class="{ 'map-switch-btn--active': mapProvider === 'mapbox' }" @click="mapProvider = 'mapbox'">Mapbox</button>
       </div>
 
       <div class="app-header__crs-switch">
-        <button
-          class="map-switch-btn"
-          :class="{ 'map-switch-btn--active': crs === 'wgs84' }"
-          @click="crs = 'wgs84'"
-        >
-          WGS84
-        </button>
-        <button
-          class="map-switch-btn"
-          :class="{ 'map-switch-btn--active': crs === 'utm' }"
-          @click="crs = 'utm'"
-        >
-          UTM
-        </button>
+        <button class="map-switch-btn" :class="{ 'map-switch-btn--active': crs === 'wgs84' }" @click="crs = 'wgs84'">WGS84</button>
+        <button class="map-switch-btn" :class="{ 'map-switch-btn--active': crs === 'utm' }" @click="crs = 'utm'">UTM</button>
       </div>
     </header>
 
-    <!-- حالت بدون لایه انتخاب‌شده -->
+    <!-- حالت بدون لایه -->
     <div v-if="!selectedLayer && !loadingLayers" class="empty-state">
       <div class="empty-state__icon">🗺</div>
       <h2>لایه‌ای انتخاب نشده</h2>
       <p>یک لایه وکتور از منوی بالا انتخاب کنید تا داده‌ها بارگذاری شود.</p>
     </div>
 
-    <!-- حالت بارگذاری لایه -->
+    <!-- حالت بارگذاری -->
     <div v-else-if="loadingFeatures || loadingFields" class="loading-state">
       <div class="spinner"></div>
       <p>{{ loadingFields ? "دریافت فیلدها…" : "دریافت عارضه‌ها…" }}</p>
     </div>
 
-    <main v-else-if="queryKind !== 'stratigraphy'" class="app-main">
-      <!-- پنل کناری -->
+    <!-- صفحه چینه‌شناسی -->
+    <div v-else-if="queryKind === 'stratigraphy'" class="strat-page">
+      <StratigraphyChart />
+    </div>
+
+    <!-- صفحه اصلی -->
+    <main v-else class="app-main">
       <aside class="side-panel">
         <div class="side-panel__scroll">
           <QueryBuilder
@@ -122,7 +91,6 @@
             @remove="removeCondition"
             @save="saveCurrentQuery"
           />
-
           <SpatialQueryPanel
             v-else
             v-model:mode="spatialMode"
@@ -136,45 +104,25 @@
             @pick-point="onPickPoint"
             @clear-point="onClearPoint"
           />
-
           <div class="side-divider"></div>
-
-          <SavedQueries
-            :queries="savedQueries"
-            @load="onLoadQuery"
-            @delete="deleteSavedQuery"
-          />
+          <SavedQueries :queries="savedQueries" @load="onLoadQuery" @delete="deleteSavedQuery" />
         </div>
       </aside>
 
-      <!-- نقشه -->
       <section class="map-panel">
         <component
           :is="mapProvider === 'mapbox' ? MapboxMap : LeafletMap"
           ref="mapRef"
           :wells="allWells"
           :highlighted-ids="highlightedIds"
-          :radius-center="
-            queryKind === 'spatial' &&
-            (spatialMode === 'radius' || spatialMode === 'point')
-              ? radiusCenter
-              : null
-          "
+          :radius-center="showRadiusOnMap ? radiusCenter : null"
           :radius-km="radiusKm"
-          :neighbor-pairs="
-            queryKind === 'spatial' && spatialMode === 'neighbor'
-              ? neighborResults
-              : []
-          "
+          :neighbor-pairs="queryKind === 'spatial' && spatialMode === 'neighbor' ? neighborResults : []"
           @select-well="onSelectFromMap"
         />
       </section>
 
-      <!-- جدول نتایج -->
-      <section
-        class="results-panel"
-        :class="{ 'results-panel--collapsed': !resultsPanelOpen }"
-      >
+      <section class="results-panel" :class="{ 'results-panel--collapsed': !resultsPanelOpen }">
         <button class="results-toggle" @click="toggleResultsPanel">
           {{ resultsPanelOpen ? "◀" : "▶" }}
         </button>
@@ -190,378 +138,158 @@
         </div>
       </section>
     </main>
-    <div v-else-if="queryKind === 'stratigraphy'" class="strat-page">
-      <StratigraphyChart />
-    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, shallowRef, onMounted } from "vue";
-import LeafletMap from "./components/LeafletMap.vue";
-import MapboxMap from "./components/MapboxMap.vue";
-import QueryBuilder from "./components/QueryBuilder.vue";
-import SpatialQueryPanel from "./components/SpatialQueryPanel.vue";
-import ResultsTable from "./components/ResultsTable.vue";
-import SavedQueries from "./components/SavedQueries.vue";
-import StratigraphyChart from "./components/StratigraphyChart.vue";
-import { useWellQuery } from "./composables/useWellQuery.js";
-import { toGeoJSON, toCSV, downloadFile } from "./composables/useGeoUtils.js";
-import JSZip from "jszip";
-import shpwrite from "@mapbox/shp-write";
-import DxfWriter from "dxf-writer";
-import { useCoordinates } from "./composables/useCoordinates.js";
+import { ref, computed, shallowRef, onMounted } from 'vue'
+import LeafletMap from './components/LeafletMap.vue'
+import MapboxMap from './components/MapboxMap.vue'
+import QueryBuilder from './components/QueryBuilder.vue'
+import SpatialQueryPanel from './components/SpatialQueryPanel.vue'
+import ResultsTable from './components/ResultsTable.vue'
+import SavedQueries from './components/SavedQueries.vue'
+import StratigraphyChart from './components/StratigraphyChart.vue'
+import { useWellQuery } from './composables/useWellQuery.js'
+import { useCoordinates } from './composables/useCoordinates.js'
+import { exportData } from './composables/useExport.js'
 
-const { crs, convertFeature, convertRow } = useCoordinates();
+const { crs, convertFeature } = useCoordinates()
 
 const {
-  vectorLayers,
-  selectedLayer,
-  queryableFields,
-  loadingLayers,
-  loadingFields,
-  loadingFeatures,
-  apiError,
-  loadVectorLayers,
-  selectLayer,
-  allWells,
-  conditions,
-  attributeResults,
-  addCondition,
-  removeCondition,
-  radiusCenter,
-  radiusKm,
-  radiusResults,
-  neighborResults,
-  savedQueries,
-  saveCurrentQuery,
-  loadSavedQuery,
-  deleteSavedQuery,
-} = useWellQuery();
+  vectorLayers, selectedLayer, queryableFields,
+  loadingLayers, loadingFields, loadingFeatures, apiError,
+  loadVectorLayers, selectLayer,
+  allWells, conditions, attributeResults,
+  addCondition, removeCondition,
+  radiusCenter, radiusKm, radiusResults, neighborResults,
+  savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
+} = useWellQuery()
 
-const queryKind = ref("attribute");
-const spatialMode = ref("radius");
-const mapProvider = ref("mapbox");
-const mapRef = shallowRef(null);
-const activeWellId = ref(null);
-const resultsPanelOpen = ref(true);
-const customPoint = ref(null);
-const isPickingPoint = ref(false);
+const tabs = [
+  { id: 'attribute',    label: 'کوئری توصیفی' },
+  { id: 'spatial',      label: 'کوئری مکانی' },
+  { id: 'stratigraphy', label: 'چینه‌شناسی' },
+]
 
-function onPickPoint() {
-  isPickingPoint.value = true;
-  mapRef.value?.enablePointPicker((point) => {
-    customPoint.value = point;
-    isPickingPoint.value = false;
-    radiusCenter.value = point;
-  });
-}
+const queryKind        = ref('attribute')
+const spatialMode      = ref('radius')
+const mapProvider      = ref('mapbox')
+const mapRef           = shallowRef(null)
+const activeWellId     = ref(null)
+const resultsPanelOpen = ref(true)
+const customPoint      = ref(null)
+const isPickingPoint   = ref(false)
 
-function onClearPoint() {
-  customPoint.value = null;
-  radiusCenter.value = null;
-  isPickingPoint.value = false;
-  mapRef.value?.disablePointPicker();
-}
+onMounted(loadVectorLayers)
 
-function toggleResultsPanel() {
-  resultsPanelOpen.value = !resultsPanelOpen.value;
-  setTimeout(() => {
-    mapRef.value?.invalidateSize?.();
-  }, 320);
-}
+// ── computed ──────────────────────────────────────────────
 
 const spatialGroupFields = computed(() =>
   queryableFields.value
-    .filter((f) => f.type === "string" || f.type === "enum")
-    .map((f) => f.key),
-);
+    .filter(f => f.type === 'string' || f.type === 'enum')
+    .map(f => f.key)
+)
 
-onMounted(() => {
-  loadVectorLayers();
-});
+const showRadiusOnMap = computed(() =>
+  queryKind.value === 'spatial' && (spatialMode.value === 'radius' || spatialMode.value === 'point')
+)
+
+const displayColumns = computed(() => {
+  if (queryKind.value === 'spatial') {
+    if (spatialMode.value === 'neighbor') {
+      return [
+        { key: 'pairLabel', label: 'جفت عارضه‌ها' },
+        { key: 'distanceKm', label: 'فاصله (km)', mono: true },
+      ]
+    }
+    return [
+      { key: 'id', label: 'شناسه', mono: true },
+      ...queryableFields.value.slice(0, 4).map(f => ({ key: f.key, label: f.label })),
+      { key: 'distanceKm', label: 'فاصله (km)', mono: true },
+    ]
+  }
+  return [
+    { key: 'id', label: 'شناسه', mono: true },
+    ...queryableFields.value.slice(0, 6).map(f => ({ key: f.key, label: f.label })),
+  ]
+})
+
+const displayRows = computed(() => {
+  if (queryKind.value === 'attribute') return attributeResults.value
+  if (spatialMode.value === 'neighbor') {
+    return neighborResults.value.map((pair, i) => ({
+      id: `pair-${i}`,
+      pairLabel: `${pair.a.id}  ⇄  ${pair.b.id}`,
+      distanceKm: pair.distanceKm,
+    }))
+  }
+  return radiusResults.value
+})
+
+const highlightedIds = computed(() => {
+  if (queryKind.value === 'attribute') return attributeResults.value.map(w => w.id)
+  if (spatialMode.value === 'neighbor') {
+    const ids = new Set()
+    neighborResults.value.forEach(p => { ids.add(p.a.id); ids.add(p.b.id) })
+    return [...ids]
+  }
+  return radiusResults.value.map(w => w.id)
+})
+
+// ── handlers ──────────────────────────────────────────────
 
 function onLayerChange(uuid) {
-  if (!uuid) return;
-  const layer = vectorLayers.value.find((l) => l.uuid === uuid);
-  if (layer) selectLayer(layer);
+  if (!uuid) return
+  const layer = vectorLayers.value.find(l => l.uuid === uuid)
+  if (layer) selectLayer(layer)
 }
 
 function onLoadQuery(q) {
-  loadSavedQuery(q);
-  queryKind.value = "attribute";
+  loadSavedQuery(q)
+  queryKind.value = 'attribute'
 }
 
-const displayColumns = computed(() => {
-  if (queryKind.value === "spatial") {
-    if (spatialMode.value === "radius" || spatialMode.value === "point") {
-      return [
-        { key: "id", label: "شناسه", mono: true },
-        ...queryableFields.value
-          .slice(0, 4)
-          .map((f) => ({ key: f.key, label: f.label })),
-        { key: "distanceKm", label: "فاصله (km)", mono: true },
-      ];
-    }
-    return [
-      { key: "pairLabel", label: "جفت عارضه‌ها" },
-      { key: "distanceKm", label: "فاصله (km)", mono: true },
-    ];
-  }
-  return [
-    { key: "id", label: "شناسه", mono: true },
-    ...queryableFields.value
-      .slice(0, 6)
-      .map((f) => ({ key: f.key, label: f.label })),
-  ];
-});
+function onPickPoint() {
+  isPickingPoint.value = true
+  mapRef.value?.enablePointPicker(point => {
+    customPoint.value = point
+    isPickingPoint.value = false
+    radiusCenter.value = point
+  })
+}
 
-const displayRows = computed(() => {
-  if (queryKind.value === "attribute") return attributeResults.value;
-  if (spatialMode.value === "radius" || spatialMode.value === "point")
-    return radiusResults.value;
-  return neighborResults.value.map((pair, i) => ({
-    id: `pair-${i}`,
-    pairLabel: `${pair.a.id}  ⇄  ${pair.b.id}`,
-    distanceKm: pair.distanceKm,
-  }));
-});
+function onClearPoint() {
+  customPoint.value = null
+  radiusCenter.value = null
+  isPickingPoint.value = false
+  mapRef.value?.disablePointPicker()
+}
 
-const highlightedIds = computed(() => {
-  if (queryKind.value === "attribute")
-    return attributeResults.value.map((w) => w.id);
-  if (spatialMode.value === "radius" || spatialMode.value === "point")
-    return radiusResults.value.map((w) => w.id);
-  const ids = new Set();
-  neighborResults.value.forEach((p) => {
-    ids.add(p.a.id);
-    ids.add(p.b.id);
-  });
-  return [...ids];
-});
+function toggleResultsPanel() {
+  resultsPanelOpen.value = !resultsPanelOpen.value
+  setTimeout(() => mapRef.value?.invalidateSize?.(), 320)
+}
 
 function onSelectFromMap(well) {
-  activeWellId.value = well.id;
-  if (queryKind.value === "spatial" && spatialMode.value === "radius") {
-    radiusCenter.value = well;
+  activeWellId.value = well.id
+  if (queryKind.value === 'spatial' && spatialMode.value === 'radius') {
+    radiusCenter.value = well
   }
-  mapRef.value?.zoomToFeature(well.id);
+  mapRef.value?.zoomToFeature(well.id)
 }
 
 function onSelectFromTable(row) {
-  activeWellId.value = row.id;
-  mapRef.value?.zoomToFeature(row.id);
+  activeWellId.value = row.id
+  mapRef.value?.zoomToFeature(row.id)
 }
 
 function onHoverRow(row) {
-  if (row.lat && row.lng) activeWellId.value = row.id;
+  if (row.lat && row.lng) activeWellId.value = row.id
 }
 
-// ─── تبدیل geometry به KML string ─────────────────────
-function coordsToString(coords) {
-  return coords.map((c) => `${c[0]},${c[1]},${c[2] ?? 0}`).join(" ");
-}
-
-function geometryToKML(geometry) {
-  if (!geometry) return "";
-  switch (geometry.type) {
-    case "Point": {
-      const c = geometry.coordinates;
-      return `<Point><coordinates>${c[0]},${c[1]},${c[2] ?? 0}</coordinates></Point>`;
-    }
-    case "MultiPoint":
-      return geometry.coordinates
-        .map((c) => `<Point><coordinates>${c[0]},${c[1]},${c[2] ?? 0}</coordinates></Point>`)
-        .join("\n");
-    case "LineString":
-      return `<LineString><tessellate>1</tessellate><coordinates>${coordsToString(geometry.coordinates)}</coordinates></LineString>`;
-    case "MultiLineString":
-      return geometry.coordinates
-        .map((ring) => `<LineString><tessellate>1</tessellate><coordinates>${coordsToString(ring)}</coordinates></LineString>`)
-        .join("\n");
-    case "Polygon": {
-      const [outer, ...holes] = geometry.coordinates;
-      const holeKML = holes
-        .map((hole) => `<innerBoundaryIs><LinearRing><coordinates>${coordsToString(hole)}</coordinates></LinearRing></innerBoundaryIs>`)
-        .join("\n");
-      return `<Polygon><outerBoundaryIs><LinearRing><coordinates>${coordsToString(outer)}</coordinates></LinearRing></outerBoundaryIs>${holeKML}</Polygon>`;
-    }
-    case "MultiPolygon":
-      return geometry.coordinates
-        .map((poly) => {
-          const [outer, ...holes] = poly;
-          const holeKML = holes
-            .map((hole) => `<innerBoundaryIs><LinearRing><coordinates>${coordsToString(hole)}</coordinates></LinearRing></innerBoundaryIs>`)
-            .join("\n");
-          return `<Polygon><outerBoundaryIs><LinearRing><coordinates>${coordsToString(outer)}</coordinates></LinearRing></outerBoundaryIs>${holeKML}</Polygon>`;
-        })
-        .join("\n");
-    default:
-      return "";
-  }
-}
-
-function getPrj(features) {
-  if (crs.value === "wgs84") {
-    return `GEOGCS["WGS 84",
-DATUM["WGS_1984",
-SPHEROID["WGS 84",6378137,298.257223563]],
-PRIMEM["Greenwich",0],
-UNIT["degree",0.0174532925199433]]`;
-  }
-
-  const zones = [...new Set(features.map((f) => f.properties.utm_zone))];
-  if (zones.length !== 1) {
-    throw new Error(
-      `Cannot export SHP: multiple UTM zones detected (${zones.join(", ")})`,
-    );
-  }
-
-  const zone = zones[0];
-  const zoneNumber = parseInt(zone, 10);
-  const hemisphere = zone.endsWith("N") ? "N" : "S";
-  const falseNorthing = hemisphere === "N" ? 0 : 10000000;
-  const centralMeridian = zoneNumber * 6 - 183;
-
-  return `PROJCS["WGS 84 / UTM zone ${zoneNumber}${hemisphere}",
-GEOGCS["WGS 84",
-DATUM["WGS_1984",
-SPHEROID["WGS 84",6378137,298.257223563]],
-PRIMEM["Greenwich",0],
-UNIT["degree",0.0174532925199433]],
-PROJECTION["Transverse_Mercator"],
-PARAMETER["latitude_of_origin",0],
-PARAMETER["central_meridian",${centralMeridian}],
-PARAMETER["scale_factor",0.9996],
-PARAMETER["false_easting",500000],
-PARAMETER["false_northing",${falseNorthing}],
-UNIT["metre",1]]`;
-}
-
-async function handleExport(format) {
-  const rows = displayRows.value;
-  if (!rows.length) return;
-  const timestamp = new Date().toISOString().slice(0, 10);
-
-  const toFeatures = () =>
-    rows
-      .filter((r) => r._geometry || (r.lat && r.lng))
-      .map((r) => {
-        const geometry = r._geometry ?? {
-          type: "Point",
-          coordinates: [r.lng, r.lat],
-        };
-        const { _geometry, lat, lng, ...props } = r;
-        const base = {
-          type: "Feature",
-          properties: props,
-          geometry,
-        };
-        if (geometry.type === "Point") return convertFeature(base);
-        return base;
-      });
-
-  if (format === "geojson") {
-    const geo = toGeoJSON(rows.filter((r) => r._geometry || (r.lat && r.lng)));
-    downloadFile(
-      JSON.stringify(geo, null, 2),
-      `query-${timestamp}.geojson`,
-      "application/geo+json",
-    );
-  } else if (format === "csv") {
-    const csv = toCSV(rows);
-    downloadFile(
-      "\uFEFF" + csv,
-      `query-${timestamp}.csv`,
-      "text/csv;charset=utf-8",
-    );
-  } else if (format === "kml") {
-    const placemarks = toFeatures()
-      .map((f) => {
-        const name = f.properties?.name ?? f.properties?.id ?? "";
-        const geomKML = geometryToKML(f.geometry);
-        return `<Placemark><name>${name}</name>${geomKML}</Placemark>`;
-      })
-      .join("\n");
-    const kml = `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
-    downloadFile(
-      kml,
-      `query-${timestamp}.kml`,
-      "application/vnd.google-earth.kml+xml",
-    );
-  } else if (format === "kmz") {
-    const placemarks = toFeatures()
-      .map((f) => {
-        const name = f.properties?.name ?? f.properties?.id ?? "";
-        const geomKML = geometryToKML(f.geometry);
-        return `<Placemark><name>${name}</name>${geomKML}</Placemark>`;
-      })
-      .join("\n");
-    const kml = `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
-    const zip = new JSZip();
-    zip.file("doc.kml", kml);
-    const blob = await zip.generateAsync({ type: "blob" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `query-${timestamp}.kmz`;
-    a.click();
-    URL.revokeObjectURL(url);
-  } else if (format === "shp") {
-    const features = toFeatures();
-    if (!features.length) return;
-    const geojson = { type: "FeatureCollection", features };
-    try {
-      const result = await shpwrite.zip(geojson, {
-        outputType: "arraybuffer",
-      });
-      const blob = new Blob([result], { type: "application/zip" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `query-${timestamp}.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("SHP export error:", err);
-      alert("خطا در خروجی Shapefile: " + err.message);
-    }
-  } else if (format === "dxf") {
-    const d = new DxfWriter();
-    d.setUnits("Meters");
-    toFeatures().forEach((f) => {
-      const geom = f.geometry;
-      switch (geom.type) {
-        case "Point": {
-          const [x, y] = geom.coordinates;
-          d.drawPoint(x, y);
-          break;
-        }
-        case "MultiPoint":
-          geom.coordinates.forEach((c) => d.drawPoint(c[0], c[1]));
-          break;
-        case "LineString":
-          d.drawPolyline(geom.coordinates.map((c) => [c[0], c[1]]));
-          break;
-        case "MultiLineString":
-          geom.coordinates.forEach((line) =>
-            d.drawPolyline(line.map((c) => [c[0], c[1]]))
-          );
-          break;
-        case "Polygon":
-          d.drawPolyline(geom.coordinates[0].map((c) => [c[0], c[1]]));
-          break;
-        case "MultiPolygon":
-          geom.coordinates.forEach((poly) =>
-            d.drawPolyline(poly[0].map((c) => [c[0], c[1]]))
-          );
-          break;
-      }
-    });
-    downloadFile(d.toDxfString(), `query-${timestamp}.dxf`, "application/dxf");
-  }
+function handleExport(format) {
+  exportData(format, displayRows.value, convertFeature)
 }
 </script>
 
@@ -668,9 +396,7 @@ async function handleExport(format) {
   border-radius: var(--radius-sm);
   font-weight: 500;
   cursor: pointer;
-  transition:
-    background 0.15s,
-    color 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 .header-tab:hover:not(.header-tab--active) {
   background: var(--bg-panel-raised);
@@ -702,9 +428,7 @@ async function handleExport(format) {
   border-radius: var(--radius-sm);
   direction: ltr;
   cursor: pointer;
-  transition:
-    background 0.15s,
-    color 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 .map-switch-btn:hover:not(.map-switch-btn--active) {
   background: var(--bg-panel-raised);
@@ -716,7 +440,7 @@ async function handleExport(format) {
   font-weight: 700;
 }
 
-/* ---------- empty / loading states ---------- */
+/* ---------- empty / loading ---------- */
 .empty-state,
 .loading-state {
   flex: 1;
@@ -753,20 +477,9 @@ async function handleExport(format) {
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
-.spinner {
-  width: 36px;
-  height: 36px;
-}
-.spinner-inline {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
+.spinner { width: 36px; height: 36px; }
+.spinner-inline { width: 16px; height: 16px; flex-shrink: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---------- بدنه اصلی ---------- */
 .app-main {
