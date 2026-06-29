@@ -10,29 +10,12 @@
         </div>
       </div>
 
-      <!-- انتخابگر لایه وکتور -->
-      <div class="layer-selector">
-        <div class="layer-selector__control">
-          <select
-            class="layer-select"
-            :disabled="loadingLayers"
-            @change="onLayerChange($event.target.value)"
-          >
-            <option value="">
-              {{ loadingLayers ? "در حال بارگذاری…" : "یک لایه انتخاب کنید…" }}
-            </option>
-            <option
-              v-for="layer in vectorLayers"
-              :key="layer.uuid"
-              :value="layer.uuid"
-              :selected="selectedLayer?.uuid === layer.uuid"
-            >
-              {{ layer.display_name || layer.name }}
-              ({{ layer.layer_type }} · {{ layer.feature_count }} عارضه)
-            </option>
-          </select>
-          <span v-if="loadingLayers" class="spinner-inline"></span>
-        </div>
+      <!-- نمایش خلاصه لایه‌های فعال در هدر -->
+      <div class="header-layer-summary">
+        <span class="layer-summary-label">لایه‌های فعال:</span>
+        <span v-if="activeLayers.length === 0" class="layer-summary-empty">انتخاب نشده</span>
+        <span v-else class="layer-summary-count">{{ activeLayers.length }} لایه</span>
+        <span v-if="loadingLayers" class="spinner-inline"></span>
         <div v-if="apiError" class="layer-error">{{ apiError }}</div>
       </div>
 
@@ -59,15 +42,8 @@
       </div>
     </header>
 
-    <!-- حالت بدون لایه -->
-    <div v-if="!selectedLayer && !loadingLayers" class="empty-state">
-      <div class="empty-state__icon">🗺</div>
-      <h2>لایه‌ای انتخاب نشده</h2>
-      <p>یک لایه وکتور از منوی بالا انتخاب کنید تا داده‌ها بارگذاری شود.</p>
-    </div>
-
     <!-- حالت بارگذاری -->
-    <div v-else-if="loadingFeatures || loadingFields" class="loading-state">
+    <div v-if="loadingFeatures || loadingFields" class="loading-state">
       <div class="spinner"></div>
       <p>{{ loadingFields ? "دریافت فیلدها…" : "دریافت عارضه‌ها…" }}</p>
     </div>
@@ -77,7 +53,7 @@
       <StratigraphyChart />
     </div>
 
-    <!-- صفحه اصلی -->
+    <!-- صفحه اصلی — همیشه نمایش داده می‌شه -->
     <main v-else class="app-main">
       <aside class="side-panel">
         <div class="side-panel__scroll">
@@ -122,22 +98,116 @@
         />
       </section>
 
+      <!-- پنل نتایج: ۷۰٪ جدول + ۳۰٪ لایه‌ها -->
       <section class="results-panel" :class="{ 'results-panel--collapsed': !resultsPanelOpen }">
         <button class="results-toggle" @click="toggleResultsPanel">
           {{ resultsPanelOpen ? "◀" : "▶" }}
         </button>
+
         <div class="results-panel__content" v-show="resultsPanelOpen">
-          <ResultsTable
-            :rows="displayRows"
-            :columns="displayColumns"
-            :active-id="activeWellId"
-            @select="onSelectFromTable"
-            @hover="onHoverRow"
-            @export="handleExport"
-          />
+          <div class="results-split">
+            <!-- ۷۰٪ - جدول نتایج -->
+            <div class="results-main">
+              <ResultsTable
+                :rows="displayRows"
+                :columns="displayColumns"
+                :active-id="activeWellId"
+                @select="onSelectFromTable"
+                @hover="onHoverRow"
+                @export="handleExport"
+              />
+            </div>
+
+            <!-- ۳۰٪ - لیست لایه‌های فعال -->
+            <div class="results-layers">
+              <div class="layers-header">
+                <span class="layers-title">لایه‌های فعال</span>
+                <button class="add-layer-btn" @click="openLayerModal" :disabled="loadingLayers">
+                  <span>+</span> افزودن لایه
+                </button>
+              </div>
+
+              <div v-if="loadingLayers" class="layers-loading">
+                <span class="spinner-inline"></span>
+                <span>در حال بارگذاری…</span>
+              </div>
+
+              <ul v-else class="active-layers-list">
+                <li
+                  v-for="layer in activeLayers"
+                  :key="layer.uuid"
+                  class="active-layer-item"
+                >
+                  <div class="active-layer-info">
+                    <span class="active-layer-dot" :style="{ background: layerColor(layer.uuid) }"></span>
+                    <span class="active-layer-name">{{ layer.display_name || layer.name }}</span>
+                  </div>
+                  <div class="active-layer-meta">
+                    <span class="active-layer-count">{{ layerFeatureCount(layer.uuid) }} عارضه</span>
+                    <button class="remove-layer-btn" @click="removeLayer(layer.uuid)" title="حذف لایه">×</button>
+                  </div>
+                </li>
+
+                <li v-if="activeLayers.length === 0" class="no-layer-item">
+                  <span>لایه‌ای انتخاب نشده</span>
+                </li>
+              </ul>
+            </div>
+          </div>
         </div>
       </section>
     </main>
+
+    <!-- مدال انتخاب لایه -->
+    <teleport to="body">
+      <div v-if="showLayerModal" class="modal-backdrop" @click.self="showLayerModal = false">
+        <div class="layer-modal">
+          <div class="modal-header">
+            <h3>انتخاب لایه‌ها</h3>
+            <button class="modal-close" @click="showLayerModal = false">×</button>
+          </div>
+
+          <div class="modal-search">
+            <input
+              v-model="layerSearch"
+              placeholder="جستجو در لایه‌ها…"
+              class="modal-search-input"
+            />
+          </div>
+
+          <div class="modal-layer-list-wrap">
+            <ul class="modal-layer-list">
+              <li
+                v-for="layer in filteredModalLayers"
+                :key="layer.uuid"
+                class="modal-layer-item"
+                :class="{ 'modal-layer-item--checked': tempSelected.includes(layer.uuid) }"
+                @click="toggleTempLayer(layer.uuid)"
+              >
+                <div class="modal-checkbox">
+                  <span v-if="tempSelected.includes(layer.uuid)" class="checkbox-check">✓</span>
+                </div>
+                <div class="modal-layer-info">
+                  <span class="modal-layer-name">{{ layer.display_name || layer.name }}</span>
+                  <span class="modal-layer-meta">{{ layer.layer_type }} · {{ layer.feature_count }} عارضه</span>
+                </div>
+              </li>
+              <li v-if="filteredModalLayers.length === 0" class="modal-empty">
+                نتیجه‌ای یافت نشد
+              </li>
+            </ul>
+          </div>
+
+          <div class="modal-footer">
+            <span class="modal-selected-count">{{ tempSelected.length }} لایه انتخاب شده</span>
+            <div class="modal-actions">
+              <button class="btn-cancel" @click="showLayerModal = false">انصراف</button>
+              <button class="btn-apply" @click="applyLayerSelection">اعمال</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </teleport>
   </div>
 </template>
 
@@ -157,14 +227,22 @@ import { exportData } from './composables/useExport.js'
 const { crs, convertFeature } = useCoordinates()
 
 const {
-  vectorLayers, selectedLayer, queryableFields,
+  vectorLayers, activeLayers, selectedLayer,
+  layerFeaturesMap: _layerFeaturesMap,
+  queryableFields,
   loadingLayers, loadingFields, loadingFeatures, apiError,
-  loadVectorLayers, selectLayer,
+  loadVectorLayers,
+  addLayer, removeLayer, setActiveLayers,
   allWells, conditions, attributeResults,
   addCondition, removeCondition,
   radiusCenter, radiusKm, radiusResults, neighborResults,
   savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
 } = useWellQuery()
+
+// چون layerFeaturesMap یه ref({}) هست، در template باید از این helper استفاده کنیم
+function layerFeatureCount(uuid) {
+  return (_layerFeaturesMap.value?.[uuid] ?? []).length
+}
 
 const tabs = [
   { id: 'attribute',    label: 'کوئری توصیفی' },
@@ -180,6 +258,48 @@ const activeWellId     = ref(null)
 const resultsPanelOpen = ref(true)
 const customPoint      = ref(null)
 const isPickingPoint   = ref(false)
+
+// ── مدال لایه‌ها ──
+const showLayerModal = ref(false)
+const tempSelected   = ref([])   // uuid های انتخاب‌شده موقت در مدال
+const layerSearch    = ref('')
+
+// رنگ‌های ثابت برای هر لایه (بر اساس uuid)
+const LAYER_COLORS = ['#2a9d8f','#e9c46a','#f4a261','#e76f51','#264653','#a8dadc','#457b9d','#e63946']
+function layerColor(uuid) {
+  const idx = (vectorLayers.value.findIndex(l => l.uuid === uuid) ?? 0) % LAYER_COLORS.length
+  return LAYER_COLORS[Math.max(0, idx)]
+}
+
+const filteredModalLayers = computed(() => {
+  const q = layerSearch.value.toLowerCase().trim()
+  if (!q) return vectorLayers.value
+  return vectorLayers.value.filter(l =>
+    (l.display_name || l.name || '').toLowerCase().includes(q)
+  )
+})
+
+function openLayerModal() {
+  // لایه‌های فعلاً انتخاب‌شده رو تیک‌دار کن
+  tempSelected.value = activeLayers.value.map(l => l.uuid)
+  layerSearch.value = ''
+  showLayerModal.value = true
+}
+
+function toggleTempLayer(uuid) {
+  const idx = tempSelected.value.indexOf(uuid)
+  if (idx >= 0) {
+    tempSelected.value = tempSelected.value.filter(u => u !== uuid)
+  } else {
+    tempSelected.value = [...tempSelected.value, uuid]
+  }
+}
+
+async function applyLayerSelection() {
+  showLayerModal.value = false
+  const layers = vectorLayers.value.filter(l => tempSelected.value.includes(l.uuid))
+  await setActiveLayers(layers)
+}
 
 onMounted(loadVectorLayers)
 
@@ -204,14 +324,16 @@ const displayColumns = computed(() => {
       ]
     }
     return [
+      { key: '_layerName', label: 'لایه' },
       { key: 'id', label: 'شناسه', mono: true },
-      ...queryableFields.value.slice(0, 4).map(f => ({ key: f.key, label: f.label })),
+      ...queryableFields.value.slice(0, 3).map(f => ({ key: f.key, label: f.label })),
       { key: 'distanceKm', label: 'فاصله (km)', mono: true },
     ]
   }
   return [
+    { key: '_layerName', label: 'لایه' },
     { key: 'id', label: 'شناسه', mono: true },
-    ...queryableFields.value.slice(0, 6).map(f => ({ key: f.key, label: f.label })),
+    ...queryableFields.value.slice(0, 5).map(f => ({ key: f.key, label: f.label })),
   ]
 })
 
@@ -238,12 +360,6 @@ const highlightedIds = computed(() => {
 })
 
 // ── handlers ──────────────────────────────────────────────
-
-function onLayerChange(uuid) {
-  if (!uuid) return
-  const layer = vectorLayers.value.find(l => l.uuid === uuid)
-  if (layer) selectLayer(layer)
-}
 
 function onLoadQuery(q) {
   loadSavedQuery(q)
@@ -338,40 +454,30 @@ function handleExport(format) {
   font-size: 11px;
   color: var(--text-muted);
 }
-.app-header__crs-switch {
-  display: flex;
-  gap: 4px;
-  background: var(--bg-input);
-  padding: 4px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-subtle);
-}
 
-/* ---------- انتخابگر لایه ---------- */
-.layer-selector {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 280px;
-}
-.layer-selector__control {
+/* ---------- خلاصه لایه‌ها در هدر ---------- */
+.header-layer-summary {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-.layer-select {
-  flex: 1;
+  padding: 6px 12px;
   background: var(--bg-input);
-  border: 1px solid var(--border-strong);
-  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
   font-size: 12.5px;
-  padding: 7px 10px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
+  min-width: 160px;
 }
-.layer-select:focus {
-  outline: none;
-  border-color: var(--accent-depth);
+.layer-summary-label {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.layer-summary-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.layer-summary-count {
+  color: var(--accent-depth);
+  font-weight: 700;
 }
 .layer-error {
   font-size: 11px;
@@ -418,6 +524,14 @@ function handleExport(format) {
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
 }
+.app-header__crs-switch {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-input);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
 .map-switch-btn {
   background: transparent;
   border: none;
@@ -440,8 +554,7 @@ function handleExport(format) {
   font-weight: 700;
 }
 
-/* ---------- empty / loading ---------- */
-.empty-state,
+/* ---------- اسپینر ---------- */
 .loading-state {
   flex: 1;
   display: flex;
@@ -450,26 +563,7 @@ function handleExport(format) {
   justify-content: center;
   gap: 16px;
   color: var(--text-muted);
-  text-align: center;
-  padding: 32px;
 }
-.empty-state__icon {
-  font-size: 48px;
-  opacity: 0.4;
-}
-.empty-state h2 {
-  margin: 0;
-  font-size: 18px;
-  color: var(--text-secondary);
-}
-.empty-state p {
-  margin: 0;
-  font-size: 13px;
-  max-width: 360px;
-  line-height: 1.8;
-}
-
-/* ---------- اسپینر ---------- */
 .spinner,
 .spinner-inline {
   border: 2px solid var(--border-strong);
@@ -478,7 +572,7 @@ function handleExport(format) {
   animation: spin 0.7s linear infinite;
 }
 .spinner { width: 36px; height: 36px; }
-.spinner-inline { width: 16px; height: 16px; flex-shrink: 0; }
+.spinner-inline { width: 14px; height: 14px; flex-shrink: 0; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---------- بدنه اصلی ---------- */
@@ -512,6 +606,7 @@ function handleExport(format) {
   background: var(--border-subtle);
 }
 
+/* ---------- پنل نتایج ---------- */
 .results-panel {
   background: var(--bg-panel);
   border: 1px solid var(--border-subtle);
@@ -521,7 +616,7 @@ function handleExport(format) {
   overflow: hidden;
   position: relative;
   transition: width 0.3s ease;
-  width: 300px;
+  width: 320px;
 }
 .results-panel--collapsed {
   width: 32px;
@@ -557,6 +652,169 @@ function handleExport(format) {
   overflow: hidden;
 }
 
+/* ---------- تقسیم ۷۰/۳۰ ---------- */
+.results-split {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 0;
+}
+
+.results-main {
+  flex: 7;
+  min-height: 0;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+}
+
+.results-layers {
+  flex: 3;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ---------- لیست لایه‌های فعال ---------- */
+.layers-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+.layers-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.add-layer-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--accent-depth);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 5px 12px;
+  font-size: 11.5px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.add-layer-btn:hover:not(:disabled) { opacity: 0.85; }
+.add-layer-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.layers-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 8px 0;
+}
+
+.active-layers-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow-y: auto;
+}
+
+.active-layer-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s;
+}
+.active-layer-item:hover { border-color: var(--border-strong); }
+
+.active-layer-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.active-layer-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.active-layer-name {
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.active-layer-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.active-layer-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.remove-layer-btn {
+  width: 20px;
+  height: 20px;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.remove-layer-btn:hover {
+  background: var(--accent-danger, #e74c3c);
+  color: #fff;
+  border-color: transparent;
+}
+
+.no-layer-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+  text-align: center;
+}
+.add-layer-btn-empty {
+  background: var(--accent-depth);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 6px 16px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  font-style: normal;
+}
+
+/* ---------- نقشه ---------- */
 .map-panel {
   min-height: 0;
   border-radius: var(--radius-lg);
@@ -571,13 +829,227 @@ function handleExport(format) {
   flex-direction: column;
 }
 
+/* ---------- مدال ---------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+}
+
+.layer-modal {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  width: 440px;
+  max-height: 75vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+.modal-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+.modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 20px;
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s, color 0.15s;
+}
+.modal-close:hover {
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+
+.modal-search {
+  padding: 12px 20px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.modal-search-input {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.modal-search-input:focus {
+  outline: none;
+  border-color: var(--accent-depth);
+}
+
+.modal-layer-list-wrap {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+}
+
+.modal-layer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.modal-layer-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.12s, border-color 0.12s;
+  user-select: none;
+}
+.modal-layer-item:hover {
+  background: var(--bg-input);
+}
+.modal-layer-item--checked {
+  background: color-mix(in srgb, var(--accent-depth) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-depth) 40%, transparent);
+}
+
+.modal-checkbox {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-strong);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--bg-input);
+  transition: background 0.12s, border-color 0.12s;
+}
+.modal-layer-item--checked .modal-checkbox {
+  background: var(--accent-depth);
+  border-color: var(--accent-depth);
+}
+.checkbox-check {
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.modal-layer-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.modal-layer-name {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.modal-layer-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.modal-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px 18px;
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+.modal-selected-count {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.modal-actions {
+  display: flex;
+  gap: 8px;
+}
+.btn-cancel {
+  padding: 8px 18px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-cancel:hover { background: var(--bg-panel-raised); }
+
+.btn-apply {
+  padding: 8px 22px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--accent-depth);
+  color: #fff;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.btn-apply:hover { opacity: 0.88; }
+
+/* ---------- ریسپانسیو ---------- */
 @media (max-width: 1180px) {
   .app-main {
     grid-template-columns: 280px 1fr;
-    grid-template-rows: 1fr 300px;
+    grid-template-rows: 1fr 340px;
   }
   .results-panel {
     grid-column: 1 / -1;
+    width: auto !important;
+  }
+  .results-split {
+    flex-direction: row;
+  }
+  .results-main {
+    border-bottom: none;
+    border-left: 1px solid var(--border-subtle);
+    padding-bottom: 0;
+    margin-bottom: 0;
+    padding-left: 10px;
+    margin-left: 10px;
   }
 }
 </style>
