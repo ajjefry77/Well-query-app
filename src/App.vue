@@ -12,7 +12,6 @@
 
       <!-- انتخابگر لایه وکتور -->
       <div class="layer-selector">
-        <!-- <label class="layer-selector__label">لایه وکتور</label> -->
         <div class="layer-selector__control">
           <select
             class="layer-select"
@@ -272,7 +271,6 @@ function toggleResultsPanel() {
   }, 320);
 }
 
-// فیلدهای string برای گروه‌بندی همجواری
 const spatialGroupFields = computed(() =>
   queryableFields.value
     .filter((f) => f.type === "string" || f.type === "enum")
@@ -294,7 +292,6 @@ function onLoadQuery(q) {
   queryKind.value = "attribute";
 }
 
-// ستون‌های جدول — داینامیک از فیلدهای API
 const displayColumns = computed(() => {
   if (queryKind.value === "spatial") {
     if (spatialMode.value === "radius" || spatialMode.value === "point") {
@@ -361,53 +358,42 @@ function onHoverRow(row) {
 }
 
 // ─── تبدیل geometry به KML string ─────────────────────
+function coordsToString(coords) {
+  return coords.map((c) => `${c[0]},${c[1]},${c[2] ?? 0}`).join(" ");
+}
+
 function geometryToKML(geometry) {
   if (!geometry) return "";
   switch (geometry.type) {
     case "Point": {
-      const [lng, lat, alt = 0] = geometry.coordinates;
-      return `<Point><coordinates>${lng},${lat},${alt}</coordinates></Point>`;
+      const c = geometry.coordinates;
+      return `<Point><coordinates>${c[0]},${c[1]},${c[2] ?? 0}</coordinates></Point>`;
     }
     case "MultiPoint":
       return geometry.coordinates
-        .map(([lng, lat, alt = 0]) => `<Point><coordinates>${lng},${lat},${alt}</coordinates></Point>`)
+        .map((c) => `<Point><coordinates>${c[0]},${c[1]},${c[2] ?? 0}</coordinates></Point>`)
         .join("\n");
-    case "LineString": {
-      const coords = geometry.coordinates
-        .map(([lng, lat, alt = 0]) => `${lng},${lat},${alt}`)
-        .join(" ");
-      return `<LineString><tessellate>1</tessellate><coordinates>${coords}</coordinates></LineString>`;
-    }
+    case "LineString":
+      return `<LineString><tessellate>1</tessellate><coordinates>${coordsToString(geometry.coordinates)}</coordinates></LineString>`;
     case "MultiLineString":
       return geometry.coordinates
-        .map((ring) => {
-          const coords = ring.map(([lng, lat, alt = 0]) => `${lng},${lat},${alt}`).join(" ");
-          return `<LineString><tessellate>1</tessellate><coordinates>${coords}</coordinates></LineString>`;
-        })
+        .map((ring) => `<LineString><tessellate>1</tessellate><coordinates>${coordsToString(ring)}</coordinates></LineString>`)
         .join("\n");
     case "Polygon": {
       const [outer, ...holes] = geometry.coordinates;
-      const outerCoords = outer.map(([lng, lat, alt = 0]) => `${lng},${lat},${alt}`).join(" ");
       const holeKML = holes
-        .map((hole) => {
-          const c = hole.map(([lng, lat, alt = 0]) => `${lng},${lat},${alt}`).join(" ");
-          return `<innerBoundaryIs><LinearRing><coordinates>${c}</coordinates></LinearRing></innerBoundaryIs>`;
-        })
+        .map((hole) => `<innerBoundaryIs><LinearRing><coordinates>${coordsToString(hole)}</coordinates></LinearRing></innerBoundaryIs>`)
         .join("\n");
-      return `<Polygon><outerBoundaryIs><LinearRing><coordinates>${outerCoords}</coordinates></LinearRing></outerBoundaryIs>${holeKML}</Polygon>`;
+      return `<Polygon><outerBoundaryIs><LinearRing><coordinates>${coordsToString(outer)}</coordinates></LinearRing></outerBoundaryIs>${holeKML}</Polygon>`;
     }
     case "MultiPolygon":
       return geometry.coordinates
         .map((poly) => {
           const [outer, ...holes] = poly;
-          const outerCoords = outer.map(([lng, lat, alt = 0]) => `${lng},${lat},${alt}`).join(" ");
           const holeKML = holes
-            .map((hole) => {
-              const c = hole.map(([lng, lat, alt = 0]) => `${lng},${lat},${alt}`).join(" ");
-              return `<innerBoundaryIs><LinearRing><coordinates>${c}</coordinates></LinearRing></innerBoundaryIs>`;
-            })
+            .map((hole) => `<innerBoundaryIs><LinearRing><coordinates>${coordsToString(hole)}</coordinates></LinearRing></innerBoundaryIs>`)
             .join("\n");
-          return `<Polygon><outerBoundaryIs><LinearRing><coordinates>${outerCoords}</coordinates></LinearRing></outerBoundaryIs>${holeKML}</Polygon>`;
+          return `<Polygon><outerBoundaryIs><LinearRing><coordinates>${coordsToString(outer)}</coordinates></LinearRing></outerBoundaryIs>${holeKML}</Polygon>`;
         })
         .join("\n");
     default:
@@ -424,9 +410,7 @@ PRIMEM["Greenwich",0],
 UNIT["degree",0.0174532925199433]]`;
   }
 
-  // ---------- UTM ----------
   const zones = [...new Set(features.map((f) => f.properties.utm_zone))];
-
   if (zones.length !== 1) {
     throw new Error(
       `Cannot export SHP: multiple UTM zones detected (${zones.join(", ")})`,
@@ -436,7 +420,6 @@ UNIT["degree",0.0174532925199433]]`;
   const zone = zones[0];
   const zoneNumber = parseInt(zone, 10);
   const hemisphere = zone.endsWith("N") ? "N" : "S";
-
   const falseNorthing = hemisphere === "N" ? 0 : 10000000;
   const centralMeridian = zoneNumber * 6 - 183;
 
@@ -455,17 +438,15 @@ PARAMETER["false_northing",${falseNorthing}],
 UNIT["metre",1]]`;
 }
 
-function handleExport(format) {
+async function handleExport(format) {
   const rows = displayRows.value;
   if (!rows.length) return;
   const timestamp = new Date().toISOString().slice(0, 10);
 
-  // تبدیل rows به GeoJSON features
   const toFeatures = () =>
     rows
       .filter((r) => r._geometry || (r.lat && r.lng))
       .map((r) => {
-        // اگه geometry اصلی موجوده (Polygon, LineString, ...) ازش استفاده کن
         const geometry = r._geometry ?? {
           type: "Point",
           coordinates: [r.lng, r.lat],
@@ -476,7 +457,6 @@ function handleExport(format) {
           properties: props,
           geometry,
         };
-        // convertFeature فقط برای Point تبدیل مختصات می‌کنه؛ برای geometry‌های دیگه دست نزن
         if (geometry.type === "Point") return convertFeature(base);
         return base;
       });
@@ -522,27 +502,32 @@ function handleExport(format) {
 <kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`;
     const zip = new JSZip();
     zip.file("doc.kml", kml);
-    zip.generateAsync({ type: "blob" }).then((blob) => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `query-${timestamp}.kmz`;
-      a.click();
-      URL.revokeObjectURL(url);
-    });
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `query-${timestamp}.kmz`;
+    a.click();
+    URL.revokeObjectURL(url);
   } else if (format === "shp") {
-    // از @mapbox/shp-write برای پشتیبانی از همه geometry ها استفاده می‌کنیم
     const features = toFeatures();
     if (!features.length) return;
     const geojson = { type: "FeatureCollection", features };
-    shpwrite.zip(geojson).then((blob) => {
-      const url = URL.createObjectURL(new Blob([blob]));
+    try {
+      const result = await shpwrite.zip(geojson, {
+        outputType: "arraybuffer",
+      });
+      const blob = new Blob([result], { type: "application/zip" });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `query-${timestamp}.zip`;
       a.click();
       URL.revokeObjectURL(url);
-    });
+    } catch (err) {
+      console.error("SHP export error:", err);
+      alert("خطا در خروجی Shapefile: " + err.message);
+    }
   } else if (format === "dxf") {
     const d = new DxfWriter();
     d.setUnits("Meters");
@@ -555,22 +540,22 @@ function handleExport(format) {
           break;
         }
         case "MultiPoint":
-          geom.coordinates.forEach(([x, y]) => d.drawPoint(x, y));
+          geom.coordinates.forEach((c) => d.drawPoint(c[0], c[1]));
           break;
         case "LineString":
-          d.drawPolyline(geom.coordinates.map(([x, y]) => [x, y]));
+          d.drawPolyline(geom.coordinates.map((c) => [c[0], c[1]]));
           break;
         case "MultiLineString":
           geom.coordinates.forEach((line) =>
-            d.drawPolyline(line.map(([x, y]) => [x, y]))
+            d.drawPolyline(line.map((c) => [c[0], c[1]]))
           );
           break;
         case "Polygon":
-          d.drawPolyline(geom.coordinates[0].map(([x, y]) => [x, y]));
+          d.drawPolyline(geom.coordinates[0].map((c) => [c[0], c[1]]));
           break;
         case "MultiPolygon":
           geom.coordinates.forEach((poly) =>
-            d.drawPolyline(poly[0].map(([x, y]) => [x, y]))
+            d.drawPolyline(poly[0].map((c) => [c[0], c[1]]))
           );
           break;
       }
@@ -640,11 +625,6 @@ function handleExport(format) {
   flex-direction: column;
   gap: 4px;
   min-width: 280px;
-}
-.layer-selector__label {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-weight: 600;
 }
 .layer-selector__control {
   display: flex;
