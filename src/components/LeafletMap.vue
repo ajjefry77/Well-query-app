@@ -15,6 +15,7 @@ import "leaflet/dist/leaflet.css";
 const props = defineProps({
   wells: { type: Array, required: true },
   highlightedIds: { type: Array, default: () => [] },
+  hasFilter: { type: Boolean, default: false },
   radiusCenter: { type: Object, default: null },
   radiusKm: { type: Number, default: 0 },
   neighborPairs: { type: Array, default: () => [] },
@@ -44,26 +45,34 @@ function colorForId(id) {
   return COLORS[hash % COLORS.length];
 }
 
+const GRAY = "#8a9490"
+
 function defaultStyle(feature, highlighted) {
   const color = colorForId(feature?.properties?.id ?? "");
+  const dimmed = props.hasFilter && !highlighted
   return {
-    color: highlighted ? "#e9efe9" : color,
+    color: dimmed ? GRAY : (highlighted ? "#e9efe9" : color),
     weight: highlighted ? 2.5 : 1.5,
-    fillColor: color,
-    fillOpacity: highlighted ? 0.45 : 0.2,
-    opacity: highlighted ? 1 : 0.75,
+    fillColor: dimmed ? GRAY : color,
+    fillOpacity: dimmed ? 0.08 : (highlighted ? 0.55 : 0.25),
+    opacity: dimmed ? 0.35 : (highlighted ? 1 : 0.8),
   };
 }
 
-function makePointIcon(color, highlighted) {
+function makePointIcon(color, highlighted, dimmed) {
   const size = highlighted ? 16 : 10;
+  const bg = dimmed ? GRAY : color
+  const border = dimmed ? "rgba(120,140,135,0.4)" : (highlighted ? "#e9efe9" : "rgba(12,18,16,0.6)")
+  const shadow = highlighted ? "0 0 0 4px rgba(233,239,233,0.18)" : "none"
+  const opacity = dimmed ? "0.35" : "1"
   return L.divIcon({
     className: "geo-marker",
     html: `<div style="
       width:${size}px;height:${size}px;border-radius:50%;
-      background:${color};
-      border:2px solid ${highlighted ? "#e9efe9" : "rgba(12,18,16,0.6)"};
-      box-shadow:${highlighted ? "0 0 0 4px rgba(233,239,233,0.18)" : "none"};
+      background:${bg};
+      border:2px solid ${border};
+      box-shadow:${shadow};
+      opacity:${opacity};
     "></div>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
@@ -102,8 +111,9 @@ function renderFeatures() {
       },
       pointToLayer: (feature, latlng) => {
         const highlighted = highlightSet.has(String(feature.properties.id));
+        const dimmed = props.hasFilter && !highlighted
         const color = colorForId(feature.properties.id);
-        return L.marker(latlng, { icon: makePointIcon(color, highlighted) });
+        return L.marker(latlng, { icon: makePointIcon(color, highlighted, dimmed) });
       },
       onEachFeature: (feature, layer) => {
         const well = props.wells.find(
@@ -142,13 +152,15 @@ function renderFeatures() {
     props.wells.forEach((w) => {
       if (!w.lat || !w.lng) return;
       const highlighted = highlightSet.has(String(w.id));
+      const dimmed = props.hasFilter && !highlighted
       const color = colorForId(w.id);
       const marker = L.circleMarker([w.lat, w.lng], {
-        radius: highlighted ? 8 : 5,
-        color: highlighted ? "#e9efe9" : color,
+        radius: highlighted ? 8 : (dimmed ? 4 : 5),
+        color: dimmed ? GRAY : (highlighted ? "#e9efe9" : color),
         weight: 1.5,
-        fillColor: color,
-        fillOpacity: highlighted ? 0.8 : 0.5,
+        fillColor: dimmed ? GRAY : color,
+        fillOpacity: dimmed ? 0.15 : (highlighted ? 0.8 : 0.5),
+        opacity: dimmed ? 0.35 : 1,
       });
       marker.on("click", () => emit("select-well", w));
       marker.addTo(geoLayer);
@@ -246,7 +258,50 @@ onBeforeUnmount(() => {
 });
 
 watch(() => props.wells, renderFeatures, { deep: false });
-watch(() => props.highlightedIds, renderFeatures);
+
+function updateHighlightStyles() {
+  if (!geoLayer) return
+  const highlightSet = new Set(props.highlightedIds.map(String))
+  const hasGeom = props.wells.some(w => w._geometry)
+
+  if (hasGeom) {
+    // GeoJSON layers — setStyle روی هر لایه
+    geoLayer.eachLayer(layer => {
+      const id = layer.feature?.properties?.id
+      if (!id) return
+      const hl = highlightSet.has(String(id))
+      if (layer.setStyle) {
+        layer.setStyle(defaultStyle(layer.feature, hl))
+      } else if (layer.setIcon) {
+        const dimmed = props.hasFilter && !hl
+        const color = colorForId(id)
+        layer.setIcon(makePointIcon(color, hl, dimmed))
+      }
+    })
+  } else {
+    // circleMarker — setStyle
+    geoLayer.eachLayer(layer => {
+      const id = [...featureRefs.entries()].find(([,l]) => l === layer)?.[0]
+      if (!id) return
+      const hl = highlightSet.has(id)
+      const dimmed = props.hasFilter && !hl
+      const well = props.wells.find(w => String(w.id) === id)
+      if (!well) return
+      const color = colorForId(well.id)
+      layer.setStyle({
+        radius: hl ? 8 : (dimmed ? 4 : 5),
+        color: dimmed ? GRAY : (hl ? '#e9efe9' : color),
+        weight: 1.5,
+        fillColor: dimmed ? GRAY : color,
+        fillOpacity: dimmed ? 0.15 : (hl ? 0.8 : 0.5),
+        opacity: dimmed ? 0.35 : 1,
+      })
+    })
+  }
+}
+
+watch(() => props.highlightedIds, updateHighlightStyles);
+watch(() => props.hasFilter, updateHighlightStyles);
 watch(() => [props.radiusCenter, props.radiusKm], renderRadius, { deep: true });
 watch(() => props.neighborPairs, renderLines);
 

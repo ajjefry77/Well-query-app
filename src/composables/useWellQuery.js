@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, reactive, triggerRef, watch } from 'vue'
 import { findWithinRadius, findNeighborPairs } from './useGeoUtils.js'
 import {
   fetchVectorLayers,
@@ -95,54 +95,44 @@ export function useWellQuery() {
 
   // ── اضافه کردن یک لایه ──
   async function addLayer(layer) {
-    // اگر قبلاً بارگذاری شده، فقط به activeLayers اضافه کن
     if (activeLayers.value.find(l => l.uuid === layer.uuid)) return
 
     apiError.value = null
 
-    // بارگذاری فیلدها (اگر قبلاً نگرفتیم)
-    if (!layerFieldsMap.value[layer.uuid]) {
-      loadingFields.value = true
-      try {
-        const fields = await fetchLayerFields(layer.uuid)
-        layerFieldsMap.value[layer.uuid] = buildQueryableFields(fields)
-      } catch (e) {
-        apiError.value = e.message
-        loadingFields.value = false
-        return
-      } finally {
-        loadingFields.value = false
-      }
-    }
+    const needFields   = !layerFieldsMap.value[layer.uuid]
+    const needFeatures = !layerFeaturesMap.value[layer.uuid]
 
-    // بارگذاری featureها (اگر قبلاً نگرفتیم)
-    if (!layerFeaturesMap.value[layer.uuid]) {
+    if (needFields || needFeatures) {
+      loadingFields.value   = true
       loadingFeatures.value = true
       try {
-        const data = await fetchLayerFeatures(layer.uuid, { pageSize: 200, limit: 200 })
-        const raw = Array.isArray(data) ? data : (data.features ?? data.results ?? data.data ?? [])
-        layerFeaturesMap.value[layer.uuid] = featuresToRows(raw).map(r => ({
-          ...r,
-          _layerUuid: layer.uuid,
-          _layerName: layer.display_name || layer.name,
-        }))
+        await Promise.all([
+          needFields ? (async () => {
+            const fields = await fetchLayerFields(layer.uuid)
+            layerFieldsMap.value[layer.uuid] = buildQueryableFields(fields)
+          })() : Promise.resolve(),
+          needFeatures ? (async () => {
+            const data = await fetchLayerFeatures(layer.uuid, { pageSize: 200, limit: 200 })
+            const raw = Array.isArray(data) ? data : (data.features ?? data.results ?? data.data ?? [])
+            layerFeaturesMap.value[layer.uuid] = featuresToRows(raw).map(r => ({
+              ...r,
+              _layerUuid: layer.uuid,
+              _layerName: layer.display_name || layer.name,
+            }))
+          })() : Promise.resolve(),
+        ])
       } catch (e) {
         apiError.value = e.message
-        loadingFeatures.value = false
         return
       } finally {
+        loadingFields.value   = false
         loadingFeatures.value = false
       }
     }
 
     activeLayers.value = [...activeLayers.value, layer]
     rebuildAggregated()
-
-    // اگر هنوز شرطی نداریم، یه شرط اولیه بساز
-    if (!conditions.value.length && queryableFields.value.length) {
-      const first = queryableFields.value[0]
-      conditions.value = [{ field: first.key, operator: first.type === 'number' ? '>' : '=', value: '', logic: 'AND', not: false }]
-    }
+    ensureLayerConditions(layer.uuid)
   }
 
   // ── حذف یک لایه ──
@@ -153,27 +143,29 @@ export function useWellQuery() {
 
   // ── تنظیم دسته‌ای لایه‌ها (از مدال) ──
   async function setActiveLayers(layers) {
-    // لایه‌های جدید را بارگذاری کن
-    for (const layer of layers) {
-      if (!activeLayers.value.find(l => l.uuid === layer.uuid)) {
-        // اضافه نکن به activeLayers هنوز؛ بعد از لود همه اضافه می‌کنیم
-        apiError.value = null
+    if (!layers.length) {
+      activeLayers.value = []
+      rebuildAggregated()
+      return
+    }
 
-        if (!layerFieldsMap.value[layer.uuid]) {
-          loadingFields.value = true
-          try {
+    apiError.value = null
+    const newLayers = layers.filter(l => !activeLayers.value.find(al => al.uuid === l.uuid))
+    const needsLoad = newLayers.filter(l =>
+      !layerFieldsMap.value[l.uuid] || !layerFeaturesMap.value[l.uuid]
+    )
+
+    if (needsLoad.length) {
+      loadingFields.value = true
+      loadingFeatures.value = true
+      try {
+        // همه لایه‌ها را موازی لود کن
+        await Promise.all(needsLoad.map(async (layer) => {
+          if (!layerFieldsMap.value[layer.uuid]) {
             const fields = await fetchLayerFields(layer.uuid)
             layerFieldsMap.value[layer.uuid] = buildQueryableFields(fields)
-          } catch (e) {
-            apiError.value = e.message
-          } finally {
-            loadingFields.value = false
           }
-        }
-
-        if (!layerFeaturesMap.value[layer.uuid]) {
-          loadingFeatures.value = true
-          try {
+          if (!layerFeaturesMap.value[layer.uuid]) {
             const data = await fetchLayerFeatures(layer.uuid, { pageSize: 200, limit: 200 })
             const raw = Array.isArray(data) ? data : (data.features ?? data.results ?? data.data ?? [])
             layerFeaturesMap.value[layer.uuid] = featuresToRows(raw).map(r => ({
@@ -181,22 +173,19 @@ export function useWellQuery() {
               _layerUuid: layer.uuid,
               _layerName: layer.display_name || layer.name,
             }))
-          } catch (e) {
-            apiError.value = e.message
-          } finally {
-            loadingFeatures.value = false
           }
-        }
+        }))
+      } catch (e) {
+        apiError.value = e.message
+      } finally {
+        loadingFields.value = false
+        loadingFeatures.value = false
       }
     }
 
     activeLayers.value = layers
     rebuildAggregated()
-
-    if (!conditions.value.length && queryableFields.value.length) {
-      const first = queryableFields.value[0]
-      conditions.value = [{ field: first.key, operator: first.type === 'number' ? '>' : '=', value: '', logic: 'AND', not: false }]
-    }
+    for (const l of layers) ensureLayerConditions(l.uuid)
   }
 
   // ── selectLayer (برای سازگاری با کدهای قدیمی) ──
@@ -204,55 +193,116 @@ export function useWellQuery() {
     await setActiveLayers([layer])
   }
 
-  // ── کوئری توصیفی ──
-  const conditions = ref([])
+  // ── کوئری توصیفی (per-layer) ──
+  const layerConditions = reactive({})  // uuid -> conditions[]
 
-  // شرط‌های هر لایه به صورت جداگانه
-  const layerConditions = ref({})  // uuid -> conditions[]
-
-  function getLayerConditions(uuid) {
-    if (!layerConditions.value[uuid]) {
+  function ensureLayerConditions(uuid) {
+    if (!layerConditions[uuid]) {
       const fields = layerFieldsMap.value[uuid] ?? []
       if (fields.length) {
         const first = fields[0]
-        layerConditions.value[uuid] = [{ field: first.key, operator: first.type === 'number' ? '>' : '=', value: '', logic: 'AND', not: false }]
+        layerConditions[uuid] = [{ field: first.key, operator: first.type === 'number' ? '>' : '=', value: '', logic: 'AND', not: false }]
       } else {
-        layerConditions.value[uuid] = []
+        layerConditions[uuid] = []
       }
     }
-    return layerConditions.value[uuid]
   }
 
-  function setLayerConditions(uuid, conds) {
-    layerConditions.value[uuid] = conds
+  function getLayerConditions(uuid) {
+    ensureLayerConditions(uuid)
+    return layerConditions[uuid]
   }
 
+  function addLayerCondition(uuid) {
+    ensureLayerConditions(uuid)
+    const fields = layerFieldsMap.value[uuid] ?? []
+    const first = fields[0]
+    if (!first) return
+    layerConditions[uuid].push({ field: first.key, operator: first.type === 'number' ? '>' : '=', value: '', logic: 'AND', not: false })
+  }
+
+  function removeLayerCondition(uuid, index) {
+    if (!layerConditions[uuid]) return
+    layerConditions[uuid].splice(index, 1)
+  }
+
+  function getLayerResultCount(uuid) {
+    const rows = layerFeaturesMap.value[uuid] ?? []
+    const conds = layerConditions[uuid] ?? []
+    const active = conds.filter(c => c.value !== '' && c.value !== null && c.value !== undefined)
+    if (!active.length) return rows.length
+    return rows.filter(row => evaluateGroup(row, active)).length
+  }
+
+  // نتایج فیلتر‌شده هر لایه به‌صورت مستقل
+  // اگه لایه کوئری فعال داره → فقط نتایج کوئری
+  // اگه نداره → همه عارضه‌هاش (بدون فیلتر)
   const attributeResults = computed(() => {
-    // اگر هیچ لایه‌ای فعال نیست، همه features را برگردان
     if (!activeLayers.value.length) return allFeatures.value
-
     const results = []
     for (const layer of activeLayers.value) {
       const rows = layerFeaturesMap.value[layer.uuid] ?? []
-      const conds = layerConditions.value[layer.uuid] ?? []
+      const conds = layerConditions[layer.uuid] ?? []
       const active = conds.filter(c => c.value !== '' && c.value !== null && c.value !== undefined)
-
-      if (!active.length) {
-        results.push(...rows)
-      } else {
-        results.push(...rows.filter(row => evaluateGroup(row, active)))
-      }
+      // هر لایه مستقل فیلتر میشه — اگه کوئری نداره همه عارضه‌هاش بیان
+      results.push(...(active.length ? rows.filter(row => evaluateGroup(row, active)) : rows))
     }
     return results
   })
 
+  // آیا حداقل یه لایه کوئری توصیفی فعال داره؟
+  const hasAttributeFilter = computed(() =>
+    activeLayers.value.some(layer => {
+      const conds = layerConditions[layer.uuid] ?? []
+      return conds.some(c => c.value !== '' && c.value !== null && c.value !== undefined)
+    })
+  )
+
+  // آیا کوئری مکانی فعال داره؟
+  const hasSpatialFilter = computed(() =>
+    radiusCenter.value !== null
+  )
+
+  // نتایج ترکیبی: هر لایه مستقلاً فیلتر میشه، بعد مکانی روی کل اعمال میشه
+  const combinedResults = computed(() => {
+    const makeKey = r => `${r._layerUuid}::${r.id}`
+
+    // بدون هیچ فیلتری: همه عارضه‌ها
+    if (!hasAttributeFilter.value && !hasSpatialFilter.value) {
+      return allFeatures.value
+    }
+    // فقط توصیفی: نتایج per-layer (هر لایه مستقل)
+    if (!hasSpatialFilter.value) {
+      return attributeResults.value
+    }
+    // فقط مکانی
+    if (!hasAttributeFilter.value) {
+      return radiusResults.value
+    }
+    // هر دو فعال: intersection مکانی روی نتایج توصیفی per-layer
+    const spatialKeys = new Set(radiusResults.value.map(makeKey))
+    return attributeResults.value.filter(r => spatialKeys.has(makeKey(r)))
+  })
+
+  // آیا اصلاً فیلتری فعاله؟
+  const hasAnyFilter = computed(() =>
+    hasAttributeFilter.value || hasSpatialFilter.value
+  )
+
+  // alias برای سازگاری (اولین لایه فعال)
+  const conditions = computed(() => {
+    const first = activeLayers.value[0]
+    return first ? (layerConditions[first.uuid] ?? []) : []
+  })
+
   function addCondition() {
-    const first = queryableFields.value[0]
-    conditions.value.push({ field: first?.key ?? '', operator: '=', value: '', logic: 'AND', not: false })
+    const first = activeLayers.value[0]
+    if (first) addLayerCondition(first.uuid)
   }
 
   function removeCondition(index) {
-    conditions.value.splice(index, 1)
+    const first = activeLayers.value[0]
+    if (first) removeLayerCondition(first.uuid, index)
   }
 
   // ── کوئری مکانی ──
@@ -311,10 +361,11 @@ export function useWellQuery() {
     loadingLayers, loadingFields, loadingFeatures, apiError,
     loadVectorLayers,
     addLayer, removeLayer, setActiveLayers,
-    selectLayer,                             // alias برای سازگاری
+    selectLayer,
     allWells: allFeatures,
-    conditions, attributeResults, addCondition, removeCondition,
-    layerConditions, getLayerConditions, setLayerConditions,
+    conditions, attributeResults, combinedResults, hasAnyFilter, hasAttributeFilter, hasSpatialFilter, addCondition, removeCondition,
+    layerConditions,
+    getLayerConditions, addLayerCondition, removeLayerCondition, getLayerResultCount,
     radiusCenter, radiusKm, radiusResults,
     neighborField, neighborValue, neighborMaxKm, neighborResults,
     savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,

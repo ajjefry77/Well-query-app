@@ -111,9 +111,22 @@
     </div>
 
     <div class="status-bar">
-      <span>Lat : {{ mouse.lat }}</span>
-      <span>Lon : {{ mouse.lng }}</span>
-      <span>{{ mouse.utm }}</span>
+      <div class="status-group">
+        <div class="status-chip">
+          <span class="label">Lat</span>
+          <span class="value">{{ mouse.lat }}</span>
+
+          <span class="divider"></span>
+
+          <span class="label">Lon</span>
+          <span class="value">{{ mouse.lng }}</span>
+        </div>
+
+        <div class="status-chip">
+          <span class="label">UTM</span>
+          <span class="value">{{ mouse.utm }}</span>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -133,6 +146,7 @@ mapboxgl.accessToken =
 const props = defineProps({
   wells: { type: Array, required: true },
   highlightedIds: { type: Array, default: () => [] },
+  hasFilter: { type: Boolean, default: false },
   radiusCenter: { type: Object, default: null },
   radiusKm: { type: Number, default: 0 },
   neighborPairs: { type: Array, default: () => [] },
@@ -558,15 +572,7 @@ function clearAll() {
 }
 
 // ─── رندر عوارض ───────────────────────────────────────────
-const COLORS_WELL = [
-  "#c97a4a",
-  "#4a9b8e",
-  "#d4a546",
-  "#8b7bb8",
-  "#c0563f",
-  "#5b9bd5",
-  "#7ec88a",
-];
+const COLORS_WELL = ["#7ec88a"];
 function colorForId(id) {
   let hash = 0;
   for (const ch of String(id)) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffff;
@@ -625,10 +631,10 @@ function renderMarkers() {
   if (hasGeometry) {
     const geojson = buildGeoJSON(props.wells);
     geojson.features.forEach((f) => {
+      const hl = highlightSet.has(String(f.properties.id));
       f.properties._color = colorForId(f.properties.id);
-      f.properties._highlighted = highlightSet.has(String(f.properties.id))
-        ? 1
-        : 0;
+      f.properties._highlighted = hl ? 1 : 0;
+      f.properties._dimmed = props.hasFilter && !hl ? 1 : 0;
     });
     map.addSource("wells-src", { type: "geojson", data: geojson });
     map.addLayer({
@@ -641,8 +647,20 @@ function renderMarkers() {
         ["literal", ["Polygon", "MultiPolygon"]],
       ],
       paint: {
-        "fill-color": ["get", "_color"],
-        "fill-opacity": ["case", ["==", ["get", "_highlighted"], 1], 0.6, 0.3],
+        "fill-color": [
+          "case",
+          ["==", ["get", "_highlighted"], 1],
+          "#4a9b8e", // فیلتر شده → رنگ
+          "#8a9490", // عادی → خاکستری
+        ],
+        "fill-opacity": [
+          "case",
+          ["==", ["get", "_highlighted"], 1],
+          0.55,
+          ["==", ["get", "_dimmed"], 1],
+          0.06,
+          0.2, // عادی بدون فیلتر
+        ],
       },
     });
     map.addLayer({
@@ -655,8 +673,21 @@ function renderMarkers() {
         ["literal", ["Polygon", "MultiPolygon"]],
       ],
       paint: {
-        "line-color": ["get", "_color"],
-        "line-width": ["case", ["==", ["get", "_highlighted"], 1], 3, 2],
+        "line-color": [
+          "case",
+          ["==", ["get", "_highlighted"], 1],
+          "#4a9b8e",
+          "#8a9490",
+        ],
+        "line-width": ["case", ["==", ["get", "_highlighted"], 1], 3, 1.5],
+        "line-opacity": [
+          "case",
+          ["==", ["get", "_highlighted"], 1],
+          1,
+          ["==", ["get", "_dimmed"], 1],
+          0.15,
+          0.5,
+        ],
       },
     });
     map.addLayer({
@@ -669,9 +700,36 @@ function renderMarkers() {
         ["literal", ["LineString", "MultiLineString"]],
       ],
       paint: {
-        "line-color": ["get", "_color"],
-        "line-width": ["case", ["==", ["get", "_highlighted"], 1], 4, 2.5],
-        "line-opacity": ["case", ["==", ["get", "_highlighted"], 1], 1, 0.8],
+        "circle-radius": [
+          "case",
+          ["==", ["get", "_highlighted"], 1],
+          9,
+          ["==", ["get", "_dimmed"], 1],
+          4,
+          6,
+        ],
+        "circle-color": [
+          "case",
+          ["==", ["get", "_highlighted"], 1],
+          "#4a9b8e",
+          "#8a9490",
+        ],
+        "circle-opacity": ["case", ["==", ["get", "_dimmed"], 1], 0.25, 1],
+        "circle-stroke-width": 2,
+        "circle-stroke-color": [
+          "case",
+          ["==", ["get", "_highlighted"], 1],
+          "#fff",
+          ["==", ["get", "_dimmed"], 1],
+          "#666",
+          "#fff",
+        ],
+        "circle-stroke-opacity": [
+          "case",
+          ["==", ["get", "_dimmed"], 1],
+          0.25,
+          0.6, // عادی: stroke کمرنگ
+        ],
       },
     });
     map.addLayer({
@@ -680,14 +738,35 @@ function renderMarkers() {
       source: "wells-src",
       filter: ["in", ["geometry-type"], ["literal", ["Point", "MultiPoint"]]],
       paint: {
-        "circle-radius": ["case", ["==", ["get", "_highlighted"], 1], 9, 6],
-        "circle-color": ["get", "_color"],
+        "circle-radius": [
+          "case",
+          ["==", ["get", "_highlighted"], 1],
+          9,
+          ["==", ["get", "_dimmed"], 1],
+          4,
+          6,
+        ],
+        "circle-color": [
+          "case",
+          ["==", ["get", "_dimmed"], 1],
+          "#8a9490",
+          ["get", "_color"],
+        ],
+        "circle-opacity": ["case", ["==", ["get", "_dimmed"], 1], 0.3, 1],
         "circle-stroke-width": 2,
         "circle-stroke-color": [
           "case",
           ["==", ["get", "_highlighted"], 1],
           "#1a1a1a",
+          ["==", ["get", "_dimmed"], 1],
+          "#666",
           "#ffffff",
+        ],
+        "circle-stroke-opacity": [
+          "case",
+          ["==", ["get", "_dimmed"], 1],
+          0.3,
+          1,
         ],
       },
     });
@@ -735,12 +814,18 @@ function renderMarkers() {
     props.wells.forEach((w) => {
       if (!w.lat || !w.lng) return;
       const isH = highlightSet.has(String(w.id));
-      const color = colorForId(w.id);
-      const size = isH ? 18 : 12;
+      const isDimmed = props.hasFilter && !isH;
+      const color = isH ? "#4a9b8e" : "#8a9490";
+      const opacity = isDimmed ? "0.25" : isH ? "1" : "0.7";
+      const border = isH ? "3px solid #fff" : "2px solid rgba(255,255,255,0.4)";
+      const size = isH ? 18 : isDimmed ? 8 : 12;
       const el = document.createElement("div");
-      el.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;background:${color};
-        border:${isH ? "3px solid #1a1a1a" : "2px solid #fff"};box-shadow:0 2px 6px rgba(0,0,0,0.5);cursor:pointer;
-        ${isH ? "outline:3px solid rgba(74,155,142,0.4);outline-offset:2px;" : ""}`;
+      el.style.cssText = `
+      width:${size}px;height:${size}px;border-radius:50%;
+      background:${color};border:${border};
+      box-shadow:0 2px 6px rgba(0,0,0,0.4);cursor:pointer;
+      opacity:${opacity};
+      ${isH ? "outline:3px solid rgba(74,155,142,0.35);outline-offset:3px;" : ""}`;
       const entries = Object.entries(w)
         .filter(([k]) => !k.startsWith("_") && k !== "lat" && k !== "lng")
         .slice(0, 8)
@@ -905,7 +990,32 @@ onBeforeUnmount(() => {
 });
 
 watch(() => props.wells, renderMarkers);
-watch(() => props.highlightedIds, renderMarkers);
+
+// وقتی فقط highlight یا filter عوض شد، فقط data رو آپدیت کن (سریع‌تر از renderMarkers کامل)
+function updateHighlightData() {
+  if (!map || !map.isStyleLoaded()) return;
+  const src = map.getSource("wells-src");
+  if (!src) {
+    // اگه source نیست (مثلاً marker-based)، کامل render کن
+    renderMarkers();
+    return;
+  }
+  const highlightSet = new Set(props.highlightedIds.map(String));
+  const data = src._data;
+  if (!data || !data.features) {
+    renderMarkers();
+    return;
+  }
+  data.features.forEach((f) => {
+    const hl = highlightSet.has(String(f.properties.id));
+    f.properties._highlighted = hl ? 1 : 0;
+    f.properties._dimmed = props.hasFilter && !hl ? 1 : 0;
+  });
+  src.setData(data);
+}
+
+watch(() => props.highlightedIds, updateHighlightData);
+watch(() => props.hasFilter, updateHighlightData);
 watch(() => [props.radiusCenter, props.radiusKm], renderRadiusAndLines, {
   deep: true,
 });
@@ -1182,16 +1292,61 @@ defineExpose({
   bottom: 0;
   left: 0;
   right: 0;
-  height: 34px;
+  height: 42px;
+
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 0 12px;
-  background: rgba(255, 255, 255, 0.92);
-  border-top: 1px solid #ddd;
+  justify-content: flex-end;
+
+  padding: 0 14px;
+
+  background: #70747aab;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+
+  z-index: 999;
+}
+
+.status-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  padding: 6px 12px;
+
+  background: rgba(255, 255, 255, 0.788);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+
+  border-radius: 999px;
+
+  backdrop-filter: blur(6px);
+
+  color: #000000;
+
   font-size: 12px;
   font-family: monospace;
-  z-index: 999;
+}
+
+.status-chip .label {
+  color: #000000;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.status-chip .value {
+  color: #000000;
+}
+
+.divider {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.25);
+  margin: 0 2px;
 }
 
 :deep(.measure-label) {

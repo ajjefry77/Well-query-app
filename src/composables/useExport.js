@@ -96,11 +96,21 @@ export async function exportData(format, rows, convertFeature) {
   switch (format) {
     case 'geojson': {
       const geo = toGeoJSON(rows.filter(r => r._geometry || (r.lat && r.lng)))
+      // اضافه کردن layerName به properties
+      geo.features = geo.features.map(f => ({
+        ...f,
+        properties: { ...f.properties }
+      }))
       downloadFile(JSON.stringify(geo, null, 2), `query-${timestamp}.geojson`, 'application/geo+json')
       break
     }
     case 'csv': {
-      downloadFile('\uFEFF' + toCSV(rows), `query-${timestamp}.csv`, 'text/csv;charset=utf-8')
+      // CSV با ستون layerName برای تمیز نگه‌داشتن داده‌های چند لایه
+      const csvRows = rows.map(r => {
+        const { _geometry, _layerUuid, ...rest } = r
+        return rest
+      })
+      downloadFile('\uFEFF' + toCSV(csvRows), `query-${timestamp}.csv`, 'text/csv;charset=utf-8')
       break
     }
     case 'kml': {
