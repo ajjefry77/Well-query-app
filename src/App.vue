@@ -39,11 +39,15 @@
         <button class="map-switch-btn" :class="{ 'map-switch-btn--active': crs === 'wgs84' }" @click="crs = 'wgs84'">WGS84</button>
         <button class="map-switch-btn" :class="{ 'map-switch-btn--active': crs === 'utm' }" @click="crs = 'utm'">UTM</button>
       </div>
+
+      <button class="clear-data-btn" @click="handleClearData" title="پاک کردن همه داده‌های ذخیره‌شده">
+        🗑 پاک کردن داده‌ها
+      </button>
     </header>
 
     <!-- صفحه چینه‌شناسی -->
     <div v-if="queryKind === 'stratigraphy'" class="strat-page">
-      <StratigraphyChart />
+      <StratigraphyChart @back="queryKind = 'attribute'" />
     </div>
 
     <!-- صفحه اصلی -->
@@ -91,7 +95,7 @@
                   :total-count="layerFeatureCount(layer.uuid)"
                   @add="addLayerCondition(layer.uuid)"
                   @remove="removeLayerCondition(layer.uuid, $event)"
-                  @save="saveCurrentQuery"
+                  @save="saveCurrentQuery($event, layer.uuid)"
                 />
               </template>
             </template>
@@ -335,6 +339,7 @@ const {
   getLayerConditions, addLayerCondition, removeLayerCondition, getLayerResultCount,
   radiusCenter, radiusKm, radiusResults, neighborResults,
   savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
+  clearAllLocalData,
 } = useWellQuery()
 
 function layerFeatureCount(uuid) {
@@ -498,9 +503,13 @@ function onRemoveLayer(uuid) {
     activeQueryLayer.value = remaining[0]?.uuid ?? null
   }
 }
-function onLoadQuery(q) {
-  loadSavedQuery(q)
+async function onLoadQuery(q) {
+  const uuid = await loadSavedQuery(q)
   queryKind.value = 'attribute'
+  if (uuid) {
+    activeQueryLayer.value = uuid
+    queryPanelOpen.value = true
+  }
 }
 function onPickPoint() {
   isPickingPoint.value = true
@@ -532,6 +541,13 @@ function onHoverRow(row) {
 }
 function handleExport(format) {
   exportData(format, displayRows.value, convertFeature)
+}
+
+function handleClearData() {
+  if (!confirm('همه داده‌های ذخیره‌شده (لایه‌های فعال، شرط‌ها، کوئری‌های ذخیره‌شده و تنظیمات) پاک شوند؟')) return
+  clearAllLocalData()
+  activeQueryLayer.value = null
+  showResultsModal.value = false
 }
 </script>
 
@@ -643,6 +659,25 @@ function handleExport(format) {
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
 }
+
+.clear-data-btn {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-family: inherit;
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.clear-data-btn:hover {
+  color: var(--accent-danger);
+  border-color: var(--accent-danger);
+  background: color-mix(in srgb, var(--accent-danger) 8%, transparent);
+}
+
 .map-switch-btn {
   background: transparent;
   border: none;
@@ -764,7 +799,7 @@ function handleExport(format) {
 /* ---------- دکمه FAB نتایج ---------- */
 .results-fab {
   position: absolute;
-  top: 15px;
+  top: 20px;
   left: 10%;
   transform: translateX(-50%);
   z-index: 500;
@@ -779,14 +814,14 @@ function handleExport(format) {
   font-weight: 600;
   padding: 10px 10px;
   border-radius: 10px;
-  box-shadow: 0 2px 20px rgba(0,0,0,0.3);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
   cursor: pointer;
   transition: background 0.15s, box-shadow 0.15s, border-color 0.15s;
   white-space: nowrap;
 }
 .results-fab:hover {
   background: var(--bg-panel-raised);
-  box-shadow: 0 4px 25px rgba(0,0,0,0.4);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
 }
 .results-fab--active { border-color: var(--accent-depth); }
 .results-fab__icon { font-size: 16px; line-height: 1; }

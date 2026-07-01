@@ -1,8 +1,25 @@
 <template>
   <div class="strat-wrap" dir="rtl">
 
+    <!-- مدال انتخاب لایه/فیلدها -->
+    <StratLayerConfigModal
+      v-if="showConfigModal"
+      :allow-close="hasConfig"
+      :initial="config"
+      @confirm="onConfigConfirm"
+      @cancel="showConfigModal = false"
+      @back="$emit('back')"
+    />
+
+    <!-- وقتی هنوز کانفیگ تنظیم نشده -->
+    <div v-if="!hasConfig && !showConfigModal" class="strat-state">
+      <span class="strat-state__icon">🪨</span>
+      <p>برای نمایش نمودار، لایه و فیلدهای موردنظر را تنظیم کنید</p>
+      <button class="picker-btn" @click="showConfigModal = true">تنظیم لایه</button>
+    </div>
+
     <!-- loading -->
-    <div v-if="loading" class="strat-state">
+    <div v-else-if="loading" class="strat-state">
       <div class="strat-spinner"></div>
       <p>در حال بارگذاری داده‌های چینه‌شناسی…</p>
     </div>
@@ -11,12 +28,14 @@
     <div v-else-if="error" class="strat-state strat-state--error">
       <span class="strat-state__icon">⚠️</span>
       <p>{{ error }}</p>
+      <button class="picker-btn" @click="showConfigModal = true">تغییر تنظیمات لایه</button>
     </div>
 
     <!-- empty -->
     <div v-else-if="!allWells.length" class="strat-state">
       <span class="strat-state__icon">🪨</span>
       <p>داده‌ای یافت نشد</p>
+      <button class="picker-btn" @click="showConfigModal = true">تغییر تنظیمات لایه</button>
     </div>
 
     <!-- محتوا -->
@@ -31,6 +50,8 @@
             <p>مقایسه سازندهای زمین‌شناسی در چاه‌های انتخاب‌شده</p>
           </div>
         </div>
+
+        <button class="picker-btn strat-header__cfg-btn" @click="showConfigModal = true">⚙ تنظیم لایه</button>
 
         <!-- فیلتر سازند -->
         <div class="strat-filters">
@@ -313,12 +334,27 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { fetchStratigraphyData } from '../composables/useGeoboxApi.js'
+import { fetchStratigraphyDataFromLayer } from '../composables/useGeoboxApi.js'
+import StratLayerConfigModal from './StratLayerConfigModal.vue'
 
 // ────────────────────────────────────────────
 // Props
 // ────────────────────────────────────────────
 const props = defineProps({ wells: { type: Array, default: null } })
+defineEmits(['back'])
+
+// ────────────────────────────────────────────
+// تنظیمات لایه/فیلدها (انتخاب‌شده توسط کاربر در مدال)
+// ────────────────────────────────────────────
+const showConfigModal = ref(false)
+const config = ref(null) // { layerUuid, topField, downField, nameField }
+const hasConfig = computed(() => !!config.value)
+
+function onConfigConfirm(cfg) {
+  config.value = cfg
+  showConfigModal.value = false
+  loadData()
+}
 
 // ────────────────────────────────────────────
 // Fetch
@@ -351,16 +387,22 @@ function normalizeWells(raw) {
   })
 }
 
-onMounted(async () => {
+async function loadData() {
   if (props.wells) {
     apiWells.value = normalizeWells(props.wells)
     initSelection()
     return
   }
+  if (!config.value) return
+
   loading.value = true
   error.value   = null
   try {
-    const raw = await fetchStratigraphyData()
+    const raw = await fetchStratigraphyDataFromLayer(config.value.layerUuid, {
+      topField:  config.value.topField,
+      downField: config.value.downField,
+      nameField: config.value.nameField,
+    })
     apiWells.value = normalizeWells(raw)
     initSelection()
   } catch (e) {
@@ -368,6 +410,15 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+}
+
+onMounted(() => {
+  if (props.wells) {
+    loadData()
+    return
+  }
+  // وقتی wells از بیرون داده نشده، اول مدال تنظیم لایه باز میشه
+  showConfigModal.value = true
 })
 
 const allWells = computed(() => apiWells.value)

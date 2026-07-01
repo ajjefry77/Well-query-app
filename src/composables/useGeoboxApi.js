@@ -133,35 +133,91 @@ export async function fetchLayerFeatures(layerUuid, opts = {}) {
 }
 
 export async function fetchStratigraphyData() {
-  const data = await apiFetch(`/vectorLayers/${STRAT_LAYER_UUID}/features/`, {
-    f: 'json',
-    skip: '0',
-    limit: '2000',
-    page: '1',
-    page_size: '2000',
-    skip_geometry: 'false',
-    out_srid: '4326',
-    select_fields: '[ALL]',
-  })
+  return fetchStratigraphyDataFromLayer(STRAT_LAYER_UUID)
+}
 
-  const features = Array.isArray(data)
-    ? data
-    : (data.features ?? data.results ?? data.data ?? [])
+// تلاش برای پیدا کردن یک فیلد مناسب، از بین چند کاندید
+function pickField(props, candidates) {
+  for (const c of candidates) {
+    if (c && props[c] !== undefined && props[c] !== null && props[c] !== '') return props[c]
+  }
+  return undefined
+}
 
-  // گروه‌بندی بر اساس Name_y (اسم چاه)
+const WELL_NAME_CANDIDATES = ['Name_y', 'WellName', 'Well_Name', 'well_name', 'Name']
+const WELL_CODE_CANDIDATES = ['WellName', 'WellCode', 'well_code', 'Code']
+const X_CANDIDATES = ['X', 'x', 'Long', 'Longitude']
+const Y_CANDIDATES = ['Y', 'y', 'Lat', 'Latitude']
+
+// فیلدهای پیش‌فرض ارتفاع/نام چینه؛ چیزی که کاربر در مدال انتخاب می‌کنه
+// فقط به‌عنوان اولویت اول به این لیست اضافه میشه، نه جایگزین کامل اون
+const TOP_CANDIDATES  = ['TopHeight', 'Top_Height', 'Top', 'top']
+const DOWN_CANDIDATES = ['DownHeight', 'Down_Height', 'Down', 'Base', 'base']
+const NAME_CANDIDATES = ['Name_x', 'FormationName', 'Formation', 'LayerName', 'Name']
+
+// همه‌ی صفحات یک لایه رو پشت‌سرهم می‌گیره (محدودیت یک درخواست رو دور می‌زنه)
+async function fetchAllFeatures(layerUuid) {
+  const pageSize = 2000
+  let page = 1
+  let all = []
+
+  while (true) {
+    const data = await apiFetch(`/vectorLayers/${layerUuid}/features/`, {
+      f: 'json',
+      skip: String((page - 1) * pageSize),
+      limit: String(pageSize),
+      page: String(page),
+      page_size: String(pageSize),
+      skip_geometry: 'false',
+      out_srid: '4326',
+      select_fields: '[ALL]',
+    })
+
+    const features = Array.isArray(data)
+      ? data
+      : (data.features ?? data.results ?? data.data ?? [])
+
+    all = all.concat(features)
+
+    if (features.length < pageSize) break // صفحه آخر
+    page += 1
+    if (page > 50) break // محافظ در برابر حلقه بی‌نهایت
+  }
+
+  return all
+}
+
+/**
+ * نسخه‌ی پویای fetchStratigraphyData؛ لایه از مدال انتخاب میشه.
+ *
+ * fieldMap (اختیاری): { topField, downField, nameField } — این‌ها فقط برای اطمینانِ کاربر
+ * هستن (تأیید اینکه لایه‌ی درستی انتخاب شده) و روی استخراج داده تاثیر محدودکننده‌ای ندارن؛
+ * چون با fallback به نام‌های رایج فیلد ترکیب میشن، کل داده‌ی لایه نمایش داده میشه.
+ */
+export async function fetchStratigraphyDataFromLayer(layerUuid, fieldMap = {}) {
+  const topCandidates  = [fieldMap.topField,  ...TOP_CANDIDATES]
+  const downCandidates = [fieldMap.downField, ...DOWN_CANDIDATES]
+  const nameCandidates = [fieldMap.nameField, ...NAME_CANDIDATES]
+
+  const features = await fetchAllFeatures(layerUuid)
+
+  // گروه‌بندی بر اساس اسم چاه
   const wellMap = {}
 
   for (const f of features) {
     const p = f.properties ?? {}
-    const wellName = p.Name_y   // اسم چاه مثلاً "Aghar-1"
-    const layerName = p.Name_x  // اسم لایه مثلاً "Gurpi"
-    const top = p.TopHeight     // انتهای لایه (بالاتر = عدد بزرگتر)
-    const base = p.DownHeight   // ابتدای لایه (پایین‌تر)
-    const wellCode = p.WellName // کد عددی چاه
-    const x = p.X
-    const y = p.Y
+
+    const wellName  = pickField(p, WELL_NAME_CANDIDATES)
+    const wellCode  = pickField(p, WELL_CODE_CANDIDATES)
+    const x         = pickField(p, X_CANDIDATES)
+    const y         = pickField(p, Y_CANDIDATES)
+
+    const layerName = pickField(p, nameCandidates)        // اسم/نوع چینه
+    const top       = Number(pickField(p, topCandidates)) // ارتفاع بالایی
+    const base      = Number(pickField(p, downCandidates))// ارتفاع پایینی
 
     if (!wellName || !layerName) continue
+    if (Number.isNaN(top) || Number.isNaN(base)) continue
 
     if (!wellMap[wellName]) {
       wellMap[wellName] = {
@@ -189,7 +245,7 @@ export async function fetchStratigraphyData() {
   // مرتب‌سازی لایه‌ها از بالا به پایین و محاسبه TD
   return Object.values(wellMap).map(well => {
     well.formations.sort((a, b) => b.top - a.top)
-    well.td = Math.min(...well.formations.map(f => f.base))
+    well.td = well.formations.length ? Math.min(...well.formations.map(f => f.base)) : 0
     return well
   })
 }
