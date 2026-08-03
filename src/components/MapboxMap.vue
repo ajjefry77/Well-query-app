@@ -11,7 +11,7 @@
       <button
         class="tool-toggle-btn"
         @click="panelOpen = !panelOpen"
-        :class="{ active: activeMode !== null }"
+        :class="{ active: panelOpen || activeMode !== null }"
       >
         <svg
           width="16"
@@ -31,24 +31,21 @@
       <div class="tool-panel" v-if="panelOpen">
         <!-- انتخاب رنگ -->
         <div class="tool-section-label">رنگ</div>
-        <div class="color-row">
-          <button
-            v-for="c in presetColors"
-            :key="c"
-            class="color-dot"
-            :style="{
-              background: c,
-              outline: selectedColor === c ? `3px solid ${c}` : 'none',
-              outlineOffset: '2px',
-            }"
-            @click="selectedColor = c"
-          />
-          <input
-            type="color"
-            class="color-custom"
-            v-model="selectedColor"
-            title="رنگ دلخواه"
-          />
+
+        <div class="color-custom-wrap">
+          <label class="color-custom-input">
+            <input
+              type="color"
+              v-model="selectedColor"
+              title="رنگ دلخواه"
+            />
+            <span
+              class="color-preview-dot"
+              :style="{ background: selectedColor }"
+            ></span>
+            <span class="color-custom-label">رنگ دلخواه</span>
+          </label>
+          <span class="color-hex" dir="ltr">{{ selectedColor }}</span>
         </div>
 
         <div class="tool-divider"></div>
@@ -167,15 +164,6 @@ const panelOpen = ref(false);
 const activeMode = ref(null);
 const drawSubTool = ref(null);
 
-const presetColors = [
-  "#e74c3c",
-  "#e67e22",
-  "#f1c40f",
-  "#2ecc71",
-  "#3498db",
-  "#9b59b6",
-  "#1a1a1a",
-];
 const selectedColor = ref("#3498db");
 
 let map = null;
@@ -467,18 +455,9 @@ function getDrawMode(subTool) {
 }
 
 function createDrawInstance(mode, subTool) {
-  const controls =
-    mode === "draw"
-      ? { point: true, line_string: true, polygon: true, trash: true }
-      : {
-          line_string: subTool === "line",
-          polygon: subTool === "polygon",
-          trash: true,
-        };
-
   draw = new MapboxDraw({
     displayControlsDefault: false,
-    controls,
+    controls: {},
     styles: makeDrawStyles(selectedColor.value),
   });
   map.addControl(draw, "top-left");
@@ -980,6 +959,7 @@ onMounted(() => {
     style: lastStyle,
     center: [53, 32],
     zoom: 5,
+    attributionControl: false,
   });
   map.addControl(new mapboxgl.NavigationControl(), "bottom-left");
   map.on("load", () => {
@@ -1204,41 +1184,40 @@ defineExpose({
   top: 12px;
   right: 12px;
   z-index: 500;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
 }
 .tool-toggle-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
-  background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
-  backdrop-filter: blur(8px);
+  gap: 8px;
+  padding: 10px 10px;
+  background: var(--bg-panel);
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-full);
-  font-size: 12px;
-  font-family: "Vazirmatn", sans-serif;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
   color: var(--text-primary);
   cursor: pointer;
-  box-shadow: var(--shadow-sm);
-  transition: all 0.15s var(--ease-out);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  transition: background 0.15s, box-shadow 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
 }
 .tool-toggle-btn:hover {
-  border-color: var(--accent-depth);
-  background: color-mix(in srgb, var(--accent-depth) 8%, var(--bg-panel));
+  background: var(--bg-panel-raised);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
 }
 .tool-toggle-btn.active {
-  background: var(--accent-depth);
-  color: #fff;
   border-color: var(--accent-depth);
+  color: var(--accent-depth);
 }
 .tool-toggle-btn.active svg {
-  stroke: #fff;
+  stroke: var(--accent-depth);
 }
 
 .tool-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
   background: color-mix(in srgb, var(--bg-panel) 96%, transparent);
   backdrop-filter: blur(10px);
   border: 1px solid var(--border-subtle);
@@ -1302,34 +1281,55 @@ defineExpose({
   text-align: center;
 }
 
-.color-row {
+.color-custom-wrap {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 8px;
-  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 10px 8px;
 }
-.color-dot {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 2px solid var(--bg-panel);
+.color-custom-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
   cursor: pointer;
-  box-shadow: var(--shadow-xs);
-  transition: transform 0.1s;
+  transition: border-color 0.12s, background 0.12s;
+  flex: 1;
+}
+.color-custom-input:hover {
+  border-color: var(--accent-depth);
+  background: color-mix(in srgb, var(--accent-depth) 6%, var(--bg-input));
+}
+.color-custom-input input[type="color"] {
+  width: 0;
+  height: 0;
+  opacity: 0;
+  position: absolute;
+}
+.color-preview-dot {
+  width: 22px;
+  height: 22px;
   flex-shrink: 0;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-panel);
 }
-.color-dot:hover {
-  transform: scale(1.2);
+.color-custom-label {
+  font-size: 11px;
+  font-family: "Vazirmatn", sans-serif;
+  color: var(--text-muted);
 }
-.color-custom {
-  width: 24px;
-  height: 24px;
-  border: none;
-  cursor: pointer;
-  background: none;
-  padding: 0;
-  border-radius: 4px;
+.color-hex {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
   flex-shrink: 0;
 }
 

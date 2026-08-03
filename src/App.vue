@@ -96,7 +96,20 @@
       <!-- پنل چپ: کوئری‌ساز -->
       <aside class="side-panel" :class="{ 'side-panel--collapsed': !queryPanelOpen }">
         <button class="query-toggle" @click="toggleQueryPanel">
-          {{ queryPanelOpen ? "◀" : "▶" }}
+          <svg
+            class="toggle-chevron"
+            :class="{ 'is-closed': !queryPanelOpen }"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
         </button>
         <div class="side-panel__scroll" v-show="queryPanelOpen">
           <div v-if="queryKind === 'attribute'" class="per-layer-qb">
@@ -188,7 +201,20 @@
       <!-- پنل راست: لایه‌ها + خلاصه شرط‌ها -->
       <section class="results-panel" :class="{ 'results-panel--collapsed': !resultsPanelOpen }">
         <button class="results-toggle" @click="toggleResultsPanel">
-          {{ resultsPanelOpen ? "◀" : "▶" }}
+          <svg
+            class="toggle-chevron"
+            :class="{ 'is-closed': !resultsPanelOpen }"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
         </button>
 
         <div class="results-panel__content" v-show="resultsPanelOpen">
@@ -834,11 +860,10 @@ function handleClearData() {
   width: 26px;
   height: 52px;
   background: var(--bg-panel);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border-subtle);
   border-left: none;
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
   color: var(--text-secondary);
-  font-size: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -848,8 +873,14 @@ function handleClearData() {
   transition: background 0.15s, color 0.15s;
 }
 .query-toggle:hover {
-  background: var(--bg-panel-raised);
-  color: var(--accent-depth);
+  background: var(--accent-depth);
+  color: #fff;
+}
+.toggle-chevron {
+  transition: transform 0.3s var(--ease-out);
+}
+.toggle-chevron.is-closed {
+  transform: rotate(180deg);
 }
 .side-panel__scroll {
   height: 100%;
@@ -894,8 +925,7 @@ function handleClearData() {
 .results-fab {
   position: absolute;
   top: 20px;
-  left: 10%;
-  transform: translateX(-50%);
+  inset-inline-end: 20px;
   z-index: 500;
   display: flex;
   align-items: center;
@@ -953,11 +983,10 @@ function handleClearData() {
   width: 26px;
   height: 52px;
   background: var(--bg-panel);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border-subtle);
   border-right: none;
   border-radius: var(--radius-md) 0 0 var(--radius-md);
   color: var(--text-secondary);
-  font-size: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -967,8 +996,8 @@ function handleClearData() {
   transition: background 0.15s, color 0.15s;
 }
 .results-toggle:hover {
-  background: var(--bg-panel-raised);
-  color: var(--accent-depth);
+  background: var(--accent-depth);
+  color: #fff;
 }
 .results-panel__content {
   height: 100%;
