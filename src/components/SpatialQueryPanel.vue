@@ -40,15 +40,28 @@
 
       <div class="field-group">
         <label>شعاع جستجو: <span class="mono accent">{{ radiusKm }} km</span></label>
-        <input
-          type="range"
-          min="0.5"
-          max="50"
-          step="0.5"
-          :value="radiusKm"
-          @input="$emit('update:radiusKm', +$event.target.value)"
-          class="slider"
-        />
+        <div class="radius-control">
+          <input
+            type="range"
+            min="0.5"
+            max="50"
+            step="0.5"
+            :value="radiusKm"
+            @input="$emit('update:radiusKm', +$event.target.value)"
+            class="slider"
+          />
+          <input
+            type="number"
+            min="0.5"
+            max="50"
+            step="0.1"
+            :value="radiusKm"
+            @input="onManualRadius($event)"
+            class="radius-input"
+            aria-label="شعاع جستجو"
+          />
+          <span class="radius-unit">km</span>
+        </div>
       </div>
 
       <div class="sq__info mono" v-if="radiusCenter">
@@ -91,15 +104,28 @@
 
       <div class="field-group">
         <label>شعاع جستجو: <span class="mono accent">{{ radiusKm }} km</span></label>
-        <input
-          type="range"
-          min="0.5"
-          max="50"
-          step="0.5"
-          :value="radiusKm"
-          @input="$emit('update:radiusKm', +$event.target.value)"
-          class="slider"
-        />
+        <div class="radius-control">
+          <input
+            type="range"
+            min="0.5"
+            max="50"
+            step="0.5"
+            :value="radiusKm"
+            @input="$emit('update:radiusKm', +$event.target.value)"
+            class="slider"
+          />
+          <input
+            type="number"
+            min="0.5"
+            max="50"
+            step="0.1"
+            :value="radiusKm"
+            @input="onManualRadius($event)"
+            class="radius-input"
+            aria-label="شعاع جستجو"
+          />
+          <span class="radius-unit">km</span>
+        </div>
       </div>
     </div>
   </div>
@@ -137,6 +163,14 @@ const firstLabelField = computed(() =>
 function onCenterChange(e) {
   const well = props.wells.find((w) => String(w.id) === e.target.value);
   emit("update:radiusCenter", well || null);
+}
+
+function onManualRadius(e) {
+  let val = parseFloat(e.target.value);
+  if (Number.isNaN(val)) return;
+  if (val < 0.5) val = 0.5;
+  if (val > 50) val = 50;
+  emit("update:radiusKm", val);
 }
 </script>
 
@@ -232,6 +266,43 @@ function onCenterChange(e) {
   accent-color: var(--accent-depth);
   height: 5px;
   cursor: pointer;
+}
+.radius-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.radius-control .slider {
+  flex: 1;
+}
+.radius-input {
+  width: 74px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  text-align: center;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.radius-input::-webkit-outer-spin-button,
+.radius-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.radius-input:focus {
+  outline: none;
+  border-color: var(--accent-depth);
+  box-shadow: 0 0 0 3px var(--ring-color);
+}
+.radius-unit {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
 }
 
 .btn-pick {
