@@ -88,12 +88,12 @@ function defaultStyle(feature, highlighted) {
   };
 }
 
-function makePointIcon(color, highlighted, dimmed) {
-  const size = highlighted ? 16 : 10;
+function makePointIcon(color, highlighted, dimmed, isCenter = false) {
+  const size = isCenter ? 18 : (highlighted ? 16 : 10);
   const bg = dimmed ? GRAY : color
-  const border = dimmed ? "rgba(120,140,135,0.4)" : (highlighted ? "#e9efe9" : "rgba(12,18,16,0.6)")
-  const shadow = highlighted ? "0 0 0 4px rgba(233,239,233,0.18)" : "none"
-  const opacity = dimmed ? "0.35" : "1"
+  const border = dimmed ? "rgba(120,140,135,0.4)" : (isCenter ? "#fff" : (highlighted ? "#e9efe9" : "rgba(12,18,16,0.6)"))
+  const shadow = (isCenter || highlighted) ? "0 0 0 4px rgba(240,165,0,0.25)" : "none"
+  const opacity = isCenter ? "1" : (dimmed ? "0.35" : "1")
   return L.divIcon({
     className: "geo-marker",
     html: `<div style="
@@ -128,6 +128,7 @@ function renderFeatures() {
   featureRefs.clear();
 
   const highlightSet = new Set(props.highlightedIds);
+  const centerId = props.radiusCenter?.id ? String(props.radiusCenter.id) : null;
   const hasGeometry = props.wells.some((w) => w._geometry);
 
   if (hasGeometry) {
@@ -136,13 +137,26 @@ function renderFeatures() {
     L.geoJSON(geojson, {
       style: (feature) => {
         const highlighted = highlightSet.has(String(feature.properties.id));
+        const isCenter =
+          centerId && String(feature.properties.id) === centerId;
+        if (isCenter) {
+          return {
+            color: "#e74c3c",
+            weight: 3,
+            fillColor: "#e74c3c",
+            fillOpacity: 0.55,
+            opacity: 1,
+          };
+        }
         return defaultStyle(feature, highlighted);
       },
       pointToLayer: (feature, latlng) => {
         const highlighted = highlightSet.has(String(feature.properties.id));
         const dimmed = props.hasFilter && !highlighted
-        const color = colorForId(feature.properties.id);
-        return L.marker(latlng, { icon: makePointIcon(color, highlighted, dimmed) });
+        const isCenter =
+          centerId && String(feature.properties.id) === centerId;
+        const color = isCenter ? "#e74c3c" : colorForId(feature.properties.id);
+        return L.marker(latlng, { icon: makePointIcon(color, highlighted, dimmed, isCenter) });
       },
       onEachFeature: (feature, layer) => {
         const well = props.wells.find(
@@ -182,14 +196,15 @@ function renderFeatures() {
       if (!w.lat || !w.lng) return;
       const highlighted = highlightSet.has(String(w.id));
       const dimmed = props.hasFilter && !highlighted
-      const color = colorForId(w.id);
+      const isCenter = centerId && String(w.id) === centerId
+      const color = isCenter ? "#e74c3c" : colorForId(w.id);
       const marker = L.circleMarker([w.lat, w.lng], {
-        radius: highlighted ? 8 : (dimmed ? 4 : 5),
-        color: dimmed ? GRAY : (highlighted ? "#e9efe9" : color),
-        weight: 1.5,
+        radius: isCenter ? 9 : (highlighted ? 8 : (dimmed ? 4 : 5)),
+        color: dimmed ? GRAY : (isCenter ? "#fff" : (highlighted ? "#e9efe9" : color)),
+        weight: isCenter ? 3 : 1.5,
         fillColor: dimmed ? GRAY : color,
-        fillOpacity: dimmed ? 0.15 : (highlighted ? 0.8 : 0.5),
-        opacity: dimmed ? 0.35 : 1,
+        fillOpacity: dimmed ? 0.15 : (isCenter ? 0.9 : (highlighted ? 0.8 : 0.5)),
+        opacity: isCenter ? 1 : (dimmed ? 0.35 : 1),
       });
       marker.on("click", () => emit("select-well", w));
       marker.addTo(geoLayer);
@@ -303,6 +318,7 @@ watch(() => props.theme, syncTheme);
 function updateHighlightStyles() {
   if (!geoLayer) return
   const highlightSet = new Set(props.highlightedIds.map(String))
+  const centerId = props.radiusCenter?.id ? String(props.radiusCenter.id) : null
   const hasGeom = props.wells.some(w => w._geometry)
 
   if (hasGeom) {
@@ -311,7 +327,20 @@ function updateHighlightStyles() {
       const id = layer.feature?.properties?.id
       if (!id) return
       const hl = highlightSet.has(String(id))
-      if (layer.setStyle) {
+      const isCenter = centerId && String(id) === centerId
+      if (isCenter) {
+        if (layer.setStyle) {
+          layer.setStyle({
+            color: "#e74c3c",
+            weight: 3,
+            fillColor: "#e74c3c",
+            fillOpacity: 0.55,
+            opacity: 1,
+          })
+        } else if (layer.setIcon) {
+          layer.setIcon(makePointIcon("#e74c3c", true, false, true))
+        }
+      } else if (layer.setStyle) {
         layer.setStyle(defaultStyle(layer.feature, hl))
       } else if (layer.setIcon) {
         const dimmed = props.hasFilter && !hl
@@ -326,16 +355,17 @@ function updateHighlightStyles() {
       if (!id) return
       const hl = highlightSet.has(id)
       const dimmed = props.hasFilter && !hl
+      const isCenter = centerId && String(id) === centerId
       const well = props.wells.find(w => String(w.id) === id)
       if (!well) return
-      const color = colorForId(well.id)
+      const color = isCenter ? "#e74c3c" : colorForId(well.id)
       layer.setStyle({
-        radius: hl ? 8 : (dimmed ? 4 : 5),
-        color: dimmed ? GRAY : (hl ? '#e9efe9' : color),
-        weight: 1.5,
+        radius: isCenter ? 9 : (hl ? 8 : (dimmed ? 4 : 5)),
+        color: dimmed ? GRAY : (isCenter ? "#fff" : (hl ? '#e9efe9' : color)),
+        weight: isCenter ? 3 : 1.5,
         fillColor: dimmed ? GRAY : color,
-        fillOpacity: dimmed ? 0.15 : (hl ? 0.8 : 0.5),
-        opacity: dimmed ? 0.35 : 1,
+        fillOpacity: dimmed ? 0.15 : (isCenter ? 0.9 : (hl ? 0.8 : 0.5)),
+        opacity: isCenter ? 1 : (dimmed ? 0.35 : 1),
       })
     })
   }
@@ -343,7 +373,10 @@ function updateHighlightStyles() {
 
 watch(() => props.highlightedIds, updateHighlightStyles);
 watch(() => props.hasFilter, updateHighlightStyles);
-watch(() => [props.radiusCenter, props.radiusKm], renderRadius, { deep: true });
+watch(() => [props.radiusCenter, props.radiusKm], () => {
+  renderRadius();
+  updateHighlightStyles();
+}, { deep: true });
 watch(() => props.neighborPairs, renderLines);
 
 defineExpose({

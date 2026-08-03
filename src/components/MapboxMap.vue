@@ -618,6 +618,7 @@ function renderMarkers(fit = true) {
   clearMarkers();
   clearWellLayers();
   const highlightSet = new Set(props.highlightedIds.map(String));
+  const centerId = props.radiusCenter?.id ? String(props.radiusCenter.id) : null;
   const hasGeometry = props.wells.some((w) => w._geometry);
 
   if (hasGeometry) {
@@ -627,6 +628,8 @@ function renderMarkers(fit = true) {
       f.properties._color = colorForId(f.properties.id);
       f.properties._highlighted = hl ? 1 : 0;
       f.properties._dimmed = props.hasFilter && !hl ? 1 : 0;
+      f.properties._isCenter =
+        centerId && String(f.properties.id) === centerId ? 1 : 0;
     });
     map.addSource("wells-src", { type: "geojson", data: geojson });
     map.addLayer({
@@ -732,6 +735,8 @@ function renderMarkers(fit = true) {
       paint: {
         "circle-radius": [
           "case",
+          ["==", ["get", "_isCenter"], 1],
+          12,
           ["==", ["get", "_highlighted"], 1],
           9,
           ["==", ["get", "_dimmed"], 1],
@@ -740,14 +745,30 @@ function renderMarkers(fit = true) {
         ],
         "circle-color": [
           "case",
+          ["==", ["get", "_isCenter"], 1],
+          "#e74c3c",
           ["==", ["get", "_dimmed"], 1],
           "#8a9490",
           ["get", "_color"],
         ],
-        "circle-opacity": ["case", ["==", ["get", "_dimmed"], 1], 0.3, 1],
-        "circle-stroke-width": 2,
+        "circle-opacity": [
+          "case",
+          ["==", ["get", "_isCenter"], 1],
+          1,
+          ["==", ["get", "_dimmed"], 1],
+          0.3,
+          1,
+        ],
+        "circle-stroke-width": [
+          "case",
+          ["==", ["get", "_isCenter"], 1],
+          3,
+          2,
+        ],
         "circle-stroke-color": [
           "case",
+          ["==", ["get", "_isCenter"], 1],
+          "#fff",
           ["==", ["get", "_highlighted"], 1],
           "#1a1a1a",
           ["==", ["get", "_dimmed"], 1],
@@ -756,6 +777,8 @@ function renderMarkers(fit = true) {
         ],
         "circle-stroke-opacity": [
           "case",
+          ["==", ["get", "_isCenter"], 1],
+          1,
           ["==", ["get", "_dimmed"], 1],
           0.3,
           1,
@@ -807,17 +830,26 @@ function renderMarkers(fit = true) {
       if (!w.lat || !w.lng) return;
       const isH = highlightSet.has(String(w.id));
       const isDimmed = props.hasFilter && !isH;
-      const color = isH ? "#4a9b8e" : "#8a9490";
-      const opacity = isDimmed ? "0.25" : isH ? "1" : "0.7";
-      const border = isH ? "3px solid #fff" : "2px solid rgba(255,255,255,0.4)";
-      const size = isH ? 18 : isDimmed ? 8 : 12;
+      const isCenter = centerId && String(w.id) === centerId;
+      const color = isCenter
+        ? "#e74c3c"
+        : isH
+          ? "#4a9b8e"
+          : "#8a9490";
+      const opacity = isCenter ? "1" : isDimmed ? "0.25" : "1";
+      const border = isCenter
+        ? "3px solid #fff"
+        : isH
+          ? "3px solid #fff"
+          : "2px solid rgba(255,255,255,0.4)";
+      const size = isCenter ? 22 : isH ? 18 : isDimmed ? 8 : 12;
       const el = document.createElement("div");
       el.style.cssText = `
       width:${size}px;height:${size}px;border-radius:50%;
       background:${color};border:${border};
       box-shadow:0 2px 6px rgba(0,0,0,0.4);cursor:pointer;
       opacity:${opacity};
-      ${isH ? "outline:3px solid rgba(74,155,142,0.35);outline-offset:3px;" : ""}`;
+      ${isCenter || isH ? "outline:3px solid rgba(240,165,0,0.4);outline-offset:3px;" : ""}`;
       const entries = Object.entries(w)
         .filter(([k]) => !k.startsWith("_") && k !== "lat" && k !== "lng")
         .slice(0, 8)
@@ -994,6 +1026,7 @@ function updateHighlightData() {
     return;
   }
   const highlightSet = new Set(props.highlightedIds.map(String));
+  const centerId = props.radiusCenter?.id ? String(props.radiusCenter.id) : null;
   const data = src._data;
   if (!data || !data.features) {
     renderMarkers();
@@ -1003,13 +1036,18 @@ function updateHighlightData() {
     const hl = highlightSet.has(String(f.properties.id));
     f.properties._highlighted = hl ? 1 : 0;
     f.properties._dimmed = props.hasFilter && !hl ? 1 : 0;
+    f.properties._isCenter =
+      centerId && String(f.properties.id) === centerId ? 1 : 0;
   });
   src.setData(data);
 }
 
 watch(() => props.highlightedIds, updateHighlightData);
 watch(() => props.hasFilter, updateHighlightData);
-watch(() => [props.radiusCenter, props.radiusKm], renderRadiusAndLines, {
+watch(() => [props.radiusCenter, props.radiusKm], () => {
+  renderRadiusAndLines();
+  updateHighlightData();
+}, {
   deep: true,
 });
 watch(() => props.neighborPairs, renderRadiusAndLines);

@@ -77,12 +77,6 @@
         </span>
       </button>
 
-      <button class="clear-data-btn" @click="handleClearData" title="پاک کردن همه داده‌های ذخیره‌شده">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z" />
-        </svg>
-        پاک کردن داده‌ها
-      </button>
     </header>
 
     <!-- صفحه چینه‌شناسی -->
@@ -169,6 +163,13 @@
           />
           <div class="side-divider"></div>
           <SavedQueries :queries="savedQueries" @load="onLoadQuery" @delete="deleteSavedQuery" />
+
+          <button class="clear-data-btn" @click="handleClearData" title="پاک کردن همه داده‌های ذخیره‌شده">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z" />
+            </svg>
+            پاک کردن داده‌ها
+          </button>
         </div>
       </aside>
 
@@ -742,16 +743,18 @@ function handleClearData() {
 }
 
 .clear-data-btn {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
-  background: transparent;
-  border: 1px solid var(--border-strong);
+  margin-top: auto;
+  background: color-mix(in srgb, var(--accent-danger) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-danger) 25%, transparent);
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: 12px;
   font-family: inherit;
-  padding: 8px 14px;
-  border-radius: var(--radius-full);
+  padding: 9px 14px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   white-space: nowrap;
   transition: color 0.15s, border-color 0.15s, background 0.15s, transform 0.1s;
@@ -759,10 +762,10 @@ function handleClearData() {
 .clear-data-btn:hover {
   color: var(--accent-danger);
   border-color: var(--accent-danger);
-  background: color-mix(in srgb, var(--accent-danger) 8%, transparent);
+  background: color-mix(in srgb, var(--accent-danger) 10%, transparent);
 }
 .clear-data-btn:active {
-  transform: scale(0.97);
+  transform: scale(0.98);
 }
 
 .theme-toggle {
@@ -801,7 +804,7 @@ function handleClearData() {
   font-size: 11.5px;
   font-family: var(--font-mono);
   padding: 6px 12px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
   direction: ltr;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
@@ -855,26 +858,26 @@ function handleClearData() {
 .query-toggle {
   position: absolute;
   top: 50%;
-  left: 0px;
+  left: -11px;
   transform: translateY(-50%);
-  width: 26px;
-  height: 52px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border-subtle);
-  border-left: none;
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  width: 28px;
+  height: 28px;
+  background: var(--bg-panel-raised);
+  border: none;
+  border-radius: 50%;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 10;
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
 }
 .query-toggle:hover {
-  background: var(--accent-depth);
-  color: #fff;
+  background: color-mix(in srgb, var(--accent-depth) 12%, var(--bg-panel-raised));
+  color: var(--accent-depth);
+  transform: translateY(-50%) scale(1.08);
 }
 .toggle-chevron {
   transition: transform 0.3s var(--ease-out);
@@ -978,26 +981,26 @@ function handleClearData() {
 .results-toggle {
   position: absolute;
   top: 50%;
-  right: 0px;
+  right: -11px;
   transform: translateY(-50%);
-  width: 26px;
-  height: 52px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border-subtle);
-  border-right: none;
-  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  width: 28px;
+  height: 28px;
+  background: var(--bg-panel-raised);
+  border: none;
+  border-radius: 50%;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 10;
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
 }
 .results-toggle:hover {
-  background: var(--accent-depth);
-  color: #fff;
+  background: color-mix(in srgb, var(--accent-depth) 12%, var(--bg-panel-raised));
+  color: var(--accent-depth);
+  transform: translateY(-50%) scale(1.08);
 }
 .results-panel__content {
   height: 100%;
@@ -1389,7 +1392,6 @@ function handleClearData() {
   .layer-summary-label { display: none; }
   .app-header__tabs { order: 5; width: 100%; }
   .app-header__tabs .header-tab { flex: 1; padding: 7px 6px; font-size: 12px; }
-  .clear-data-btn { font-size: 0; gap: 0; width: 36px; height: 36px; padding: 0; justify-content: center; }
 
   .app-main {
     grid-template-columns: 1fr;
