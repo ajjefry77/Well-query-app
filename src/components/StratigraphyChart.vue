@@ -77,7 +77,20 @@
         <!-- پنل انتخاب چاه -->
         <div class="well-picker" :class="{ 'well-picker--closed': !pickerOpen }">
           <div class="well-picker__title" @click="pickerOpen = !pickerOpen">
-            <span class="picker-toggle-icon">{{ pickerOpen ? '◀' : '▶' }}</span>
+            <svg
+              class="picker-toggle-icon"
+              :class="{ 'is-closed': !pickerOpen }"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
             <template v-if="pickerOpen">
               انتخاب چاه‌ها
               <span class="well-picker__count">{{ selectedKeys.size }} / {{ allWells.length }}</span>
@@ -691,16 +704,32 @@ const thickness = (well, name) => {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 14px;
-  padding: 12px 20px;
-  background: var(--bg-panel);
+  padding: 14px 20px;
+  background: linear-gradient(180deg, var(--bg-panel-raised), var(--bg-panel));
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
   box-shadow: var(--shadow-sm);
 }
 .strat-header__brand { display: flex; align-items: center; gap: 12px; }
-.brand-icon { font-size: 20px; }
+.brand-icon {
+  font-size: 22px;
+  width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--accent-depth) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-depth) 25%, transparent);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+}
 .strat-header__brand h2 { font-size: 14px; font-weight: 800; color: var(--text-primary); margin-bottom: 1px; }
 .strat-header__brand p  { font-size: 11px; color: var(--text-muted); }
+.strat-header__cfg-btn {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  background: var(--bg-input);
+}
+.strat-header__cfg-btn:hover {
+  background: color-mix(in srgb, var(--accent-depth) 10%, var(--bg-input));
+}
 
 .strat-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .filter-label  { font-size: 11px; color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
@@ -764,6 +793,10 @@ const thickness = (well, name) => {
   font-size: 10px;
   color: var(--accent-depth);
   flex-shrink: 0;
+  transition: transform .25s var(--ease-out);
+}
+.picker-toggle-icon.is-closed {
+  transform: rotate(180deg);
 }
 .well-picker__count {
   font-size: 11px;
@@ -859,6 +892,7 @@ const thickness = (well, name) => {
   font-weight: 900;
   color: var(--text-primary);
   margin-bottom: 14px;
+  letter-spacing: 0.2px;
 }
 
 /* ══ هدر چاه‌ها ════════════════════════════════════════════════════════ */
@@ -869,12 +903,35 @@ const thickness = (well, name) => {
   padding-bottom: 6px; padding-left: 8px;
 }
 .y-axis-gap--right { justify-content: flex-start; }
-.datum-tag { font-size: 10px; color: var(--text-secondary); font-weight: 700; text-align: right; line-height: 1.5; }
+.datum-tag {
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-weight: 700;
+  text-align: right;
+  line-height: 1.5;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  box-shadow: var(--shadow-xs);
+}
 .axis-unit { font-size: 11px; font-weight: 700; color: var(--text-secondary); }
 
 .well-headers { display: flex; flex: 1; }
-.well-head { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
-.rig-icon { font-size: 22px; line-height: 1; }
+.well-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-align: center;
+  padding: 8px 6px 6px;
+  background: color-mix(in srgb, var(--bg-panel-raised) 60%, transparent);
+  border: 1px solid var(--border-subtle);
+  border-bottom: 2px solid var(--accent-depth);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  box-shadow: var(--shadow-xs);
+}
+.rig-icon { font-size: 22px; line-height: 1; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.2)); }
 .well-head__name   { font-size: 12.5px; font-weight: 900; color: var(--text-primary); }
 .well-head__coords { display: flex; flex-direction: column; gap: 1px; }
 .well-head__coords span { font-size: 9px; color: var(--text-muted); font-family: var(--font-mono); }
@@ -882,10 +939,13 @@ const thickness = (well, name) => {
 /* ══ فریم ═══════════════════════════════════════════════════════════════ */
 .chart-frame {
   display: flex;
+  border: 1px solid var(--border-subtle);
   border-top: 2.5px solid var(--border-strong);
   border-bottom: 2.5px solid var(--border-strong);
   background: var(--bg-panel);
   box-shadow: var(--shadow-md);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
 }
 
 /* ══ محور Y ════════════════════════════════════════════════════════════ */
@@ -901,6 +961,7 @@ const thickness = (well, name) => {
   color: var(--text-secondary);
   transform: translateY(-50%);
   white-space: nowrap;
+  text-shadow: 0 1px 0 var(--bg-input);
 }
 .y-axis--left  .y-tick { right: 8px; }
 .y-axis--right .y-tick { left: 8px; }
@@ -931,26 +992,30 @@ const thickness = (well, name) => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: opacity .2s, filter .2s;
+  transition: opacity .2s, filter .2s, box-shadow .2s;
   z-index: 2;
   overflow: hidden;
-  border-radius: 2px;
+  border-radius: 3px;
+  border: 1px solid rgba(0,0,0,0.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.08);
 }
 .fm-block--dim { opacity: .08; pointer-events: none; }
 .fm-block:not(.fm-block--dim):hover {
   filter: brightness(1.12) saturate(1.15);
   z-index: 10;
-  box-shadow: 0 0 0 2px var(--ring-color);
+  box-shadow: 0 0 0 2px var(--ring-color), 0 4px 12px rgba(0,0,0,0.18);
 }
 
 .fm-block__label {
   font-size: 10.5px; font-weight: 800;
   color: var(--text-primary);
-  text-shadow: 0 1px 2px var(--bg-panel);
+  text-shadow: 0 1px 2px var(--bg-panel), 0 0 4px var(--bg-panel);
   pointer-events: none; user-select: none;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   padding: 0 4px;
   max-width: 100%;
+  background: color-mix(in srgb, var(--bg-panel) 35%, transparent);
+  border-radius: 2px;
 }
 
 /* اعداد ارتفاع */
@@ -996,7 +1061,7 @@ const thickness = (well, name) => {
 
 .panel {
   background: var(--bg-panel);
-  border: 1.5px solid var(--border-subtle);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   overflow: hidden;
   box-shadow: var(--shadow-sm);
@@ -1004,10 +1069,11 @@ const thickness = (well, name) => {
 .panel__title {
   font-size: 12px; font-weight: 800;
   color: var(--text-primary);
-  background: var(--bg-panel-raised);
-  padding: 7px 14px;
+  background: linear-gradient(180deg, var(--bg-panel-raised), color-mix(in srgb, var(--bg-panel-raised) 60%, var(--bg-panel)));
+  padding: 8px 14px;
   text-align: center;
-  border-bottom: 1.5px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  letter-spacing: 0.2px;
 }
 
 /* legend */
@@ -1063,7 +1129,8 @@ const thickness = (well, name) => {
 }
 .fm-popup__header {
   display: flex; align-items: center; gap: 10px;
-  padding: 11px 14px; color: #fff;
+  padding: 12px 14px; color: #fff;
+  background-image: linear-gradient(135deg, rgba(255,255,255,0.14), transparent 55%);
 }
 .fm-popup__icon { font-size: 18px; flex-shrink: 0; }
 .fm-popup__name { font-size: 13.5px; font-weight: 900; text-shadow: 0 1px 3px rgba(0,0,0,.25); }
