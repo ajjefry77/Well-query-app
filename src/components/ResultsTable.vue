@@ -206,10 +206,10 @@ function formatCell(row, col) {
 }
 .rt__row {
   cursor: pointer;
-  transition: background 0.08s ease;
+  transition: background 0.12s var(--ease-out);
 }
-.rt__row:hover { background: var(--bg-panel-raised); }
-.rt__row--active { background: rgba(201, 122, 74, 0.12); }
+.rt__row:hover { background: var(--bg-hover); }
+.rt__row--active { background: color-mix(in srgb, var(--accent-copper) 12%, transparent); }
 .rt__row--active td:first-child { box-shadow: inset 3px 0 0 var(--accent-copper); }
 
 .rt__empty {

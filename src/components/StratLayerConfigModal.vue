@@ -164,18 +164,20 @@ function confirm() {
 <style scoped>
 .strat-cfg-backdrop {
   position: fixed; inset: 0;
-  background: rgba(20, 24, 22, .55);
+  background: color-mix(in srgb, var(--bg-deep) 55%, rgba(0,0,0,0.55));
   display: flex; align-items: center; justify-content: center;
   z-index: 10000;
+  backdrop-filter: blur(6px);
 }
 
 .strat-cfg-modal {
   width: 420px;
   max-width: calc(100vw - 32px);
-  background: #fff;
-  border-radius: 14px;
+  background: var(--bg-panel);
+  border-radius: var(--radius-lg);
   padding: 18px 20px 16px;
-  box-shadow: 0 12px 48px rgba(0,0,0,.25);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border-strong);
 }
 
 .strat-cfg-modal .modal-header {
@@ -183,21 +185,21 @@ function confirm() {
   margin-bottom: 6px;
 }
 .strat-cfg-modal .modal-header h3 {
-  font-size: 15px; font-weight: 800; color: #1e2a22; margin: 0;
+  font-size: 15px; font-weight: 800; color: var(--text-primary); margin: 0;
 }
 
 .strat-cfg-desc {
-  font-size: 12px; color: #6a8070; margin: 0 0 14px; line-height: 1.7;
+  font-size: 12px; color: var(--text-muted); margin: 0 0 14px; line-height: 1.7;
 }
 
 .strat-cfg-field { margin-bottom: 12px; display: flex; flex-direction: column; gap: 5px; }
-.strat-cfg-field label { font-size: 12px; font-weight: 700; color: #3a4a3e; }
+.strat-cfg-field label { font-size: 12px; font-weight: 700; color: var(--text-secondary); }
 
 .strat-cfg-state {
   display: flex; flex-direction: column; align-items: center; gap: 8px;
-  padding: 18px 0; color: #6a8070; font-size: 12.5px;
+  padding: 18px 0; color: var(--text-muted); font-size: 12.5px;
 }
-.strat-cfg-state--error { color: #b33a3a; }
+.strat-cfg-state--error { color: var(--accent-danger); }
 
 .strat-cfg-footer {
   margin-top: 8px;
@@ -208,35 +210,36 @@ function confirm() {
 
 .qb-select {
   width: 100%;
-  padding: 8px 10px;
-  border: 1.5px solid #d4cfc6;
-  border-radius: 8px;
+  padding: 9px 10px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-sm);
   font-size: 12.5px;
   font-family: inherit;
-  color: #1e2a22;
-  background: #fff;
+  color: var(--text-primary);
+  background: var(--bg-input);
   cursor: pointer;
   outline: none;
-  transition: border-color .15s;
+  transition: border-color .15s, box-shadow .15s;
 }
-.qb-select:focus { border-color: #2e6a44; }
+.qb-select:focus { border-color: var(--accent-depth); box-shadow: 0 0 0 3px var(--ring-color); }
 
 .picker-btn {
-  background: #f0ece4;
-  border: 1px solid #d4cfc6;
-  border-radius: 7px;
-  padding: 6px 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 7px 16px;
   font-size: 12px;
   font-weight: 700;
-  color: #3a4a3e;
+  color: var(--text-secondary);
   cursor: pointer;
+  transition: all .15s var(--ease-out);
 }
-.picker-btn:hover { background: #e2ded4; }
+.picker-btn:hover { background: var(--bg-hover); border-color: var(--accent-depth); color: var(--accent-depth); }
 
 .strat-spinner {
   width: 22px; height: 22px;
-  border: 3px solid #e2ded4;
-  border-top-color: #2e6a44;
+  border: 3px solid var(--border-strong);
+  border-top-color: var(--accent-depth);
   border-radius: 50%;
   animation: strat-spin .8s linear infinite;
 }
@@ -244,48 +247,49 @@ function confirm() {
 
 .modal-close {
   background: none; border: none; cursor: pointer;
-  font-size: 20px; line-height: 1; color: #7a8a80;
+  font-size: 20px; line-height: 1; color: var(--text-muted);
   padding: 2px 6px; border-radius: 6px;
 }
-.modal-close:hover { background: #f0ece4; color: #1e2a22; }
+.modal-close:hover { background: var(--bg-hover); color: var(--text-primary); }
 
 .btn-cancel {
-  background: #f0ece4;
-  color: #3a4a3e;
-  border: none;
-  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
   padding: 8px 18px;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-  transition: background .15s;
+  transition: all .15s var(--ease-out);
 }
-.btn-cancel:hover { background: #e2ded4; }
+.btn-cancel:hover { background: var(--bg-hover); }
 
 .btn-back {
-  background: #fff;
-  color: #3a4a3e;
-  border: 1.5px solid #d4cfc6;
-  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-full);
   padding: 8px 18px;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-  transition: background .15s, border-color .15s;
+  transition: all .15s var(--ease-out);
 }
-.btn-back:hover { background: #f0ece4; border-color: #b9c4bc; }
+.btn-back:hover { background: var(--bg-hover); border-color: var(--accent-depth); color: var(--accent-depth); }
 
 .btn-confirm {
-  background: #2e6a44;
+  background: var(--accent-depth);
   color: #fff;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-full);
   padding: 8px 18px;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-  transition: background .15s;
+  transition: all .15s var(--ease-out);
+  box-shadow: var(--shadow-xs);
 }
-.btn-confirm:hover:not(:disabled) { background: #245636; }
-.btn-confirm:disabled { background: #b9c4bc; cursor: not-allowed; }
+.btn-confirm:hover:not(:disabled) { background: var(--accent-depth-bright); box-shadow: var(--shadow-sm); }
+.btn-confirm:disabled { background: var(--border-strong); cursor: not-allowed; opacity: 0.6; }
 </style>

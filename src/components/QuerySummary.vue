@@ -184,13 +184,13 @@ const hasAnySummary = computed(() => summaryItems.value.length > 0)
   overflow-x: auto;
 }
 
-.qs__kw  { color: #7ec8e3; font-weight: 700; }    /* کلمات کلیدی SQL آبی */
+.qs__kw  { color: var(--sql-kw); font-weight: 700; }
 .qs__sym { color: var(--text-muted); }
-.qs__table { color: #e9c46a; font-weight: 600; }  /* نام جدول طلایی */
+.qs__table { color: var(--sql-table); font-weight: 600; }
 .qs__clause { color: var(--text-primary); }
-.qs__logic { color: #7ec8e3; font-weight: 700; margin: 0 4px; }
-.qs__not   { color: #e76f51; font-weight: 700; margin: 0 4px; }
-.qs__field { color: #a8dadc; }                     /* نام فیلد فیروزه‌ای */
+.qs__logic { color: var(--sql-kw); font-weight: 700; margin: 0 4px; }
+.qs__not   { color: var(--sql-not); font-weight: 700; margin: 0 4px; }
+.qs__field { color: var(--sql-field); }
 .qs__op    { color: var(--text-muted); margin: 0 4px; }
-.qs__val   { color: #f4a261; }                     /* مقدار نارنجی */
+.qs__val   { color: var(--sql-val); }
 </style>

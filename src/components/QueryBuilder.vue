@@ -221,8 +221,13 @@ function handleSave() {
   color: var(--accent-depth);
   font-size: 11px;
   font-weight: 700;
-  padding: 3px 14px;
-  border-radius: 20px;
+  padding: 4px 16px;
+  border-radius: var(--radius-full);
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.logic-toggle:hover {
+  border-color: var(--accent-depth);
+  background: color-mix(in srgb, var(--accent-depth) 8%, var(--bg-input));
 }
 .logic-toggle--or {
   color: var(--accent-amber);
@@ -232,11 +237,16 @@ function handleSave() {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: var(--bg-panel-raised);
+  background: var(--bg-input);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   padding: 8px;
   flex-wrap: wrap;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.condition-row__body:focus-within {
+  border-color: var(--accent-depth);
+  box-shadow: 0 0 0 3px var(--ring-color);
 }
 
 .not-toggle {
@@ -247,8 +257,13 @@ function handleSave() {
   font-size: 10px;
   font-weight: 700;
   padding: 5px 8px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   flex-shrink: 0;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.not-toggle:hover:not(.not-toggle--active) {
+  border-color: var(--accent-danger);
+  color: var(--accent-danger);
 }
 .not-toggle--active {
   background: var(--accent-danger);
@@ -258,7 +273,7 @@ function handleSave() {
 
 .qb-select,
 .qb-input {
-  background: var(--bg-input);
+  background: var(--bg-panel);
   border: 1px solid var(--border-strong);
   color: var(--text-primary);
   font-size: 12px;
@@ -266,6 +281,13 @@ function handleSave() {
   border-radius: var(--radius-sm);
   flex: 1;
   min-width: 80px;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.qb-select:focus,
+.qb-input:focus {
+  outline: none;
+  border-color: var(--accent-depth);
+  box-shadow: 0 0 0 3px var(--ring-color);
 }
 .qb-select--op {
   flex: 1.2;
@@ -282,14 +304,16 @@ function handleSave() {
   color: var(--text-muted);
   width: 28px;
   height: 28px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   font-size: 16px;
   line-height: 1;
   flex-shrink: 0;
+  transition: all var(--dur-fast) var(--ease-out);
 }
 .remove-btn:hover:not(:disabled) {
   border-color: var(--accent-danger);
   color: var(--accent-danger);
+  background: color-mix(in srgb, var(--accent-danger) 8%, transparent);
 }
 .remove-btn:disabled {
   opacity: 0.3;
@@ -302,12 +326,14 @@ function handleSave() {
   border: 1px dashed var(--border-strong);
   color: var(--accent-depth);
   font-size: 12.5px;
-  padding: 7px 14px;
-  border-radius: var(--radius-sm);
+  padding: 8px 16px;
+  border-radius: var(--radius-full);
+  transition: all var(--dur-fast) var(--ease-out);
 }
 .add-condition-btn:hover:not(:disabled) {
   border-color: var(--accent-depth);
-  background: rgba(74, 155, 142, 0.08);
+  background: color-mix(in srgb, var(--accent-depth) 8%, transparent);
+  transform: translateY(-1px);
 }
 .add-condition-btn:disabled {
   opacity: 0.3;
@@ -322,18 +348,23 @@ function handleSave() {
 }
 .save-btn {
   background: var(--accent-copper);
-  color: #0c1210;
+  color: #fff;
   font-weight: 700;
   font-size: 12.5px;
   border: none;
-  padding: 8px 14px;
-  border-radius: var(--radius-sm);
+  padding: 9px 16px;
+  border-radius: var(--radius-full);
   white-space: nowrap;
   flex-shrink: 0;
+  transition: all var(--dur-fast) var(--ease-out);
+  box-shadow: var(--shadow-xs);
 }
 .save-btn:hover:not(:disabled) {
   background: var(--accent-copper-bright);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
 }
+.save-btn:active:not(:disabled) { transform: scale(0.97); }
 .save-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;

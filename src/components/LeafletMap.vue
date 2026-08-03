@@ -19,6 +19,7 @@ const props = defineProps({
   radiusCenter: { type: Object, default: null },
   radiusKm: { type: Number, default: 0 },
   neighborPairs: { type: Array, default: () => [] },
+  theme: { type: String, default: "light" },
 });
 const emit = defineEmits(["select-well"]);
 
@@ -29,6 +30,34 @@ let highlightLayer = null;
 let radiusLayer = null;
 let linesLayer = null;
 const featureRefs = new Map();
+
+// ─── تعویض تم نقشه (روشن ↔ تیره) ──────────────────────────
+const DARK_TILE_KEY = "تیره 🌙";
+const LIGHT_TILE_KEYS = ["توپوگرافی 🗺", "ماهواره‌ای 🛰"];
+let tileLayers = null;
+let activeTileKey = "توپوگرافی 🗺";
+let lastLightTile = "توپوگرافی 🗺";
+
+function switchTile(key) {
+  if (!map || !tileLayers || activeTileKey === key) return;
+  Object.values(tileLayers).forEach((l) => {
+    if (map.hasLayer(l)) map.removeLayer(l);
+  });
+  tileLayers[key].addTo(map);
+  activeTileKey = key;
+  map.fire("baselayerchange", { layer: tileLayers[key], name: key });
+}
+
+function syncTheme() {
+  if (!map || !tileLayers) return;
+  const dark = props.theme === "dark";
+  if (dark && activeTileKey !== DARK_TILE_KEY) {
+    lastLightTile = activeTileKey;
+    switchTile(DARK_TILE_KEY);
+  } else if (!dark && activeTileKey === DARK_TILE_KEY) {
+    switchTile(lastLightTile || "توپوگرافی 🗺");
+  }
+}
 
 const COLORS = [
   "#c97a4a",
@@ -226,7 +255,7 @@ onMounted(() => {
     zoomControl: false,
   });
 
-  const tileLayers = {
+  tileLayers = {
     "توپوگرافی 🗺": L.tileLayer(
       "https://mapiq.ir:3002/api/proxy/mapir/google/vt/lyrs=p&hl=fa&x={x}&y={y}&z={z}",
       { attribution: "Map IR", maxZoom: 19 },
@@ -235,11 +264,22 @@ onMounted(() => {
       "https://mapiq.ir:3002/api/proxy/mapir/google/vt/lyrs=s&hl=fa&x={x}&y={y}&z={z}",
       { attribution: "Map IR", maxZoom: 19 },
     ),
+    [DARK_TILE_KEY]: L.tileLayer(
+      "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+      { attribution: "© OpenStreetMap © CARTO", subdomains: "abcd", maxZoom: 19 },
+    ),
   };
+  activeTileKey = "توپوگرافی 🗺";
   tileLayers["توپوگرافی 🗺"].addTo(map);
   L.control
     .layers(tileLayers, {}, { position: "topright", collapsed: false })
     .addTo(map);
+
+  map.on("baselayerchange", (e) => {
+    activeTileKey = e.name;
+    if (LIGHT_TILE_KEYS.includes(e.name)) lastLightTile = e.name;
+  });
+  syncTheme();
 
   L.control.zoom({ position: "bottomleft" }).addTo(map);
 
@@ -258,6 +298,7 @@ onBeforeUnmount(() => {
 });
 
 watch(() => props.wells, renderFeatures, { deep: false });
+watch(() => props.theme, syncTheme);
 
 function updateHighlightStyles() {
   if (!geoLayer) return
@@ -418,12 +459,13 @@ defineExpose({
   top: 12px;
   inset-inline-end: 12px;
   z-index: 500;
-  background: rgba(238, 243, 241, 0.92);
-  backdrop-filter: blur(6px);
+  background: color-mix(in srgb, var(--bg-panel) 88%, transparent);
+  backdrop-filter: blur(8px);
   border: 1px solid var(--border-subtle);
   color: var(--text-muted);
   font-size: 11px;
-  padding: 5px 10px;
-  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-sm);
 }
 </style>

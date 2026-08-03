@@ -143,11 +143,13 @@ import * as utm from "utm";
 mapboxgl.accessToken =
   import.meta.env.VITE_MAPBOX_TOKEN ?? "pk.YOUR_TOKEN_HERE";
 
-mapboxgl.setRTLTextPlugin(
+if (mapboxgl.getRTLTextPluginStatus() === "unavailable") {
+  mapboxgl.setRTLTextPlugin(
       'https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-rtl-text/v0.2.3/mapbox-gl-rtl-text.js',
       null,
       true // Lazy load the plugin
   );
+}
 
 const props = defineProps({
   wells: { type: Array, required: true },
@@ -156,6 +158,7 @@ const props = defineProps({
   radiusCenter: { type: Object, default: null },
   radiusKm: { type: Number, default: 0 },
   neighborPairs: { type: Array, default: () => [] },
+  theme: { type: String, default: "light" },
 });
 const emit = defineEmits(["select-well"]);
 
@@ -179,6 +182,10 @@ let map = null;
 let draw = null;
 let markers = [];
 let labelMarkers = [];
+
+const LIGHT_STYLE = "mapbox://styles/aseman1005/ckgamsxfo131a1arvafwa8e5n";
+const DARK_STYLE = "mapbox://styles/mapbox/dark-v11";
+let lastStyle = props.theme === "dark" ? DARK_STYLE : LIGHT_STYLE;
 
 const mouse = ref({ lat: "", lng: "", utm: "" });
 
@@ -627,7 +634,7 @@ function popupHTML(w, props_) {
   </div>`;
 }
 
-function renderMarkers() {
+function renderMarkers(fit = true) {
   if (!map) return;
   clearMarkers();
   clearWellLayers();
@@ -813,7 +820,7 @@ function renderMarkers() {
         else if (g.type === "MultiPolygon")
           g.coordinates.forEach((p) => p[0].forEach((c) => bounds.extend(c)));
       });
-      if (!bounds.isEmpty())
+      if (!bounds.isEmpty() && fit)
         map.fitBounds(bounds, { padding: 48, maxZoom: 14, duration: 800 });
     } catch {}
   } else {
@@ -864,7 +871,7 @@ function renderMarkers() {
     if (pts.length) {
       const bounds = new mapboxgl.LngLatBounds();
       pts.forEach((w) => bounds.extend([w.lng, w.lat]));
-      map.fitBounds(bounds, { padding: 48, maxZoom: 14, duration: 800 });
+      if (fit) map.fitBounds(bounds, { padding: 48, maxZoom: 14, duration: 800 });
     }
   }
 }
@@ -970,7 +977,7 @@ function makeCirclePolygon(center, radiusKm, points = 64) {
 onMounted(() => {
   map = new mapboxgl.Map({
     container: mapEl.value,
-    style: "mapbox://styles/aseman1005/ckgamsxfo131a1arvafwa8e5n",
+    style: lastStyle,
     center: [53, 32],
     zoom: 5,
   });
@@ -995,7 +1002,7 @@ onBeforeUnmount(() => {
   if (map) map.remove();
 });
 
-watch(() => props.wells, renderMarkers);
+watch(() => props.wells, () => renderMarkers(true));
 
 // وقتی فقط highlight یا filter عوض شد، فقط data رو آپدیت کن (سریع‌تر از renderMarkers کامل)
 function updateHighlightData() {
@@ -1026,6 +1033,38 @@ watch(() => [props.radiusCenter, props.radiusKm], renderRadiusAndLines, {
   deep: true,
 });
 watch(() => props.neighborPairs, renderRadiusAndLines);
+
+// ─── تعویض تم نقشه (روشن ↔ تیره) ──────────────────────────
+function applyMapTheme(t) {
+  if (!map) return;
+  const next = t === "dark" ? DARK_STYLE : LIGHT_STYLE;
+  if (next === lastStyle) return;
+  lastStyle = next;
+
+  const wasActive = activeMode.value !== null;
+  const mode = activeMode.value;
+  const sub = drawSubTool.value;
+  if (draw && map.hasControl(draw)) removeDraw();
+
+  map.setStyle(next);
+  map.once("style.load", () => {
+    initDrawnSource();
+    refreshDrawnSource();
+    renderMarkers(false);
+    renderRadiusAndLines();
+    updateLabels();
+    if (wasActive) {
+      activeMode.value = mode;
+      drawSubTool.value = sub;
+      createDrawInstance(mode, sub);
+      requestAnimationFrame(() => {
+        if (!draw) return;
+        draw.changeMode(getDrawMode(sub));
+      });
+    }
+  });
+}
+watch(() => props.theme, applyMapTheme);
 
 // ─── expose ────────────────────────────────────────────────
 defineExpose({
@@ -1175,37 +1214,38 @@ defineExpose({
   align-items: center;
   gap: 6px;
   padding: 7px 12px;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(6px);
-  border: 1px solid #ccc;
-  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
   font-size: 12px;
   font-family: "Vazirmatn", sans-serif;
+  color: var(--text-primary);
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
-  transition: all 0.15s;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.15s var(--ease-out);
 }
 .tool-toggle-btn:hover {
-  border-color: #4a9b8e;
-  background: #f0f7f5;
+  border-color: var(--accent-depth);
+  background: color-mix(in srgb, var(--accent-depth) 8%, var(--bg-panel));
 }
 .tool-toggle-btn.active {
-  background: #4a9b8e;
+  background: var(--accent-depth);
   color: #fff;
-  border-color: #3a8070;
+  border-color: var(--accent-depth);
 }
 .tool-toggle-btn.active svg {
   stroke: #fff;
 }
 
 .tool-panel {
-  background: rgba(255, 255, 255, 0.97);
-  backdrop-filter: blur(8px);
-  border: 1px solid #ddd;
-  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-panel) 96%, transparent);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
   padding: 8px 6px;
   min-width: 150px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-md);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1213,13 +1253,13 @@ defineExpose({
 .tool-section-label {
   font-size: 10px;
   font-family: "Vazirmatn", sans-serif;
-  color: #999;
+  color: var(--text-muted);
   padding: 4px 8px 2px;
   text-align: right;
 }
 .tool-divider {
   height: 1px;
-  background: #eee;
+  background: var(--border-subtle);
   margin: 4px 4px;
 }
 
@@ -1228,7 +1268,7 @@ defineExpose({
   align-items: center;
   gap: 8px;
   padding: 7px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   border: none;
   background: transparent;
   font-size: 12px;
@@ -1239,22 +1279,22 @@ defineExpose({
   transition:
     background 0.12s,
     color 0.12s;
-  color: #333;
+  color: var(--text-primary);
 }
 .tool-item:hover {
-  background: #f0f7f5;
-  color: #2d7a6e;
+  background: var(--bg-hover);
+  color: var(--accent-depth);
 }
 .tool-item.active {
-  background: #e8f5f2;
-  color: #2d7a6e;
+  background: color-mix(in srgb, var(--accent-depth) 12%, transparent);
+  color: var(--accent-depth);
   font-weight: 600;
 }
 .tool-item.danger {
-  color: #c0563f;
+  color: var(--accent-danger);
 }
 .tool-item.danger:hover {
-  background: #fdf0ee;
+  background: color-mix(in srgb, var(--accent-danger) 8%, transparent);
 }
 .tool-icon {
   font-size: 14px;
@@ -1273,9 +1313,9 @@ defineExpose({
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  border: 2px solid #fff;
+  border: 2px solid var(--bg-panel);
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-xs);
   transition: transform 0.1s;
   flex-shrink: 0;
 }
@@ -1306,8 +1346,9 @@ defineExpose({
 
   padding: 0 14px;
 
-  background: #70747aab;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--bg-panel) 74%, transparent);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--border-subtle);
 
   z-index: 999;
 }
@@ -1325,33 +1366,33 @@ defineExpose({
 
   padding: 6px 12px;
 
-  background: rgba(255, 255, 255, 0.788);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: color-mix(in srgb, var(--bg-panel) 82%, transparent);
+  border: 1px solid var(--border-subtle);
 
-  border-radius: 999px;
+  border-radius: var(--radius-full);
 
   backdrop-filter: blur(6px);
 
-  color: #000000;
+  color: var(--text-primary);
 
   font-size: 12px;
   font-family: monospace;
 }
 
 .status-chip .label {
-  color: #000000;
+  color: var(--text-secondary);
   font-weight: 600;
   letter-spacing: 0.3px;
 }
 
 .status-chip .value {
-  color: #000000;
+  color: var(--text-primary);
 }
 
 .divider {
   width: 1px;
   height: 14px;
-  background: rgba(255, 255, 255, 0.25);
+  background: var(--border-strong);
   margin: 0 2px;
 }
 

@@ -148,10 +148,10 @@ function onCenterChange(e) {
 }
 .sq__tabs {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   background: var(--bg-input);
   padding: 4px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-full);
   border: 1px solid var(--border-subtle);
 }
 .sq__tab {
@@ -161,20 +161,20 @@ function onCenterChange(e) {
   color: var(--text-secondary);
   font-size: 12.5px;
   padding: 8px 6px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.2s var(--ease-out), color 0.15s, box-shadow 0.15s;
 }
 .sq__tab:hover:not(.sq__tab--active) {
   background: var(--bg-panel-raised);
   color: var(--text-primary);
 }
 .sq__tab--active {
-  background: var(--bg-panel-raised);
-  color: var(--text-primary);
+  background: var(--bg-panel);
+  color: var(--accent-depth);
   font-weight: 700;
-  box-shadow: inset 0 0 0 1px var(--border-strong);
+  box-shadow: var(--shadow-xs), inset 0 0 0 1px color-mix(in srgb, var(--accent-depth) 25%, transparent);
 }
 .sq__panel {
   display: flex;
@@ -210,13 +210,19 @@ function onCenterChange(e) {
   font-weight: 600;
 }
 .qb-select {
-  background: var(--bg-input);
+  background: var(--bg-panel);
   border: 1px solid var(--border-strong);
   color: var(--text-primary);
   font-size: 12.5px;
-  padding: 8px;
+  padding: 9px;
   border-radius: var(--radius-sm);
   cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.qb-select:focus {
+  outline: none;
+  border-color: var(--accent-depth);
+  box-shadow: 0 0 0 3px var(--ring-color);
 }
 .qb-select--full {
   width: 100%;
@@ -224,25 +230,26 @@ function onCenterChange(e) {
 .slider {
   width: 100%;
   accent-color: var(--accent-depth);
-  height: 4px;
+  height: 5px;
   cursor: pointer;
 }
 
 .btn-pick {
   width: 100%;
-  padding: 9px 14px;
+  padding: 10px 14px;
   background: var(--bg-input);
   border: 1.5px dashed var(--border-strong);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
   font-size: 13px;
   text-align: center;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s var(--ease-out);
 }
 .btn-pick:hover:not(.btn-pick--active) {
   border-color: var(--accent-depth);
   color: var(--accent-depth);
+  background: color-mix(in srgb, var(--accent-depth) 5%, var(--bg-input));
 }
 .btn-pick--active {
   border-color: var(--accent-depth);

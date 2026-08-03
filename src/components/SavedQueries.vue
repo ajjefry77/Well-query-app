@@ -30,18 +30,25 @@ defineEmits(['load', 'delete'])
 .sv__load {
   flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
   background: var(--bg-input); border: 1px solid var(--border-subtle);
-  color: var(--text-primary); padding: 9px 12px; border-radius: var(--radius-sm);
+  color: var(--text-primary); padding: 10px 12px; border-radius: var(--radius-md);
   font-size: 12.5px; text-align: right;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
 }
-.sv__load:hover { border-color: var(--accent-copper); background: var(--bg-panel-raised); }
+.sv__load:hover {
+  border-color: var(--accent-copper);
+  background: color-mix(in srgb, var(--accent-copper) 6%, var(--bg-input));
+  transform: translateX(-2px);
+}
 .sv__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .sv__meta-row { display: flex; gap: 8px; align-items: center; }
 .sv__layer { color: var(--accent-depth); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; }
 .sv__cond { color: var(--text-muted); font-size: 10.5px; flex-shrink: 0; }
 .sv__delete {
   background: transparent; border: 1px solid var(--border-subtle);
-  color: var(--text-muted); width: 32px; border-radius: var(--radius-sm); font-size: 15px; flex-shrink: 0;
+  color: var(--text-muted); width: 34px; border-radius: var(--radius-md);
+  font-size: 15px; flex-shrink: 0;
+  transition: all 0.15s;
 }
-.sv__delete:hover { border-color: var(--accent-danger); color: var(--accent-danger); }
+.sv__delete:hover { border-color: var(--accent-danger); color: var(--accent-danger); background: color-mix(in srgb, var(--accent-danger) 8%, transparent); }
 .sv__empty { font-size: 12px; color: var(--text-muted); margin: 0; padding: 10px 0; }
 </style>
