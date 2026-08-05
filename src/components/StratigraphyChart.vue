@@ -128,7 +128,7 @@
         </div>
 
         <!-- چارت -->
-        <div class="strat-body" v-if="selectedWells.length >= 1">
+        <div class="strat-body" ref="chartBody" v-if="selectedWells.length >= 1">
           <div class="strat-canvas" :style="{ width: canvasW + 'px' }">
 
             <!-- عنوان -->
@@ -346,7 +346,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { fetchStratigraphyDataFromLayer } from '../composables/useGeoboxApi.js'
 import StratLayerConfigModal from './StratLayerConfigModal.vue'
 
@@ -432,6 +432,10 @@ onMounted(() => {
   }
   // وقتی wells از بیرون داده نشده، اول مدال تنظیم لایه باز میشه
   showConfigModal.value = true
+})
+
+onBeforeUnmount(() => {
+  if (bodyObserver) { bodyObserver.disconnect(); bodyObserver = null }
 })
 
 const allWells = computed(() => apiWells.value)
@@ -521,10 +525,55 @@ const isVisible    = n => activeFilter.value === 'all' || activeFilter.value ===
 // ────────────────────────────────────────────
 // ابعاد چارت
 // ────────────────────────────────────────────
-const COL_W   = 160
-const COL_GAP = 80
-const AXIS_W  = 72
-const CHART_H = 660
+const COL_W_FULL = 160
+const COL_GAP_FULL = 80
+const MIN_COL      = 96
+const MIN_GAP      = 24
+const AXIS_W       = 72
+const AXIS_PAD     = 12
+const CANVAS_PAD   = 48
+const CHART_H_MAX  = 660
+const CHART_H_MIN  = 320
+
+// اندازه‌ی در دسترس بدنه‌ی چارت — با ResizeObserver پیگیری می‌شود
+const chartBody = ref(null)
+const bodyW = ref(0)
+const bodyH = ref(0)
+let bodyObserver = null
+
+function measureBody() {
+  if (!chartBody.value) return
+  bodyW.value = chartBody.value.clientWidth
+  bodyH.value = chartBody.value.clientHeight
+}
+
+watch(chartBody, el => {
+  if (bodyObserver) { bodyObserver.disconnect(); bodyObserver = null }
+  if (el) {
+    bodyObserver = new ResizeObserver(measureBody)
+    bodyObserver.observe(el)
+    measureBody()
+  }
+})
+
+// عرض و فاصله‌ی ستون‌ها بسته به تعداد چاه و عرض در دسترس کم می‌شوند تا
+// روی دسکتاپ به‌جای اسکرول افقی، نمودار در همان عرض جا بگیرد.
+const chartLayout = computed(() => {
+  const n = Math.max(selectedWells.value.length, 1)
+  const avail = Math.max(0, bodyW.value - CANVAS_PAD)
+  const ideal = AXIS_W * 2 + n * COL_W_FULL + Math.max(n - 1, 0) * COL_GAP_FULL + CANVAS_PAD
+  const scale = avail > 0 ? Math.min(1, avail / ideal) : 1
+  return {
+    col: Math.max(MIN_COL, COL_W_FULL * scale),
+    gap: Math.max(MIN_GAP, COL_GAP_FULL * scale),
+  }
+})
+const COL_W   = computed(() => chartLayout.value.col)
+const COL_GAP = computed(() => chartLayout.value.gap)
+// ارتفاع چارت هم متناسب با ارتفاع در دسترس کم می‌شود تا اسکرول عمودی هم نشود.
+const CHART_H = computed(() =>
+  Math.max(CHART_H_MIN, Math.min(CHART_H_MAX, bodyH.value - 200))
+)
 
 const minDepth = computed(() => {
   let mn = Infinity
@@ -545,19 +594,20 @@ const maxDepth = computed(() => {
 })
 
 const plotW   = computed(() =>
-  Math.max(selectedWells.value.length, 1) * COL_W +
-  Math.max(selectedWells.value.length - 1, 0) * COL_GAP
+  Math.max(selectedWells.value.length, 1) * COL_W.value +
+  Math.max(selectedWells.value.length - 1, 0) * COL_GAP.value
 )
-const canvasW = computed(() => AXIS_W * 2 + plotW.value + 48)
+const canvasW = computed(() => AXIS_W * 2 + plotW.value + CANVAS_PAD)
 
 // ارتفاع بزرگتر = بالاتر روی صفحه (y کمتر)
+// AXIS_PAD بالا/پایین فاصله نگه می‌دارد تا برچسب اولین/آخرین تیک بریده نشود
 const toY = d => {
   const range = maxDepth.value - minDepth.value
-  if (!range) return 0
-  return ((maxDepth.value - d) / range) * CHART_H
+  if (!range) return AXIS_PAD
+  return AXIS_PAD + ((maxDepth.value - d) / range) * (CHART_H.value - AXIS_PAD * 2)
 }
 
-const colLeft = wi => wi * (COL_W + COL_GAP)
+const colLeft = wi => wi * (COL_W.value + COL_GAP.value)
 
 const yTicks = computed(() => {
   const t = []
@@ -613,14 +663,14 @@ const corrSegs = computed(() => {
       // خط سقف (top) — toY(top) همیشه y کمتره
       segs.push({
         fm: name,
-        x1: colLeft(wi) + COL_W, y1: toY(f1.top),
-        x2: colLeft(wi + 1),     y2: toY(f2.top),
+        x1: colLeft(wi) + COL_W.value, y1: toY(f1.top),
+        x2: colLeft(wi + 1),           y2: toY(f2.top),
       })
       // خط کف (base)
       segs.push({
         fm: name,
-        x1: colLeft(wi) + COL_W, y1: toY(f1.base),
-        x2: colLeft(wi + 1),     y2: toY(f2.base),
+        x1: colLeft(wi) + COL_W.value, y1: toY(f1.base),
+        x2: colLeft(wi + 1),           y2: toY(f2.base),
       })
     }
   }
@@ -1042,14 +1092,17 @@ const thickness = (well, name) => {
   font-size: 9px;
   font-family: var(--font-mono);
   font-weight: 700;
-  color: var(--text-secondary);
-  right: calc(100% + 3px);
+  color: var(--text-primary);
+  left: 4px;
+  right: auto;
   white-space: nowrap;
   pointer-events: none;
   transform: translateY(-50%);
-  background: color-mix(in srgb, var(--bg-panel) 80%, transparent);
-  padding: 0 2px;
+  background: color-mix(in srgb, var(--bg-panel) 88%, transparent);
+  backdrop-filter: blur(2px);
+  padding: 0 3px;
   border-radius: 2px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--bg-panel) 60%, transparent);
 }
 
 /* TD */
