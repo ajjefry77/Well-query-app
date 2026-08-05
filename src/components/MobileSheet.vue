@@ -1,5 +1,5 @@
 <template>
-  <div class="mobile-sheet-chrome" :class="{ 'is-closed': !open }">
+  <div class="mobile-sheet-chrome" :class="{ 'is-closed': !open, 'is-dragging': dragging }">
     <div class="mobile-sheet__grab" @pointerdown="$emit('grab-start', $event)"></div>
     <div class="mobile-sheet__tabs" v-show="open">
       <button
@@ -25,6 +25,7 @@
 defineProps({
   mobileTab: { type: String, required: true },
   open: { type: Boolean, default: true },
+  dragging: { type: Boolean, default: false },
 })
 defineEmits(['update:mobile-tab', 'grab-start', 'close'])
 </script>
@@ -44,6 +45,10 @@ defineEmits(['update:mobile-tab', 'grab-start', 'close'])
     border-top: 1px solid var(--border-subtle);
     box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.15);
     transition: bottom 0.3s var(--ease-out), height 0.3s var(--ease-out);
+  }
+  /* هنگام درگ، ترنزیشن را غیرفعال کن تا chrome هم‌گام با پنل‌ها حرکت کند */
+  .mobile-sheet-chrome.is-dragging {
+    transition: none;
   }
   /* حالت کاملاً بسته: فقط هندل می‌ماند */
   .mobile-sheet-chrome.is-closed {

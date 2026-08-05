@@ -99,6 +99,7 @@
       <MobileSheet
         v-show="isMobile"
         :open="sheetOpen"
+        :dragging="dragging"
         :mobile-tab="mobileTab"
         @update:mobile-tab="mobileTab = $event"
         @grab-start="onSheetGrabStart"
@@ -188,6 +189,7 @@ const isMobile    = ref(false)
 const mobileTab   = ref('query')
 const sheetHeight = ref(0)
 const sheetOpen   = ref(true)
+const dragging    = ref(false)
 let dragState     = null
 
 function clampSheet(v) {
@@ -203,6 +205,7 @@ function onSheetGrabStart(e) {
   e.preventDefault()
   const wasClosed = !sheetOpen.value
   sheetOpen.value = true
+  dragging.value = true
   dragState = { startY: e.clientY, startH: sheetHeight.value, wasClosed, moved: false }
   window.addEventListener('pointermove', onSheetGrabMove)
   window.addEventListener('pointerup', onSheetGrabEnd)
@@ -216,6 +219,7 @@ function onSheetGrabEnd() {
   if (!dragState) return
   window.removeEventListener('pointermove', onSheetGrabMove)
   window.removeEventListener('pointerup', onSheetGrabEnd)
+  dragging.value = false
   const { wasClosed, moved } = dragState
 
   // لمس ساده روی هندل وقتی پنل بسته است → باز کردن

@@ -165,6 +165,15 @@ const crsOptions = [
   display: contents;
 }
 
+/* در دسکتاپ، کنترل‌ها داخل بدنه باید در یک ردیف قرار بگیرند */
+.app-header__body-inner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .app-header__brand {
   display: flex;
   align-items: center;

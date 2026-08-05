@@ -208,6 +208,19 @@ function confirm() {
 
 .strat-cfg-spacer { flex: 1; }
 
+@media (max-width: 760px) {
+  .strat-cfg-backdrop { align-items: flex-end; }
+  .strat-cfg-modal {
+    width: 100%;
+    max-width: 100%;
+    max-height: 88vh;
+    overflow-y: auto;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+  .strat-cfg-footer { flex-wrap: wrap; gap: 8px; }
+}
+
 .qb-select {
   width: 100%;
   padding: 9px 10px;
