@@ -223,3 +223,25 @@ select {
 input[type='range'] {
   accent-color: var(--accent-depth);
 }
+
+/* اسپینر بارگذاری */
+.spinner,
+.spinner-inline {
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent-depth);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+.spinner {
+  width: 36px;
+  height: 36px;
+}
+.spinner-inline {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  display: inline-block;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
