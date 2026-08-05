@@ -1445,4 +1445,18 @@ defineExpose({
   pointer-events: none;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
+
+@media (max-width: 760px) {
+  .status-bar {
+    height: 36px;
+    padding: 0 8px;
+    overflow-x: auto;
+  }
+  .status-chip {
+    padding: 4px 8px;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+  .status-group { gap: 6px; }
+}
 </style>

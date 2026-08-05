@@ -85,10 +85,10 @@
     </div>
 
     <!-- صفحه اصلی -->
-    <main v-else class="app-main">
+    <main v-else class="app-main" :style="isMobile ? { '--sheet-h': sheetHeight + 'px' } : {}">
 
       <!-- پنل چپ: کوئری‌ساز -->
-      <aside class="side-panel" :class="{ 'side-panel--collapsed': !queryPanelOpen }">
+      <aside class="side-panel" :class="{ 'side-panel--collapsed': !queryPanelOpen }" v-show="!isMobile || mobileTab === 'query'">
         <button class="query-toggle" @click="toggleQueryPanel">
           <svg
             class="toggle-chevron"
@@ -200,7 +200,7 @@
       </section>
 
       <!-- پنل راست: لایه‌ها + خلاصه شرط‌ها -->
-      <section class="results-panel" :class="{ 'results-panel--collapsed': !resultsPanelOpen }">
+      <section class="results-panel" :class="{ 'results-panel--collapsed': !resultsPanelOpen }" v-show="!isMobile || mobileTab === 'layers'">
         <button class="results-toggle" @click="toggleResultsPanel">
           <svg
             class="toggle-chevron"
@@ -290,6 +290,23 @@
 
         </div>
       </section>
+
+      <!-- موبایل: نوار grab + تب‌های پنل پایین -->
+      <div v-show="isMobile" class="mobile-sheet-chrome">
+        <div class="mobile-sheet__grab" @pointerdown="onSheetGrabStart"></div>
+        <div class="mobile-sheet__tabs">
+          <button
+            class="mobile-sheet__tab"
+            :class="{ 'mobile-sheet__tab--active': mobileTab === 'query' }"
+            @click="mobileTab = 'query'"
+          >کوئری</button>
+          <button
+            class="mobile-sheet__tab"
+            :class="{ 'mobile-sheet__tab--active': mobileTab === 'layers' }"
+            @click="mobileTab = 'layers'"
+          >لایه‌های فعال</button>
+        </div>
+      </div>
     </main>
 
     <!-- مدال انتخاب لایه -->
@@ -383,7 +400,7 @@
 </template>
 
 <script setup>
-import { ref, computed, shallowRef, onMounted } from 'vue'
+import { ref, computed, shallowRef, onMounted, onBeforeUnmount } from 'vue'
 import LeafletMap from './components/LeafletMap.vue'
 import MapboxMap from './components/MapboxMap.vue'
 import QueryBuilder from './components/QueryBuilder.vue'
@@ -441,6 +458,48 @@ const activeQueryLayer = ref(null)
 const queryPanelOpen   = ref(true)
 const showResultsModal = ref(false)
 
+// ── موبایل: پنل پایین (bottom sheet) ──
+const isMobile    = ref(false)
+const mobileTab   = ref('query')
+const sheetHeight = ref(0)
+let dragState     = null
+
+const SHEET_MIN = 120
+function clampSheet(v) {
+  const max = Math.round(window.innerHeight * 0.85)
+  return Math.round(Math.min(max, Math.max(SHEET_MIN, v)))
+}
+function onSheetGrabStart(e) {
+  if (!isMobile.value) return
+  e.preventDefault()
+  dragState = { startY: e.clientY, startH: sheetHeight.value }
+  window.addEventListener('pointermove', onSheetGrabMove)
+  window.addEventListener('pointerup', onSheetGrabEnd)
+}
+function onSheetGrabMove(e) {
+  if (!dragState) return
+  sheetHeight.value = clampSheet(dragState.startH + (dragState.startY - e.clientY))
+}
+function onSheetGrabEnd() {
+  if (!dragState) return
+  window.removeEventListener('pointermove', onSheetGrabMove)
+  window.removeEventListener('pointerup', onSheetGrabEnd)
+  const vh = window.innerHeight
+  const targets = [
+    Math.round(vh * 0.28),
+    Math.round(vh * 0.5),
+    Math.round(vh * 0.82),
+  ]
+  sheetHeight.value = targets.reduce((best, t) =>
+    Math.abs(t - sheetHeight.value) < Math.abs(best - sheetHeight.value) ? t : best
+  )
+  dragState = null
+}
+function onWindowResize() {
+  if (!isMobile.value || dragState) return
+  sheetHeight.value = clampSheet(sheetHeight.value || Math.round(window.innerHeight * 0.42))
+}
+
 function toggleQueryPanel() {
   queryPanelOpen.value = !queryPanelOpen.value
   setTimeout(() => mapRef.value?.invalidateSize?.(), 320)
@@ -488,7 +547,28 @@ function applyLayerSelection() {
   setActiveLayers(layers)
 }
 
-onMounted(loadVectorLayers)
+onMounted(() => {
+  loadVectorLayers()
+  // در موبایل پنل‌ها همیشه باز بمانند (دکمه toggle حذف شده)
+  const mq = window.matchMedia('(max-width: 760px)')
+  const syncViewport = () => {
+    isMobile.value = mq.matches
+    if (isMobile.value) {
+      queryPanelOpen.value = true
+      resultsPanelOpen.value = true
+      if (sheetHeight.value === 0) {
+        sheetHeight.value = Math.round(window.innerHeight * 0.42)
+      }
+    }
+  }
+  syncViewport()
+  mq.addEventListener('change', syncViewport)
+  window.addEventListener('resize', onWindowResize)
+  onBeforeUnmount(() => {
+    mq.removeEventListener('change', syncViewport)
+    window.removeEventListener('resize', onWindowResize)
+  })
+})
 
 // ── خلاصه شرط‌ها ──
 const OP_SYMBOLS = { '=':'=', '!=':'≠', '>':'>', '>=':'≥', '<':'<', '<=':'≤', contains:'شامل' }
@@ -628,6 +708,7 @@ function handleClearData() {
 <style scoped>
 .app {
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--bg-deep);
@@ -853,6 +934,8 @@ function handleClearData() {
   transition: width 0.3s var(--ease-out);
   width: 320px;
   box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
 }
 .side-panel--collapsed { width: 36px; padding: 0; }
 .query-toggle {
@@ -886,7 +969,8 @@ function handleClearData() {
   transform: rotate(180deg);
 }
 .side-panel__scroll {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 16px;
   display: flex;
@@ -976,6 +1060,8 @@ function handleClearData() {
   transition: width 0.3s var(--ease-out);
   width: 270px;
   box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
 }
 .results-panel--collapsed { width: 36px; padding: 0; }
 .results-toggle {
@@ -1003,7 +1089,8 @@ function handleClearData() {
   transform: translateY(-50%) scale(1.08);
 }
 .results-panel__content {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -1356,6 +1443,16 @@ function handleClearData() {
 }
 
 @media (max-width: 1024px) {
+  .app-header {
+    row-gap: 8px;
+  }
+  .app-header__brand { min-width: 0; }
+  .app-header__brand h1 {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .app-main {
     grid-template-columns: auto 1fr;
     grid-template-rows: 1fr auto;
@@ -1363,8 +1460,8 @@ function handleClearData() {
   .results-panel {
     grid-column: 1 / -1;
     width: auto !important;
-    height: 320px;
-    max-height: 40vh;
+    height: auto;
+    max-height: 34vh;
   }
   .results-panel--collapsed {
     width: auto !important;
@@ -1383,50 +1480,159 @@ function handleClearData() {
 
 @media (max-width: 760px) {
   .app-header {
-    padding: 10px 14px;
-    gap: 8px;
+    padding: 8px 12px;
+    gap: 6px;
+    align-items: center;
   }
-  .app-header__brand h1 { font-size: 13px; }
-  .brand-mark { width: 34px; height: 34px; font-size: 15px; }
-  .header-layer-summary { min-width: 0; max-width: 150px; }
+  .app-header__brand {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .app-header__brand h1 { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .brand-mark { width: 32px; height: 32px; font-size: 14px; }
+
+  .header-layer-summary {
+    min-width: 0;
+    max-width: 120px;
+    padding: 6px 10px;
+    font-size: 11px;
+  }
   .layer-summary-label { display: none; }
+
+  .theme-toggle { order: 2; }
+  .app-header__crs-switch { order: 3; }
+  .app-header__map-switch { order: 4; }
   .app-header__tabs { order: 5; width: 100%; }
   .app-header__tabs .header-tab { flex: 1; padding: 7px 6px; font-size: 12px; }
 
   .app-main {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(280px, 55vh) auto auto;
-    padding: 10px;
-    gap: 10px;
+    position: relative;
+    display: block;
+    padding: 0;
+    overflow: hidden;
+  }
+  .map-panel {
+    position: absolute;
+    inset: 0;
+    min-height: 0;
+    border-radius: 0;
+  }
+
+  /* پنل پایین (bottom sheet) روی نقشه */
+  .side-panel,
+  .results-panel {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    width: 100% !important;
+    height: var(--sheet-h, 42vh);
+    max-height: none;
+    min-height: 0;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.28);
+    z-index: 30;
   }
   .side-panel {
-    grid-row: 2;
-    width: 100% !important;
-    max-height: 46vh;
+    padding: 0;
   }
-  .side-panel--collapsed {
-    max-height: 36px;
-    height: 36px;
+  .side-panel__scroll {
+    padding: 64px 16px 16px;
   }
-  .side-panel--collapsed .query-toggle {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-full);
+  .results-panel {
+    padding: 64px 14px 14px;
   }
-  .map-panel { grid-row: 1; min-height: 280px; }
-  .results-panel { grid-row: 3; }
 
+  /* نوار grab + تب‌های پنل پایین */
+  .mobile-sheet-chrome {
+    position: absolute;
+    inset-inline: 0;
+    bottom: calc(var(--sheet-h, 42vh) - 64px);
+    height: 64px;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-panel);
+    border-radius: 16px 16px 0 0;
+    border-top: 1px solid var(--border-subtle);
+    box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.15);
+  }
+  .mobile-sheet__grab {
+    height: 20px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: ns-resize;
+    touch-action: none;
+  }
+  .mobile-sheet__grab::before {
+    content: '';
+    width: 44px;
+    height: 5px;
+    border-radius: var(--radius-full);
+    background: var(--border-strong);
+  }
+  .mobile-sheet__tabs {
+    flex: 1;
+    display: flex;
+    gap: 6px;
+    align-items: flex-end;
+    padding: 0 12px 12px;
+  }
+  .mobile-sheet__tab {
+    flex: 1;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 0 6px;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .mobile-sheet__tab--active {
+    background: var(--accent-depth);
+    border-color: var(--accent-depth);
+    color: #fff;
+    font-weight: 700;
+  }
+
+  /* در موبایل دکمه‌های باز/بسته پنل حذف می‌شوند؛ پنل‌ها همیشه بازند */
+  .query-toggle,
+  .results-toggle {
+    display: none;
+  }
+
+  .results-fab { top: 12px; inset-inline-end: 12px; padding: 8px 10px; }
+
+  /* مودال‌ها در موبایل تمام‌صفحه */
+  .results-modal-backdrop { padding: 0; }
+  .results-modal {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    border: none;
+  }
+  .results-modal__header { padding: 10px 14px; }
   .results-modal__body { padding: 12px; }
-  .results-modal__header { padding: 12px 16px; }
   .export-btn { font-size: 10px; padding: 5px 9px; }
+
+  .modal-footer { flex-wrap: wrap; gap: 8px; }
+}
+
+@media (max-width: 520px) {
+  .app-header__crs-switch { display: none; }
+  .map-switch-btn { padding: 5px 9px; font-size: 10.5px; }
 }
 
 @media (max-width: 460px) {
-  .app-header__crs-switch { display: none; }
-  .map-switch-btn { padding: 5px 9px; }
+  .header-layer-summary { display: none; }
   .theme-toggle { width: 32px; height: 32px; }
 }
 </style>

@@ -1152,4 +1152,46 @@ const thickness = (well, name) => {
 .popup-leave-active { transition: opacity .10s ease; }
 .popup-enter-from   { opacity: 0; transform: translateY(5px) scale(.97); }
 .popup-leave-to     { opacity: 0; }
+
+/* ══ ریسپانسیو ═════════════════════════════════════════════════════════ */
+@media (max-width: 760px) {
+  .strat-header {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+  .strat-header__brand h2 { font-size: 13px; }
+  .brand-icon { width: 36px; height: 36px; font-size: 18px; }
+  .strat-header__cfg-btn { padding: 7px 12px; }
+  .filter-label { display: none; }
+
+  .strat-content {
+    flex-direction: column;
+  }
+  .well-picker {
+    width: 100%;
+    max-height: 30vh;
+    border-inline-end: none;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .well-picker--closed {
+    width: 100%;
+    max-height: 36px;
+  }
+  .well-picker__title { padding: 9px 12px; }
+
+  .strat-body {
+    padding: 12px;
+  }
+  .bottom-panels {
+    gap: 10px;
+  }
+  .legend-panel,
+  .notes-panel {
+    min-width: 0;
+    width: 100%;
+  }
+  .thickness-panel {
+    width: 100%;
+  }
+}
 </style>
