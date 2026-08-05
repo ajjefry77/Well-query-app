@@ -47,50 +47,6 @@ function latLngToUTM(lat, lng) {
   return { easting: Math.round(easting * 100) / 100, northing: Math.round(northing * 100) / 100, zone, hemisphere }
 }
 
-function utmToLatLng(easting, northing, zone, hemisphere) {
-  const a = 6378137.0
-  const f = 1 / 298.257223563
-  const b = a * (1 - f)
-  const e2 = 1 - (b * b) / (a * a)
-  const e1 = (1 - Math.sqrt(1 - e2)) / (1 + Math.sqrt(1 - e2))
-
-  const x = easting - 500000
-  let y = northing
-  if (hemisphere === 'S') y -= 10000000
-
-  const lambda0 = ((zone - 1) * 6 - 180 + 3) * Math.PI / 180
-  const M = y / 0.9996
-  const mu = M / (a * (1 - e2 / 4 - 3 * e2 ** 2 / 64 - 5 * e2 ** 3 / 256))
-
-  const phi1 = mu
-    + (3 * e1 / 2 - 27 * e1 ** 3 / 32) * Math.sin(2 * mu)
-    + (21 * e1 ** 2 / 16 - 55 * e1 ** 4 / 32) * Math.sin(4 * mu)
-    + (151 * e1 ** 3 / 96) * Math.sin(6 * mu)
-    + (1097 * e1 ** 4 / 512) * Math.sin(8 * mu)
-
-  const N1 = a / Math.sqrt(1 - e2 * Math.sin(phi1) ** 2)
-  const T1 = Math.tan(phi1) ** 2
-  const C1 = (e2 / (1 - e2)) * Math.cos(phi1) ** 2
-  const R1 = a * (1 - e2) / (1 - e2 * Math.sin(phi1) ** 2) ** 1.5
-  const D = x / (N1 * 0.9996)
-
-  const lat = phi1 - (N1 * Math.tan(phi1) / R1) * (
-    D ** 2 / 2
-    - (5 + 3 * T1 + 10 * C1 - 4 * C1 ** 2 - 9 * (e2 / (1 - e2))) * D ** 4 / 24
-    + (61 + 90 * T1 + 298 * C1 + 45 * T1 ** 2 - 252 * (e2 / (1 - e2)) - 3 * C1 ** 2) * D ** 6 / 720
-  )
-
-  const lng = lambda0 + (
-    D - (1 + 2 * T1 + C1) * D ** 3 / 6
-    + (5 - 2 * C1 + 28 * T1 - 3 * C1 ** 2 + 8 * (e2 / (1 - e2)) + 24 * T1 ** 2) * D ** 5 / 120
-  ) / Math.cos(phi1)
-
-  return {
-    lat: Math.round(lat * 180 / Math.PI * 1e6) / 1e6,
-    lng: Math.round(lng * 180 / Math.PI * 1e6) / 1e6
-  }
-}
-
 export function useCoordinates() {
   const crs = ref('wgs84') // 'wgs84' | 'utm'
 
@@ -113,16 +69,5 @@ export function useCoordinates() {
     }
   }
 
-  function convertRow(row) {
-    if (crs.value === 'wgs84' || !row.lat || !row.lng) return row
-    const utm = latLngToUTM(row.lat, row.lng)
-    return {
-      ...row,
-      x: utm.easting,
-      y: utm.northing,
-      utm_zone: `${utm.zone}${utm.hemisphere}`,
-    }
-  }
-
-  return { crs, convertFeature, convertRow, latLngToUTM, utmToLatLng }
+  return { crs, convertFeature, latLngToUTM }
 }

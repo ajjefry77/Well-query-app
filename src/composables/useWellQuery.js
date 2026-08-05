@@ -1,9 +1,9 @@
 import { ref, computed, watch } from 'vue'
-import { findWithinRadius, findNeighborPairs } from './useGeoUtils.js'
+import { findWithinRadius } from './useGeoUtils.js'
 import {
   fetchVectorLayers,
   fetchLayerFields,
-  fetchLayerFeatures,
+  fetchAllFeatures,
   buildQueryableFields,
   featuresToRows,
 } from './useGeoboxApi.js'
@@ -28,6 +28,8 @@ function lsSet(key, value) {
 }
 
 // ─── ارزیابی شرط‌ها ──────────────────────────────────────
+// اولویت استاندارد: AND قبل از OR (مثل SQL)
+// شرط‌ها به بخش‌های OR تقسیم می‌شوند و در هر بخش همه با AND ترکیب می‌شوند.
 
 function evaluateCondition(row, { field, operator, value }) {
   const rowValue = row[field]
@@ -46,15 +48,19 @@ function evaluateCondition(row, { field, operator, value }) {
 
 function evaluateGroup(row, conditions) {
   if (!conditions.length) return true
-  let result = evaluateCondition(row, conditions[0])
-  if (conditions[0].not) result = !result
-  for (let i = 1; i < conditions.length; i++) {
-    const cond = conditions[i]
-    let r = evaluateCondition(row, cond)
-    if (cond.not) r = !r
-    result = cond.logic === 'OR' ? result || r : result && r
+  const segments = [[]]
+  for (const cond of conditions) {
+    if (cond.logic === 'OR' && segments[segments.length - 1].length) {
+      segments.push([])
+    }
+    segments[segments.length - 1].push(cond)
   }
-  return result
+  return segments.some(seg =>
+    seg.every(cond => {
+      let r = evaluateCondition(row, cond)
+      return cond.not ? !r : r
+    })
+  )
 }
 
 // ─── Composable ───────────────────────────────────────────
@@ -74,6 +80,22 @@ export function useWellQuery() {
   const loadingFields   = ref(false)
   const loadingFeatures = ref(false)
   const apiError        = ref(null)
+
+  // ── بارگذاری فیلدها و عوارض یک لایه (با صفحه‌بندی کامل) ──
+  async function loadLayerData(layer) {
+    if (!layerFieldsMap.value[layer.uuid]) {
+      const fields = await fetchLayerFields(layer.uuid)
+      layerFieldsMap.value[layer.uuid] = buildQueryableFields(fields)
+    }
+    if (!layerFeaturesMap.value[layer.uuid]) {
+      const raw = await fetchAllFeatures(layer.uuid)
+      layerFeaturesMap.value[layer.uuid] = featuresToRows(raw).map(r => ({
+        ...r,
+        _layerUuid: layer.uuid,
+        _layerName: layer.display_name || layer.name,
+      }))
+    }
+  }
 
   // ── بارگذاری لایه‌ها ──
   async function loadVectorLayers() {
@@ -115,27 +137,12 @@ export function useWellQuery() {
   async function addLayer(layer) {
     if (activeLayers.value.find(l => l.uuid === layer.uuid)) return
     apiError.value = null
-    const needFields   = !layerFieldsMap.value[layer.uuid]
-    const needFeatures = !layerFeaturesMap.value[layer.uuid]
-    if (needFields || needFeatures) {
+    const needData = !layerFieldsMap.value[layer.uuid] || !layerFeaturesMap.value[layer.uuid]
+    if (needData) {
       loadingFields.value   = true
       loadingFeatures.value = true
       try {
-        await Promise.all([
-          needFields ? (async () => {
-            const fields = await fetchLayerFields(layer.uuid)
-            layerFieldsMap.value[layer.uuid] = buildQueryableFields(fields)
-          })() : Promise.resolve(),
-          needFeatures ? (async () => {
-            const data = await fetchLayerFeatures(layer.uuid, { pageSize: 200, limit: 200 })
-            const raw = Array.isArray(data) ? data : (data.features ?? data.results ?? data.data ?? [])
-            layerFeaturesMap.value[layer.uuid] = featuresToRows(raw).map(r => ({
-              ...r,
-              _layerUuid: layer.uuid,
-              _layerName: layer.display_name || layer.name,
-            }))
-          })() : Promise.resolve(),
-        ])
+        await loadLayerData(layer)
       } catch (e) {
         apiError.value = e.message
         return
@@ -171,21 +178,7 @@ export function useWellQuery() {
       loadingFields.value   = true
       loadingFeatures.value = true
       try {
-        await Promise.all(needsLoad.map(async (layer) => {
-          if (!layerFieldsMap.value[layer.uuid]) {
-            const fields = await fetchLayerFields(layer.uuid)
-            layerFieldsMap.value[layer.uuid] = buildQueryableFields(fields)
-          }
-          if (!layerFeaturesMap.value[layer.uuid]) {
-            const data = await fetchLayerFeatures(layer.uuid, { pageSize: 200, limit: 200 })
-            const raw = Array.isArray(data) ? data : (data.features ?? data.results ?? data.data ?? [])
-            layerFeaturesMap.value[layer.uuid] = featuresToRows(raw).map(r => ({
-              ...r,
-              _layerUuid: layer.uuid,
-              _layerName: layer.display_name || layer.name,
-            }))
-          }
-        }))
+        await Promise.all(needsLoad.map(loadLayerData))
       } catch (e) {
         apiError.value = e.message
       } finally {
@@ -197,10 +190,6 @@ export function useWellQuery() {
     rebuildAggregated()
 
     for (const l of layers) ensureLayerConditions(l.uuid)
-  }
-
-  async function selectLayer(layer) {
-    await setActiveLayers([layer])
   }
 
   // ── کوئری توصیفی ──
@@ -288,26 +277,9 @@ export function useWellQuery() {
 
   const hasAnyFilter = computed(() => hasAttributeFilter.value || hasSpatialFilter.value)
 
-  const conditions = computed(() => {
-    const first = activeLayers.value[0]
-    return first ? (layerConditions.value[first.uuid] ?? []) : []
-  })
-
-  function addCondition() {
-    const first = activeLayers.value[0]
-    if (first) addLayerCondition(first.uuid)
-  }
-  function removeCondition(index) {
-    const first = activeLayers.value[0]
-    if (first) removeLayerCondition(first.uuid, index)
-  }
-
   // ── کوئری مکانی ──
   const radiusCenter  = ref(null)
   const radiusKm      = ref(lsGet(LS_KEYS.radiusKm, 3))
-  const neighborField = ref('')
-  const neighborValue = ref('')
-  const neighborMaxKm = ref(2)
 
   watch(radiusKm, val => lsSet(LS_KEYS.radiusKm, val))
 
@@ -319,15 +291,6 @@ export function useWellQuery() {
       return center.id === undefined || f.id !== center.id
     })
     return findWithinRadius(candidates, center, radiusKm.value)
-  })
-
-  const neighborResults = computed(() => {
-    if (!neighborField.value) return []
-    const candidates = allFeatures.value.filter(f => {
-      if (!f.lat || !f.lng) return false
-      return !neighborValue.value || String(f[neighborField.value]) === String(neighborValue.value)
-    })
-    return findNeighborPairs(candidates, neighborMaxKm.value)
   })
 
   // ── کوئری‌های ذخیره‌شده ──
@@ -393,14 +356,10 @@ export function useWellQuery() {
     loadingLayers, loadingFields, loadingFeatures, apiError,
     loadVectorLayers,
     addLayer, removeLayer, setActiveLayers,
-    selectLayer,
     allWells: allFeatures,
-    conditions, attributeResults, combinedResults, hasAnyFilter, hasAttributeFilter, hasSpatialFilter,
-    addCondition, removeCondition,
-    layerConditions,
+    combinedResults, hasAnyFilter,
     getLayerConditions, addLayerCondition, removeLayerCondition, getLayerResultCount,
-    radiusCenter, radiusKm, radiusResults,
-    neighborField, neighborValue, neighborMaxKm, neighborResults,
+    radiusCenter, radiusKm,
     savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
     clearAllLocalData,
   }

@@ -3,7 +3,7 @@
 
 const EARTH_RADIUS_KM = 6371
 
-export function toRad(deg) {
+function toRad(deg) {
   return (deg * Math.PI) / 180
 }
 
@@ -36,23 +36,6 @@ export function findWithinRadius(points, center, radiusKm) {
     .map((p) => ({ ...p, distanceKm: haversineDistanceKm(center, p) }))
     .filter((p) => p.distanceKm <= radiusKm)
     .sort((a, b) => a.distanceKm - b.distanceKm)
-}
-
-/**
- * یافتن چاه‌های همجوار با یکدیگر در یک مجموعه (مثلاً یک میدان خاص)
- * معادل self-join مکانی: هر جفت نقطه که فاصله‌شان کمتر از حد مجاز است
- */
-export function findNeighborPairs(points, maxDistanceKm) {
-  const pairs = []
-  for (let i = 0; i < points.length; i++) {
-    for (let j = i + 1; j < points.length; j++) {
-      const d = haversineDistanceKm(points[i], points[j])
-      if (d <= maxDistanceKm) {
-        pairs.push({ a: points[i], b: points[j], distanceKm: d })
-      }
-    }
-  }
-  return pairs
 }
 
 /**

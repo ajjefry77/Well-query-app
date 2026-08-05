@@ -4,9 +4,6 @@
 
 const API_BASE = '/api'
 
-// UUID لایه چینه‌شناسی
-const STRAT_LAYER_UUID = '311ba310-95e6-405d-b044-c33879b9abbd'
-
 let accessToken = null;
 let tokenPromise = null;
 
@@ -71,7 +68,7 @@ async function getToken() {
 // -------------------------------
 // Fetch مرکزی API
 // -------------------------------
-async function apiFetch(path, params = {}) {
+async function apiFetch(path, params = {}, retried = false) {
   const token = await getToken();
 
   const url = Object.keys(params).length
@@ -87,6 +84,11 @@ async function apiFetch(path, params = {}) {
   });
 
   if (!res.ok) {
+    // توکن منقضی شده → توکن را پاک کن و یک بار دیگر تلاش کن
+    if (res.status === 401 && !retried) {
+      accessToken = null
+      return apiFetch(path, params, true)
+    }
     let msg = `HTTP ${res.status}`;
     try {
       const d = await res.json();
@@ -132,10 +134,6 @@ export async function fetchLayerFeatures(layerUuid, opts = {}) {
   });
 }
 
-export async function fetchStratigraphyData() {
-  return fetchStratigraphyDataFromLayer(STRAT_LAYER_UUID)
-}
-
 // تلاش برای پیدا کردن یک فیلد مناسب، از بین چند کاندید
 function pickField(props, candidates) {
   for (const c of candidates) {
@@ -156,7 +154,7 @@ const DOWN_CANDIDATES = ['DownHeight', 'Down_Height', 'Down', 'Base', 'base']
 const NAME_CANDIDATES = ['Name_x', 'FormationName', 'Formation', 'LayerName', 'Name']
 
 // همه‌ی صفحات یک لایه رو پشت‌سرهم می‌گیره (محدودیت یک درخواست رو دور می‌زنه)
-async function fetchAllFeatures(layerUuid) {
+export async function fetchAllFeatures(layerUuid) {
   const pageSize = 2000
   let page = 1
   let all = []

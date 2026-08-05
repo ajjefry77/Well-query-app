@@ -353,7 +353,7 @@ import StratLayerConfigModal from './StratLayerConfigModal.vue'
 // ────────────────────────────────────────────
 // Props
 // ────────────────────────────────────────────
-const props = defineProps({ wells: { type: Array, default: null } })
+const props = defineProps({})
 defineEmits(['back'])
 
 // ────────────────────────────────────────────
@@ -401,11 +401,6 @@ function normalizeWells(raw) {
 }
 
 async function loadData() {
-  if (props.wells) {
-    apiWells.value = normalizeWells(props.wells)
-    initSelection()
-    return
-  }
   if (!config.value) return
 
   loading.value = true
@@ -426,10 +421,6 @@ async function loadData() {
 }
 
 onMounted(() => {
-  if (props.wells) {
-    loadData()
-    return
-  }
   // وقتی wells از بیرون داده نشده، اول مدال تنظیم لایه باز میشه
   showConfigModal.value = true
 })
@@ -438,7 +429,7 @@ onBeforeUnmount(() => {
   if (bodyObserver) { bodyObserver.disconnect(); bodyObserver = null }
 })
 
-const allWells = computed(() => apiWells.value)
+const allWells = apiWells
 
 // ────────────────────────────────────────────
 // انتخاب چاه — بر اساس _key یکتا

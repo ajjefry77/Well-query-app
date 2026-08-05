@@ -66,7 +66,6 @@
           :has-filter="hasAnyFilter"
           :radius-center="showRadiusOnMap ? radiusCenter : null"
           :radius-km="radiusKm"
-          :neighbor-pairs="queryKind === 'spatial' && spatialMode === 'neighbor' ? neighborResults : []"
           :theme="theme"
           @select-well="onSelectFromMap"
         />
@@ -132,20 +131,21 @@
 </template>
 
 <script setup>
-import { ref, computed, shallowRef, onMounted, onBeforeUnmount } from 'vue'
-import LeafletMap from './components/LeafletMap.vue'
-import MapboxMap from './components/MapboxMap.vue'
+import { ref, computed, shallowRef, defineAsyncComponent, onMounted, onBeforeUnmount } from 'vue'
 import AppHeader from './components/AppHeader.vue'
 import QueryPanel from './components/QueryPanel.vue'
 import ResultsPanel from './components/ResultsPanel.vue'
 import LayerModal from './components/LayerModal.vue'
 import ResultsModal from './components/ResultsModal.vue'
 import MobileSheet from './components/MobileSheet.vue'
-import StratigraphyChart from './components/StratigraphyChart.vue'
 import { useWellQuery } from './composables/useWellQuery.js'
 import { useCoordinates } from './composables/useCoordinates.js'
 import { useTheme } from './composables/useTheme.js'
-import { exportData } from './composables/useExport.js'
+
+// بارگذاری تنبل: نقشه‌ها و نمودار چینه‌شناسی فقط هنگام نیاز لود می‌شوند
+const MapboxMap = defineAsyncComponent(() => import('./components/MapboxMap.vue'))
+const LeafletMap = defineAsyncComponent(() => import('./components/LeafletMap.vue'))
+const StratigraphyChart = defineAsyncComponent(() => import('./components/StratigraphyChart.vue'))
 
 const { crs, convertFeature } = useCoordinates()
 const { theme, toggle: toggleTheme } = useTheme()
@@ -160,7 +160,7 @@ const {
   removeLayer, setActiveLayers,
   allWells, combinedResults, hasAnyFilter,
   getLayerConditions, addLayerCondition, removeLayerCondition, getLayerResultCount,
-  radiusCenter, radiusKm, neighborResults,
+  radiusCenter, radiusKm,
   savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
   clearAllLocalData,
 } = useWellQuery()
@@ -340,12 +340,6 @@ const showRadiusOnMap = computed(() =>
 )
 const displayColumns = computed(() => {
   if (queryKind.value === 'spatial') {
-    if (spatialMode.value === 'neighbor') {
-      return [
-        { key: 'pairLabel', label: 'جفت عارضه‌ها' },
-        { key: 'distanceKm', label: 'فاصله (km)', mono: true },
-      ]
-    }
     return [
       { key: '_layerName', label: 'لایه' },
       { key: 'id', label: 'شناسه', mono: true },
@@ -359,16 +353,7 @@ const displayColumns = computed(() => {
     ...queryableFields.value.slice(0, 5).map(f => ({ key: f.key, label: f.label })),
   ]
 })
-const displayRows = computed(() => {
-  if (spatialMode.value === 'neighbor') {
-    return neighborResults.value.map((pair, i) => ({
-      id: `pair-${i}`,
-      pairLabel: `${pair.a.id}  ⇄  ${pair.b.id}`,
-      distanceKm: pair.distanceKm,
-    }))
-  }
-  return combinedResults.value
-})
+const displayRows = computed(() => combinedResults.value)
 const displayLayerMeta = computed(() => {
   if (queryKind.value !== 'attribute') return []
   return activeLayers.value.map(layer => ({
@@ -378,14 +363,7 @@ const displayLayerMeta = computed(() => {
     fields: layerFields(layer.uuid),
   }))
 })
-const highlightedIds = computed(() => {
-  if (spatialMode.value === 'neighbor') {
-    const ids = new Set()
-    neighborResults.value.forEach(p => { ids.add(p.a.id); ids.add(p.b.id) })
-    return [...ids]
-  }
-  return combinedResults.value.map(w => w.id)
-})
+const highlightedIds = computed(() => combinedResults.value.map(w => w.id))
 
 // ── handlers ──
 function onRemoveLayer(uuid) {
@@ -431,7 +409,8 @@ function onSelectFromTable(row) {
 function onHoverRow(row) {
   if (row.lat && row.lng) activeWellId.value = row.id
 }
-function handleExport(format) {
+async function handleExport(format) {
+  const { exportData } = await import('./composables/useExport.js')
   exportData(format, displayRows.value, convertFeature)
 }
 

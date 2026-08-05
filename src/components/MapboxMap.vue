@@ -2,10 +2,6 @@
   <div class="map-shell">
     <div ref="mapEl" class="map-el"></div>
 
-    <!-- <div class="map-info" v-if="wells.length">
-      <span class="mono">{{ wells.length }} عارضه</span>
-    </div> -->
-
     <!-- پنل ابزارها -->
     <div class="tool-panel-wrap">
       <button
@@ -130,11 +126,11 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watch } from "vue";
-// import mapboxgl from "mapbox-gl";
+import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import MapboxDraw from "@mapbox/mapbox-gl-draw";
 import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
-import * as turf from "@turf/turf";
+import { centerOfMass, length as turfLength, area as turfArea } from "@turf/turf";
 import * as utm from "utm";
 
 mapboxgl.accessToken =
@@ -154,7 +150,6 @@ const props = defineProps({
   hasFilter: { type: Boolean, default: false },
   radiusCenter: { type: Object, default: null },
   radiusKm: { type: Number, default: 0 },
-  neighborPairs: { type: Array, default: () => [] },
   theme: { type: String, default: "light" },
 });
 const emit = defineEmits(["select-well"]);
@@ -170,6 +165,7 @@ let map = null;
 let draw = null;
 let markers = [];
 let labelMarkers = [];
+let wellsGeoJSON = null;
 
 const LIGHT_STYLE = "mapbox://styles/aseman1005/ckgamsxfo131a1arvafwa8e5n";
 const DARK_STYLE = "mapbox://styles/mapbox/dark-v11";
@@ -383,7 +379,7 @@ function formatArea(m2) {
 
 function getFeatureCenter(feature) {
   try {
-    return turf.centerOfMass(feature).geometry.coordinates;
+    return centerOfMass(feature).geometry.coordinates;
   } catch {
     return null;
   }
@@ -396,12 +392,12 @@ function updateLabels() {
   drawnFeatures.forEach((f) => {
     let text = null;
     if (f.geometry.type === "LineString" && f.geometry.coordinates.length >= 2)
-      text = formatLength(turf.length(f, { units: "kilometers" }));
+      text = formatLength(turfLength(f, { units: "kilometers" }));
     else if (
       f.geometry.type === "Polygon" &&
       f.geometry.coordinates[0]?.length >= 4
     )
-      text = formatArea(turf.area(f));
+      text = formatArea(turfArea(f));
     if (!text) return;
     const center = getFeatureCenter(f);
     if (!center) return;
@@ -429,10 +425,10 @@ function updateLiveLabel() {
   if (!live) return;
   let text = null;
   if (live.geometry.type === "LineString")
-    text = formatLength(turf.length(live, { units: "kilometers" }));
+    text = formatLength(turfLength(live, { units: "kilometers" }));
   else if (live.geometry.type === "Polygon") {
     try {
-      const a = turf.area(live);
+      const a = turfArea(live);
       if (a > 0) text = formatArea(a);
     } catch {}
   }
@@ -463,13 +459,11 @@ function createDrawInstance(mode, subTool) {
   map.addControl(draw, "top-left");
 
   map.on("draw.create", onDrawCreate);
-  map.on("draw.delete", onDrawDelete);
   map.on("draw.render", onDrawRender);
 }
 
 function removeDraw() {
   map.off("draw.create", onDrawCreate);
-  map.off("draw.delete", onDrawDelete);
   map.off("draw.render", onDrawRender);
   try {
     if (draw && map.hasControl(draw)) map.removeControl(draw);
@@ -531,11 +525,6 @@ function onDrawCreate(e) {
   });
 }
 
-function onDrawDelete() {
-  // اگر کسی از trash button خود draw استفاده کرد — نادیده بگیر
-  // (پاک کردن ما از clearAll هندل میشه)
-}
-
 function onDrawRender() {
   if (activeMode.value === "measure") updateLiveLabel();
 }
@@ -564,12 +553,7 @@ function clearAll() {
 }
 
 // ─── رندر عوارض ───────────────────────────────────────────
-const COLORS_WELL = ["#7ec88a"];
-function colorForId(id) {
-  let hash = 0;
-  for (const ch of String(id)) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffff;
-  return COLORS_WELL[hash % COLORS_WELL.length];
-}
+const WELL_COLOR = "#7ec88a";
 
 function buildGeoJSON(wells) {
   return {
@@ -614,7 +598,7 @@ function popupHTML(w, props_) {
 }
 
 function renderMarkers(fit = true) {
-  if (!map) return;
+  if (!map || !map.isStyleLoaded()) return;
   clearMarkers();
   clearWellLayers();
   const highlightSet = new Set(props.highlightedIds.map(String));
@@ -623,9 +607,10 @@ function renderMarkers(fit = true) {
 
   if (hasGeometry) {
     const geojson = buildGeoJSON(props.wells);
+    wellsGeoJSON = geojson;
     geojson.features.forEach((f) => {
       const hl = highlightSet.has(String(f.properties.id));
-      f.properties._color = colorForId(f.properties.id);
+      f.properties._color = WELL_COLOR;
       f.properties._highlighted = hl ? 1 : 0;
       f.properties._dimmed = props.hasFilter && !hl ? 1 : 0;
       f.properties._isCenter =
@@ -694,37 +679,23 @@ function renderMarkers(fit = true) {
         ["geometry-type"],
         ["literal", ["LineString", "MultiLineString"]],
       ],
+      layout: { "line-cap": "round", "line-join": "round" },
       paint: {
-        "circle-radius": [
+        "line-width": [
           "case",
           ["==", ["get", "_highlighted"], 1],
-          9,
+          3,
           ["==", ["get", "_dimmed"], 1],
-          4,
-          6,
+          1,
+          1.5,
         ],
-        "circle-color": [
+        "line-color": [
           "case",
           ["==", ["get", "_highlighted"], 1],
           "#4a9b8e",
           "#8a9490",
         ],
-        "circle-opacity": ["case", ["==", ["get", "_dimmed"], 1], 0.25, 1],
-        "circle-stroke-width": 2,
-        "circle-stroke-color": [
-          "case",
-          ["==", ["get", "_highlighted"], 1],
-          "#fff",
-          ["==", ["get", "_dimmed"], 1],
-          "#666",
-          "#fff",
-        ],
-        "circle-stroke-opacity": [
-          "case",
-          ["==", ["get", "_dimmed"], 1],
-          0.25,
-          0.6, // عادی: stroke کمرنگ
-        ],
+        "line-opacity": ["case", ["==", ["get", "_dimmed"], 1], 0.25, 1],
       },
     });
     map.addLayer({
@@ -826,6 +797,7 @@ function renderMarkers(fit = true) {
         map.fitBounds(bounds, { padding: 48, maxZoom: 14, duration: 800 });
     } catch {}
   } else {
+    wellsGeoJSON = null;
     props.wells.forEach((w) => {
       if (!w.lat || !w.lng) return;
       const isH = highlightSet.has(String(w.id));
@@ -889,12 +861,12 @@ function renderMarkers(fit = true) {
 
 function renderRadiusAndLines() {
   if (!map || !map.isStyleLoaded()) return;
-  ["radius-fill", "radius-line", "center-point", "neighbor-lines"].forEach(
+  ["radius-fill", "radius-line", "center-point"].forEach(
     (id) => {
       if (map.getLayer(id)) map.removeLayer(id);
     },
   );
-  ["radius-src", "center-src", "neighbor-src"].forEach((id) => {
+  ["radius-src", "center-src"].forEach((id) => {
     if (map.getSource(id)) map.removeSource(id);
   });
   if (props.radiusCenter && props.radiusKm > 0) {
@@ -941,35 +913,6 @@ function renderRadiusAndLines() {
       },
     });
   }
-  if (props.neighborPairs.length) {
-    const lines = {
-      type: "FeatureCollection",
-      features: props.neighborPairs
-        .filter((p) => p.a.lat && p.b.lat)
-        .map((pair) => ({
-          type: "Feature",
-          geometry: {
-            type: "LineString",
-            coordinates: [
-              [pair.a.lng, pair.a.lat],
-              [pair.b.lng, pair.b.lat],
-            ],
-          },
-        })),
-    };
-    map.addSource("neighbor-src", { type: "geojson", data: lines });
-    map.addLayer({
-      id: "neighbor-lines",
-      type: "line",
-      source: "neighbor-src",
-      paint: {
-        "line-color": "#d4a546",
-        "line-width": 1.5,
-        "line-dasharray": [1, 2],
-        "line-opacity": 0.7,
-      },
-    });
-  }
 }
 
 function makeCirclePolygon(center, radiusKm, points = 64) {
@@ -985,6 +928,20 @@ function makeCirclePolygon(center, radiusKm, points = 64) {
 }
 
 // ─── mount ─────────────────────────────────────────────────
+let mouseRafPending = false;
+function onMouseMove(e) {
+  if (mouseRafPending) return;
+  mouseRafPending = true;
+  requestAnimationFrame(() => {
+    mouseRafPending = false;
+    mouse.value.lat = e.lngLat.lat.toFixed(6);
+    mouse.value.lng = e.lngLat.lng.toFixed(6);
+    const p = utm.fromLatLon(e.lngLat.lat, e.lngLat.lng);
+    mouse.value.utm = `Zone ${p.zoneNum}${p.zoneLetter} | E ${p.easting.toFixed(2)} | N ${p.northing.toFixed(2)}`;
+    if (activeMode.value === "measure") updateLiveLabel();
+  });
+}
+
 onMounted(() => {
   map = new mapboxgl.Map({
     container: mapEl.value,
@@ -996,13 +953,7 @@ onMounted(() => {
   map.addControl(new mapboxgl.NavigationControl(), "bottom-left");
   map.on("load", () => {
     initDrawnSource();
-    map.on("mousemove", (e) => {
-      mouse.value.lat = e.lngLat.lat.toFixed(6);
-      mouse.value.lng = e.lngLat.lng.toFixed(6);
-      const p = utm.fromLatLon(e.lngLat.lat, e.lngLat.lng);
-      mouse.value.utm = `Zone ${p.zoneNum}${p.zoneLetter} | E ${p.easting.toFixed(2)} | N ${p.northing.toFixed(2)}`;
-      if (activeMode.value === "measure") updateLiveLabel();
-    });
+    map.on("mousemove", onMouseMove);
     renderMarkers();
     renderRadiusAndLines();
   });
@@ -1019,27 +970,21 @@ watch(() => props.wells, () => renderMarkers(true));
 // وقتی فقط highlight یا filter عوض شد، فقط data رو آپدیت کن (سریع‌تر از renderMarkers کامل)
 function updateHighlightData() {
   if (!map || !map.isStyleLoaded()) return;
-  const src = map.getSource("wells-src");
-  if (!src) {
+  if (!wellsGeoJSON || !map.getSource("wells-src")) {
     // اگه source نیست (مثلاً marker-based)، کامل render کن
     renderMarkers();
     return;
   }
   const highlightSet = new Set(props.highlightedIds.map(String));
   const centerId = props.radiusCenter?.id ? String(props.radiusCenter.id) : null;
-  const data = src._data;
-  if (!data || !data.features) {
-    renderMarkers();
-    return;
-  }
-  data.features.forEach((f) => {
+  wellsGeoJSON.features.forEach((f) => {
     const hl = highlightSet.has(String(f.properties.id));
     f.properties._highlighted = hl ? 1 : 0;
     f.properties._dimmed = props.hasFilter && !hl ? 1 : 0;
     f.properties._isCenter =
       centerId && String(f.properties.id) === centerId ? 1 : 0;
   });
-  src.setData(data);
+  map.getSource("wells-src").setData(wellsGeoJSON);
 }
 
 watch(() => props.highlightedIds, updateHighlightData);
@@ -1050,7 +995,6 @@ watch(() => [props.radiusCenter, props.radiusKm], () => {
 }, {
   deep: true,
 });
-watch(() => props.neighborPairs, renderRadiusAndLines);
 
 // ─── تعویض تم نقشه (روشن ↔ تیره) ──────────────────────────
 function applyMapTheme(t) {
@@ -1086,9 +1030,6 @@ watch(() => props.theme, applyMapTheme);
 
 // ─── expose ────────────────────────────────────────────────
 defineExpose({
-  flyTo(lat, lng, zoom = 13) {
-    if (map) map.flyTo({ center: [lng, lat], zoom, duration: 800 });
-  },
   invalidateSize() {
     if (map) map.resize();
   },
@@ -1115,32 +1056,6 @@ defineExpose({
         map.fitBounds(bounds, { padding: 60, maxZoom: 15, duration: 800 });
     } else if (well.lat && well.lng)
       map.flyTo({ center: [well.lng, well.lat], zoom: 13, duration: 800 });
-  },
-  fitToWells(wells) {
-    if (!map) return;
-    setTimeout(() => {
-      const bounds = new mapboxgl.LngLatBounds();
-      wells.forEach((w) => {
-        if (!w._geometry) {
-          if (w.lat && w.lng) bounds.extend([w.lng, w.lat]);
-          return;
-        }
-        const g = w._geometry;
-        if (g.type === "Point") bounds.extend(g.coordinates);
-        else if (g.type === "MultiPoint")
-          g.coordinates.forEach((c) => bounds.extend(c));
-        else if (g.type === "LineString")
-          g.coordinates.forEach((c) => bounds.extend(c));
-        else if (g.type === "MultiLineString")
-          g.coordinates.forEach((l) => l.forEach((c) => bounds.extend(c)));
-        else if (g.type === "Polygon")
-          g.coordinates[0].forEach((c) => bounds.extend(c));
-        else if (g.type === "MultiPolygon")
-          g.coordinates.forEach((p) => p[0].forEach((c) => bounds.extend(c)));
-      });
-      if (!bounds.isEmpty())
-        map.fitBounds(bounds, { padding: 48, maxZoom: 14, duration: 1000 });
-    }, 300);
   },
   enablePointPicker(callback) {
     if (!map) return;
@@ -1202,19 +1117,6 @@ defineExpose({
   width: 100%;
   height: 100%;
   background: var(--bg-deep);
-}
-.map-info {
-  position: absolute;
-  top: 12px;
-  inset-inline-start: 12px;
-  z-index: 500;
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(6px);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-muted);
-  font-size: 11px;
-  padding: 5px 10px;
-  border-radius: var(--radius-sm);
 }
 
 .tool-panel-wrap {

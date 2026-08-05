@@ -4,19 +4,11 @@
       <div v-if="open" class="results-modal-backdrop" @click.self="$emit('close')">
         <div class="results-modal">
           <div class="results-modal__header">
-            <div class="results-modal__title">
-              نتایج
-              <span class="results-modal__count mono">{{ rows.length }} رکورد</span>
-            </div>
-            <div class="results-modal__exports">
-              <button
-                v-for="fmt in EXPORT_FORMATS"
-                :key="fmt"
-                class="export-btn"
-                @click="$emit('export', fmt)"
-              >{{ fmt.toUpperCase() }}</button>
-            </div>
-            <button class="results-modal__close" @click="$emit('close')">×</button>
+<div class="results-modal__title">
+               نتایج
+               <span class="results-modal__count mono">{{ rows.length }} رکورد</span>
+             </div>
+             <button class="results-modal__close" @click="$emit('close')">×</button>
           </div>
 
           <div class="results-modal__body">
@@ -48,7 +40,7 @@ defineProps({
   layerMeta: { type: Array, default: () => [] },
   activeId: { type: [String, Number], default: null },
 })
-defineEmits(['close', 'select', 'hover', 'export'])
+defineEmits(['close', 'select', 'hover'])
 </script>
 
 <style scoped>

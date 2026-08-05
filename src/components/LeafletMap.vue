@@ -11,6 +11,7 @@
 import { ref, onMounted, onBeforeUnmount, watch } from "vue";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { toGeoJSON } from "../composables/useGeoUtils.js";
 
 const props = defineProps({
   wells: { type: Array, required: true },
@@ -18,7 +19,6 @@ const props = defineProps({
   hasFilter: { type: Boolean, default: false },
   radiusCenter: { type: Object, default: null },
   radiusKm: { type: Number, default: 0 },
-  neighborPairs: { type: Array, default: () => [] },
   theme: { type: String, default: "light" },
 });
 const emit = defineEmits(["select-well"]);
@@ -26,9 +26,7 @@ const emit = defineEmits(["select-well"]);
 const mapEl = ref(null);
 let map = null;
 let geoLayer = null;
-let highlightLayer = null;
 let radiusLayer = null;
-let linesLayer = null;
 const featureRefs = new Map();
 
 // ─── تعویض تم نقشه (روشن ↔ تیره) ──────────────────────────
@@ -108,31 +106,17 @@ function makePointIcon(color, highlighted, dimmed, isCenter = false) {
   });
 }
 
-function buildGeoJSON(wells) {
-  return {
-    type: "FeatureCollection",
-    features: wells
-      .filter((w) => w._geometry)
-      .map((w) => ({
-        type: "Feature",
-        geometry: w._geometry,
-        properties: { ...w, _geometry: undefined },
-      })),
-  };
-}
-
 function renderFeatures() {
   if (!geoLayer) return;
   geoLayer.clearLayers();
-  if (highlightLayer) highlightLayer.clearLayers();
   featureRefs.clear();
 
-  const highlightSet = new Set(props.highlightedIds);
+  const highlightSet = new Set(props.highlightedIds.map(String));
   const centerId = props.radiusCenter?.id ? String(props.radiusCenter.id) : null;
   const hasGeometry = props.wells.some((w) => w._geometry);
 
   if (hasGeometry) {
-    const geojson = buildGeoJSON(props.wells);
+    const geojson = toGeoJSON(props.wells.filter((w) => w._geometry));
 
     L.geoJSON(geojson, {
       style: (feature) => {
@@ -248,21 +232,6 @@ function renderRadius() {
   }
 }
 
-function renderLines() {
-  if (!linesLayer) return;
-  linesLayer.clearLayers();
-  props.neighborPairs.forEach((pair) => {
-    if (!pair.a.lat || !pair.b.lat) return;
-    L.polyline(
-      [
-        [pair.a.lat, pair.a.lng],
-        [pair.b.lat, pair.b.lng],
-      ],
-      { color: "#d4a546", weight: 1.5, opacity: 0.7, dashArray: "3 5" },
-    ).addTo(linesLayer);
-  });
-}
-
 onMounted(() => {
   map = L.map(mapEl.value, {
     center: [32, 53],
@@ -299,76 +268,47 @@ onMounted(() => {
   L.control.zoom({ position: "bottomleft" }).addTo(map);
 
   geoLayer = L.layerGroup().addTo(map);
-  highlightLayer = L.layerGroup().addTo(map);
   radiusLayer = L.layerGroup().addTo(map);
-  linesLayer = L.layerGroup().addTo(map);
 
   renderFeatures();
   renderRadius();
-  renderLines();
 });
 
 onBeforeUnmount(() => {
   if (map) map.remove();
 });
 
-watch(() => props.wells, renderFeatures, { deep: false });
 watch(() => props.theme, syncTheme);
 
 function updateHighlightStyles() {
   if (!geoLayer) return
   const highlightSet = new Set(props.highlightedIds.map(String))
   const centerId = props.radiusCenter?.id ? String(props.radiusCenter.id) : null
-  const hasGeom = props.wells.some(w => w._geometry)
 
-  if (hasGeom) {
-    // GeoJSON layers — setStyle روی هر لایه
-    geoLayer.eachLayer(layer => {
-      const id = layer.feature?.properties?.id
-      if (!id) return
-      const hl = highlightSet.has(String(id))
-      const isCenter = centerId && String(id) === centerId
-      if (isCenter) {
-        if (layer.setStyle) {
-          layer.setStyle({
-            color: "#e74c3c",
-            weight: 3,
-            fillColor: "#e74c3c",
-            fillOpacity: 0.55,
-            opacity: 1,
-          })
-        } else if (layer.setIcon) {
-          layer.setIcon(makePointIcon("#e74c3c", true, false, true))
-        }
-      } else if (layer.setStyle) {
-        layer.setStyle(defaultStyle(layer.feature, hl))
+  geoLayer.eachLayer(layer => {
+    const id = layer.feature?.properties?.id ?? layer.feature?.properties?.id
+    if (!id) return
+    const hl = highlightSet.has(String(id))
+    const isCenter = centerId && String(id) === centerId
+    if (isCenter) {
+      if (layer.setStyle) {
+        layer.setStyle({
+          color: "#e74c3c",
+          weight: 3,
+          fillColor: "#e74c3c",
+          fillOpacity: 0.55,
+          opacity: 1,
+        })
       } else if (layer.setIcon) {
-        const dimmed = props.hasFilter && !hl
-        const color = colorForId(id)
-        layer.setIcon(makePointIcon(color, hl, dimmed))
+        layer.setIcon(makePointIcon("#e74c3c", true, false, true))
       }
-    })
-  } else {
-    // circleMarker — setStyle
-    geoLayer.eachLayer(layer => {
-      const id = [...featureRefs.entries()].find(([,l]) => l === layer)?.[0]
-      if (!id) return
-      const hl = highlightSet.has(id)
+    } else if (layer.setStyle) {
+      layer.setStyle(defaultStyle(layer.feature, hl))
+    } else if (layer.setIcon) {
       const dimmed = props.hasFilter && !hl
-      const isCenter = centerId && String(id) === centerId
-      const well = props.wells.find(w => String(w.id) === id)
-      if (!well) return
-      const color = isCenter ? "#e74c3c" : colorForId(well.id)
-      layer.setStyle({
-        radius: isCenter ? 9 : (hl ? 8 : (dimmed ? 4 : 5)),
-        color: dimmed ? GRAY : (isCenter ? "#fff" : (hl ? '#e9efe9' : color)),
-        weight: isCenter ? 3 : 1.5,
-        fillColor: dimmed ? GRAY : color,
-        fillOpacity: dimmed ? 0.15 : (isCenter ? 0.9 : (hl ? 0.8 : 0.5)),
-        opacity: isCenter ? 1 : (dimmed ? 0.35 : 1),
-      })
-    })
-  }
+      layer.setIcon(makePointIcon(colorForId(id), hl, dimmed))
+    }
+  })
 }
 
 watch(() => props.highlightedIds, updateHighlightStyles);
@@ -377,7 +317,6 @@ watch(() => [props.radiusCenter, props.radiusKm], () => {
   renderRadius();
   updateHighlightStyles();
 }, { deep: true });
-watch(() => props.neighborPairs, renderLines);
 
 defineExpose({
   flyTo(lat, lng, zoom = 13) {
@@ -398,35 +337,6 @@ defineExpose({
     } else if (typeof layer.getLatLng === "function") {
       map.flyTo(layer.getLatLng(), 13, { duration: 0.8 });
     }
-  },
-  fitToWells(wells) {
-    if (!map) return;
-    setTimeout(() => {
-      const hasGeometry = wells.some((w) => w._geometry);
-      if (hasGeometry) {
-        try {
-          const bounds = geoLayer.getBounds();
-          if (bounds.isValid()) {
-            map.flyToBounds(bounds, {
-              padding: [48, 48],
-              maxZoom: 14,
-              duration: 1,
-            });
-            return;
-          }
-        } catch {}
-      }
-      const latlngs = wells
-        .filter((w) => w.lat && w.lng)
-        .map((w) => [w.lat, w.lng]);
-      if (latlngs.length) {
-        map.flyToBounds(L.latLngBounds(latlngs), {
-          padding: [48, 48],
-          maxZoom: 14,
-          duration: 1,
-        });
-      }
-    }, 300);
   },
   enablePointPicker(callback) {
     if (!map) return;

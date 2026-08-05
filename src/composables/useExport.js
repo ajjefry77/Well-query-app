@@ -10,7 +10,7 @@ function coordsToStr(coords) {
   return coords.map(([x, y, z = 0]) => `${x},${y},${z}`).join(' ')
 }
 
-export function geometryToKML(geometry) {
+function geometryToKML(geometry) {
   if (!geometry) return ''
   const { type, coordinates: c } = geometry
   switch (type) {
@@ -48,24 +48,6 @@ function buildKML(features) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemarks}</Document></kml>`
 }
 
-// ─── PRJ string ──────────────────────────────────────────
-
-export function getPrj(crs, features) {
-  if (crs === 'wgs84') {
-    return `GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]]`
-  }
-  const zones = [...new Set(features.map(f => f.properties.utm_zone))]
-  if (zones.length !== 1) {
-    throw new Error(`Cannot export SHP: multiple UTM zones detected (${zones.join(', ')})`)
-  }
-  const zone = zones[0]
-  const zoneNumber = parseInt(zone, 10)
-  const hemisphere = zone.endsWith('N') ? 'N' : 'S'
-  const falseNorthing = hemisphere === 'N' ? 0 : 10000000
-  const centralMeridian = zoneNumber * 6 - 183
-  return `PROJCS["WGS 84 / UTM zone ${zoneNumber}${hemisphere}",GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",${centralMeridian}],PARAMETER["scale_factor",0.9996],PARAMETER["false_easting",500000],PARAMETER["false_northing",${falseNorthing}],UNIT["metre",1]]`
-}
-
 // ─── Download helper ─────────────────────────────────────
 
 function downloadBlob(blob, filename) {
@@ -96,11 +78,6 @@ export async function exportData(format, rows, convertFeature) {
   switch (format) {
     case 'geojson': {
       const geo = toGeoJSON(rows.filter(r => r._geometry || (r.lat && r.lng)))
-      // اضافه کردن layerName به properties
-      geo.features = geo.features.map(f => ({
-        ...f,
-        properties: { ...f.properties }
-      }))
       downloadFile(JSON.stringify(geo, null, 2), `query-${timestamp}.geojson`, 'application/geo+json')
       break
     }

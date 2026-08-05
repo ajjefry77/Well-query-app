@@ -90,7 +90,7 @@ const props = defineProps({
   activeId:  { type: String, default: null },
   layerMeta: { type: Array,  default: () => [] },
 })
-defineEmits(['select', 'hover', 'export'])
+defineEmits(['select', 'hover'])
 
 const LAYER_COLORS = ['#2a9d8f','#e9c46a','#f4a261','#e76f51','#264653','#a8dadc','#457b9d','#e63946']
 
