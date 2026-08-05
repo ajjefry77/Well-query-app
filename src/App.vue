@@ -1,6 +1,7 @@
 <template>
   <div class="app">
     <AppHeader
+      :is-mobile="isMobile"
       :active-layers="activeLayers"
       :loading-layers="loadingLayers"
       :api-error="apiError"
@@ -24,7 +25,7 @@
 
       <!-- پنل چپ: کوئری‌ساز -->
       <QueryPanel
-        v-show="!isMobile || mobileTab === 'query'"
+        v-show="!isMobile || (sheetOpen && mobileTab === 'query')"
         :open="queryPanelOpen"
         :query-kind="queryKind"
         :layers="activeLayers"
@@ -83,7 +84,7 @@
 
       <!-- پنل راست: لایه‌ها + خلاصه شرط‌ها -->
       <ResultsPanel
-        v-show="!isMobile || mobileTab === 'layers'"
+        v-show="!isMobile || (sheetOpen && mobileTab === 'layers')"
         :open="resultsPanelOpen"
         :layers="activeLayers"
         :loading-layers="loadingLayers"
@@ -97,9 +98,11 @@
       <!-- موبایل: نوار grab + تب‌های پنل پایین -->
       <MobileSheet
         v-show="isMobile"
+        :open="sheetOpen"
         :mobile-tab="mobileTab"
         @update:mobile-tab="mobileTab = $event"
         @grab-start="onSheetGrabStart"
+        @close="closeSheet"
       />
     </main>
 
@@ -184,30 +187,48 @@ const showResultsModal = ref(false)
 const isMobile    = ref(false)
 const mobileTab   = ref('query')
 const sheetHeight = ref(0)
+const sheetOpen   = ref(true)
 let dragState     = null
 
-const SHEET_MIN = 120
 function clampSheet(v) {
   const max = Math.round(window.innerHeight * 0.85)
-  return Math.round(Math.min(max, Math.max(SHEET_MIN, v)))
+  return Math.round(Math.min(max, Math.max(0, v)))
+}
+function closeSheet() {
+  sheetOpen.value = false
+  sheetHeight.value = 0
 }
 function onSheetGrabStart(e) {
   if (!isMobile.value) return
   e.preventDefault()
-  dragState = { startY: e.clientY, startH: sheetHeight.value }
+  const wasClosed = !sheetOpen.value
+  sheetOpen.value = true
+  dragState = { startY: e.clientY, startH: sheetHeight.value, wasClosed, moved: false }
   window.addEventListener('pointermove', onSheetGrabMove)
   window.addEventListener('pointerup', onSheetGrabEnd)
 }
 function onSheetGrabMove(e) {
   if (!dragState) return
+  if (Math.abs(e.clientY - dragState.startY) > 4) dragState.moved = true
   sheetHeight.value = clampSheet(dragState.startH + (dragState.startY - e.clientY))
 }
 function onSheetGrabEnd() {
   if (!dragState) return
   window.removeEventListener('pointermove', onSheetGrabMove)
   window.removeEventListener('pointerup', onSheetGrabEnd)
+  const { wasClosed, moved } = dragState
+
+  // لمس ساده روی هندل وقتی پنل بسته است → باز کردن
+  if (!moved && wasClosed) {
+    sheetOpen.value = true
+    sheetHeight.value = Math.round(window.innerHeight * 0.42)
+    dragState = null
+    return
+  }
+
   const vh = window.innerHeight
   const targets = [
+    0,
     Math.round(vh * 0.28),
     Math.round(vh * 0.5),
     Math.round(vh * 0.82),
@@ -215,6 +236,7 @@ function onSheetGrabEnd() {
   sheetHeight.value = targets.reduce((best, t) =>
     Math.abs(t - sheetHeight.value) < Math.abs(best - sheetHeight.value) ? t : best
   )
+  if (sheetHeight.value === 0) sheetOpen.value = false
   dragState = null
 }
 function onWindowResize() {
@@ -260,6 +282,7 @@ onMounted(() => {
     if (isMobile.value) {
       queryPanelOpen.value = true
       resultsPanelOpen.value = true
+      sheetOpen.value = true
       if (sheetHeight.value === 0) {
         sheetHeight.value = Math.round(window.innerHeight * 0.42)
       }

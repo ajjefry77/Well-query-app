@@ -1,7 +1,7 @@
 <template>
-  <div class="mobile-sheet-chrome">
+  <div class="mobile-sheet-chrome" :class="{ 'is-closed': !open }">
     <div class="mobile-sheet__grab" @pointerdown="$emit('grab-start', $event)"></div>
-    <div class="mobile-sheet__tabs">
+    <div class="mobile-sheet__tabs" v-show="open">
       <button
         class="mobile-sheet__tab"
         :class="{ 'mobile-sheet__tab--active': mobileTab === 'query' }"
@@ -12,6 +12,11 @@
         :class="{ 'mobile-sheet__tab--active': mobileTab === 'layers' }"
         @click="$emit('update:mobile-tab', 'layers')"
       >لایه‌های فعال</button>
+      <button class="mobile-sheet__close" @click="$emit('close')" title="بستن پنل پایین">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
     </div>
   </div>
 </template>
@@ -19,8 +24,9 @@
 <script setup>
 defineProps({
   mobileTab: { type: String, required: true },
+  open: { type: Boolean, default: true },
 })
-defineEmits(['update:mobile-tab', 'grab-start'])
+defineEmits(['update:mobile-tab', 'grab-start', 'close'])
 </script>
 
 <style scoped>
@@ -28,7 +34,7 @@ defineEmits(['update:mobile-tab', 'grab-start'])
   .mobile-sheet-chrome {
     position: absolute;
     inset-inline: 0;
-    bottom: calc(var(--sheet-h, 42vh) - 64px);
+    bottom: max(calc(var(--sheet-h, 42vh) - 64px), 0px);
     height: 64px;
     z-index: 40;
     display: flex;
@@ -37,6 +43,14 @@ defineEmits(['update:mobile-tab', 'grab-start'])
     border-radius: 16px 16px 0 0;
     border-top: 1px solid var(--border-subtle);
     box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.15);
+    transition: bottom 0.3s var(--ease-out), height 0.3s var(--ease-out);
+  }
+  /* حالت کاملاً بسته: فقط هندل می‌ماند */
+  .mobile-sheet-chrome.is-closed {
+    height: 36px;
+  }
+  .mobile-sheet-chrome.is-closed .mobile-sheet__grab {
+    flex: 1;
   }
   .mobile-sheet__grab {
     height: 20px;
@@ -82,6 +96,28 @@ defineEmits(['update:mobile-tab', 'grab-start'])
     border-color: var(--accent-depth);
     color: #fff;
     font-weight: 700;
+  }
+  .mobile-sheet__close {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
+  }
+  .mobile-sheet__close:hover {
+    color: var(--accent-depth);
+    border-color: var(--accent-depth);
+    background: color-mix(in srgb, var(--accent-depth) 8%, var(--bg-input));
+  }
+  .mobile-sheet__close:active {
+    transform: scale(0.92);
   }
 }
 </style>

@@ -1,84 +1,115 @@
 <template>
-  <header class="app-header">
-    <div class="app-header__brand">
-      <div class="brand-mark">🗺</div>
-      <div>
-        <h1>واکاوی لایه‌های مکانی</h1>
-        <p>پرسش و استعلام از داده‌های توصیفی و مکانی ژئوباکس</p>
-      </div>
-    </div>
-
-    <div class="header-layer-summary">
-      <span class="layer-summary-label">لایه‌های فعال:</span>
-      <span v-if="activeLayers.length === 0" class="layer-summary-empty">انتخاب نشده</span>
-      <span v-else class="layer-summary-count">{{ activeLayers.length }} لایه</span>
-      <span v-if="loadingLayers" class="spinner-inline"></span>
-      <div v-if="apiError" class="layer-error">{{ apiError }}</div>
-    </div>
-
-    <SegmentedControl
-      class="app-header__tabs"
-      :model-value="queryKind"
-      :options="tabs"
-      @update:model-value="$emit('update:query-kind', $event)"
-    />
-
-    <SegmentedControl
-      class="app-header__map-switch"
-      size="sm"
-      :model-value="mapProvider"
-      :options="mapOptions"
-      @update:model-value="$emit('update:map-provider', $event)"
-    />
-
-    <SegmentedControl
-      class="app-header__crs-switch"
-      size="sm"
-      :model-value="crs"
-      :options="crsOptions"
-      @update:model-value="$emit('update:crs', $event)"
-    />
-
-    <button
-      class="theme-toggle"
-      :class="{ 'theme-toggle--dark': theme === 'dark' }"
-      @click="$emit('toggle-theme')"
-      :title="theme === 'dark' ? 'حالت روشن' : 'حالت تیره'"
-      aria-label="تغییر تم"
-    >
-      <span class="theme-toggle__icon">
+  <header class="app-header" :class="{ 'app-header--collapsed': isMobile && collapsed }">
+    <!-- نوار بالای هدر: در موبایل همیشه دیده می‌شود -->
+    <div class="app-header__topbar">
+      <button
+        v-if="isMobile"
+        class="app-header__collapse"
+        :class="{ 'is-collapsed': collapsed }"
+        @click="collapsed = !collapsed"
+        :title="collapsed ? 'باز کردن هدر' : 'بستن هدر'"
+        aria-label="جمع یا باز کردن هدر"
+      >
         <svg
-          v-if="theme === 'dark'"
           width="16"
           height="16"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-        >
-          <circle cx="12" cy="12" r="4" />
-          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-        </svg>
-        <svg
-          v-else
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
+          stroke-width="2.4"
           stroke-linecap="round"
           stroke-linejoin="round"
         >
-          <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z" />
+          <polyline points="18 15 12 9 6 15" />
         </svg>
-      </span>
-    </button>
+      </button>
+
+      <div class="app-header__brand">
+        <div class="brand-mark">🗺</div>
+        <div>
+          <h1>واکاوی لایه‌های مکانی</h1>
+          <p>پرسش و استعلام از داده‌های توصیفی و مکانی ژئوباکس</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- محتوای قابل جمع‌شدن -->
+    <div class="app-header__body" :class="{ 'is-collapsed': collapsed }">
+      <div class="app-header__body-inner">
+        <div class="header-layer-summary">
+          <span class="layer-summary-label">لایه‌های فعال:</span>
+          <span v-if="activeLayers.length === 0" class="layer-summary-empty">انتخاب نشده</span>
+          <span v-else class="layer-summary-count">{{ activeLayers.length }} لایه</span>
+          <span v-if="loadingLayers" class="spinner-inline"></span>
+          <div v-if="apiError" class="layer-error">{{ apiError }}</div>
+        </div>
+
+        <SegmentedControl
+          class="app-header__tabs"
+          :model-value="queryKind"
+          :options="tabs"
+          @update:model-value="$emit('update:query-kind', $event)"
+        />
+
+        <SegmentedControl
+          class="app-header__map-switch"
+          size="sm"
+          :model-value="mapProvider"
+          :options="mapOptions"
+          @update:model-value="$emit('update:map-provider', $event)"
+        />
+
+        <SegmentedControl
+          class="app-header__crs-switch"
+          size="sm"
+          :model-value="crs"
+          :options="crsOptions"
+          @update:model-value="$emit('update:crs', $event)"
+        />
+
+        <button
+          class="theme-toggle"
+          :class="{ 'theme-toggle--dark': theme === 'dark' }"
+          @click="$emit('toggle-theme')"
+          :title="theme === 'dark' ? 'حالت روشن' : 'حالت تیره'"
+          aria-label="تغییر تم"
+        >
+          <span class="theme-toggle__icon">
+            <svg
+              v-if="theme === 'dark'"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            >
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+            </svg>
+            <svg
+              v-else
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z" />
+            </svg>
+          </span>
+        </button>
+      </div>
+    </div>
   </header>
 </template>
 
 <script setup>
+import { ref } from 'vue'
 import SegmentedControl from './SegmentedControl.vue'
 
 const props = defineProps({
@@ -89,8 +120,11 @@ const props = defineProps({
   mapProvider: { type: String, required: true },
   crs: { type: String, required: true },
   theme: { type: String, required: true },
+  isMobile: { type: Boolean, default: false },
 })
 defineEmits(['update:query-kind', 'update:map-provider', 'update:crs', 'toggle-theme'])
+
+const collapsed = ref(false)
 
 const tabs = [
   { value: 'attribute',    label: 'کوئری توصیفی' },
@@ -124,6 +158,13 @@ const crsOptions = [
   flex-shrink: 0;
   flex-wrap: wrap;
 }
+
+/* نوار بالا و بدنه، در دسکتاپ محتوایشان را داخل flex هدر می‌ریزند */
+.app-header__topbar,
+.app-header__body {
+  display: contents;
+}
+
 .app-header__brand {
   display: flex;
   align-items: center;
@@ -172,6 +213,17 @@ const crsOptions = [
 
 .app-header__map-switch {
   margin-inline-start: auto;
+}
+
+/* ---------- دکمه جمع/باز کردن هدر (موبایل) ---------- */
+.app-header__collapse {
+  display: none;
+}
+.app-header__collapse svg {
+  transition: transform 0.25s var(--ease-out);
+}
+.app-header__collapse.is-collapsed svg {
+  transform: rotate(180deg);
 }
 
 .theme-toggle {
@@ -229,14 +281,70 @@ const crsOptions = [
   .app-header {
     padding: 8px 12px;
     gap: 6px;
-    align-items: center;
+    align-items: stretch;
+    flex-direction: column;
   }
+
+  /* نوار بالا: دکمه جمع + برند */
+  .app-header__topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .app-header__collapse {
+    display: inline-flex;
+    width: 32px;
+    height: 32px;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    border-radius: var(--radius-full);
+    flex-shrink: 0;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.15s;
+  }
+  .app-header__collapse:hover {
+    color: var(--accent-depth);
+    border-color: var(--accent-depth);
+    background: color-mix(in srgb, var(--accent-depth) 8%, var(--bg-input));
+  }
+  .app-header__collapse:active {
+    transform: scale(0.92);
+  }
+
   .app-header__brand {
     flex: 1 1 auto;
     min-width: 0;
   }
   .app-header__brand h1 { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .brand-mark { width: 32px; height: 32px; font-size: 14px; }
+
+  /* بدنه قابل جمع‌شدن: انیمیشن grid-rows + محو */
+  .app-header__body {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 0.38s var(--ease-out);
+  }
+  .app-header__body.is-collapsed {
+    grid-template-rows: 0fr;
+  }
+  .app-header__body-inner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    min-height: 0;
+    overflow: hidden;
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 0.22s var(--ease-out), transform 0.22s var(--ease-out);
+  }
+  .app-header__body.is-collapsed .app-header__body-inner {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
 
   .header-layer-summary {
     min-width: 0;
@@ -250,6 +358,10 @@ const crsOptions = [
   .app-header__crs-switch { order: 3; }
   .app-header__map-switch { order: 4; }
   .app-header__tabs { order: 5; width: 100%; }
+}
+
+.app-header--collapsed {
+  gap: 0;
 }
 
 @media (max-width: 520px) {
