@@ -25,12 +25,13 @@
       <template v-else>
         <div class="strat-cfg-field">
           <label>لایه چینه‌شناسی</label>
-          <select v-model="form.layerUuid" class="qb-select" @change="onLayerChange">
-            <option value="" disabled>— انتخاب لایه —</option>
-            <option v-for="l in layers" :key="l.uuid" :value="l.uuid">
-              {{ l.display_name || l.name }}
-            </option>
-          </select>
+          <AppSelect
+            class="qb-select"
+            :model-value="form.layerUuid"
+            :options="layerOptions"
+            placeholder="— انتخاب لایه —"
+            @update:model-value="onLayerChange"
+          />
         </div>
 
         <div v-if="loadingFields" class="strat-cfg-state">
@@ -46,26 +47,35 @@
         <template v-else-if="form.layerUuid">
           <div class="strat-cfg-field">
             <label>ارتفاع سقف</label>
-            <select v-model="form.topField" class="qb-select">
-              <option value="" disabled>— انتخاب فیلد —</option>
-              <option v-for="f in fields" :key="'t'+f.key" :value="f.key">{{ f.label }}</option>
-            </select>
+            <AppSelect
+              class="qb-select"
+              :model-value="form.topField"
+              :options="fieldOptions"
+              placeholder="— انتخاب فیلد —"
+              @update:model-value="form.topField = $event"
+            />
           </div>
 
           <div class="strat-cfg-field">
             <label>ارتفاع کف</label>
-            <select v-model="form.downField" class="qb-select">
-              <option value="" disabled>— انتخاب فیلد —</option>
-              <option v-for="f in fields" :key="'d'+f.key" :value="f.key">{{ f.label }}</option>
-            </select>
+            <AppSelect
+              class="qb-select"
+              :model-value="form.downField"
+              :options="fieldOptions"
+              placeholder="— انتخاب فیلد —"
+              @update:model-value="form.downField = $event"
+            />
           </div>
 
           <div class="strat-cfg-field">
             <label>اسم سازند</label>
-            <select v-model="form.nameField" class="qb-select">
-              <option value="" disabled>— انتخاب فیلد —</option>
-              <option v-for="f in fields" :key="'n'+f.key" :value="f.key">{{ f.label }}</option>
-            </select>
+            <AppSelect
+              class="qb-select"
+              :model-value="form.nameField"
+              :options="fieldOptions"
+              placeholder="— انتخاب فیلد —"
+              @update:model-value="form.nameField = $event"
+            />
           </div>
         </template>
       </template>
@@ -89,6 +99,7 @@
 <script setup>
 import { reactive, ref, computed, onMounted } from 'vue'
 import { fetchVectorLayers, fetchLayerFields, buildQueryableFields } from '../composables/useGeoboxApi.js'
+import AppSelect from './AppSelect.vue'
 
 const props = defineProps({
   allowClose: { type: Boolean, default: false },
@@ -139,7 +150,16 @@ async function loadFields(layerUuid) {
   }
 }
 
-function onLayerChange() {
+const layerOptions = computed(() =>
+  layers.value.map((l) => ({ value: l.uuid, label: l.display_name || l.name }))
+)
+
+const fieldOptions = computed(() =>
+  fields.value.map((f) => ({ value: f.key, label: f.label }))
+)
+
+function onLayerChange(value) {
+  form.layerUuid = value
   form.topField = ''
   form.downField = ''
   form.nameField = ''
@@ -223,18 +243,7 @@ function confirm() {
 
 .qb-select {
   width: 100%;
-  padding: 9px 10px;
-  border: 1.5px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  font-size: 12.5px;
-  font-family: inherit;
-  color: var(--text-primary);
-  background: var(--bg-input);
-  cursor: pointer;
-  outline: none;
-  transition: border-color .15s, box-shadow .15s;
 }
-.qb-select:focus { border-color: var(--accent-depth); box-shadow: 0 0 0 3px var(--ring-color); }
 
 .picker-btn {
   background: var(--bg-input);

@@ -32,15 +32,13 @@
             <label class="layer-dropdown-label">لایه فعال</label>
             <div class="layer-dropdown-select-wrap">
               <span class="layer-dropdown-dot" :style="{ background: activeLayerColor }"></span>
-              <select
+              <AppSelect
                 class="layer-dropdown-select"
-                :value="activeQueryLayer"
-                @change="$emit('update:active-query-layer', $event.target.value)"
-              >
-                <option v-for="layer in layers" :key="layer.uuid" :value="layer.uuid">
-                  {{ layer.display_name || layer.name }}
-                </option>
-              </select>
+                :model-value="activeQueryLayer"
+                :options="layerOptions"
+                placeholder="انتخاب لایه…"
+                @update:model-value="$emit('update:active-query-layer', $event)"
+              />
             </div>
           </div>
 
@@ -92,6 +90,7 @@ import { computed } from 'vue'
 import QueryBuilder from './QueryBuilder.vue'
 import SpatialQueryPanel from './SpatialQueryPanel.vue'
 import SavedQueries from './SavedQueries.vue'
+import AppSelect from './AppSelect.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: true },
@@ -128,6 +127,13 @@ defineEmits([
 
 const activeLayerColor = computed(() =>
   props.layerDetails[props.activeQueryLayer]?.color ?? '#2a9d8f'
+)
+
+const layerOptions = computed(() =>
+  props.layers.map((layer) => ({
+    value: layer.uuid,
+    label: layer.display_name || layer.name,
+  }))
 )
 </script>
 
@@ -196,16 +202,10 @@ const activeLayerColor = computed(() =>
 }
 .layer-dropdown-select-wrap {
   display: flex; align-items: center; gap: 8px;
-  background: var(--bg-input);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  padding: 0 10px;
 }
 .layer-dropdown-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .layer-dropdown-select {
-  flex: 1; background: transparent; border: none;
-  color: var(--text-primary); font-size: 12.5px;
-  font-family: inherit; padding: 8px 0; cursor: pointer; outline: none; min-width: 0;
+  flex: 1; min-width: 0;
 }
 .side-divider { height: 1px; background: var(--border-subtle); }
 

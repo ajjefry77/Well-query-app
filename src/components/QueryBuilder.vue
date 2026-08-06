@@ -37,38 +37,37 @@
           </button>
 
           <!-- انتخاب فیلد -->
-          <select v-model="cond.field" class="qb-select" @change="onFieldChange(cond)">
-            <option v-for="f in fields" :key="f.key" :value="f.key">
-              {{ f.label }}
-            </option>
-          </select>
+          <AppSelect
+            class="qb-select"
+            :model-value="cond.field"
+            :options="fieldOptions"
+            @update:model-value="onFieldChange(cond, $event)"
+          />
 
           <!-- عملگر -->
-          <select v-model="cond.operator" class="qb-select qb-select--op">
-            <option v-for="op in operatorsFor(cond.field)" :key="op" :value="op">
-              {{ opLabel(op) }}
-            </option>
-          </select>
+          <AppSelect
+            class="qb-select qb-select--op"
+            :model-value="cond.operator"
+            :options="operatorOptionsFor(cond.field)"
+            @update:model-value="cond.operator = $event"
+          />
 
           <!-- ورودی مقدار -->
-          <select
+          <AppSelect
             v-if="fieldMeta(cond.field)?.type === 'enum' && fieldMeta(cond.field)?.options?.length"
-            v-model="cond.value"
             class="qb-select"
-          >
-            <option value="">— انتخاب کنید —</option>
-            <option v-for="opt in fieldMeta(cond.field).options" :key="opt" :value="opt">
-              {{ opt }}
-            </option>
-          </select>
-          <select
+            :model-value="cond.value"
+            :options="enumOptionsFor(cond.field)"
+            placeholder="— انتخاب کنید —"
+            @update:model-value="cond.value = $event"
+          />
+          <AppSelect
             v-else-if="fieldMeta(cond.field)?.type === 'boolean'"
-            v-model="cond.value"
             class="qb-select"
-          >
-            <option value="true">بله</option>
-            <option value="false">خیر</option>
-          </select>
+            :model-value="cond.value"
+            :options="booleanOptions"
+            @update:model-value="cond.value = $event"
+          />
           <input
             v-else-if="fieldMeta(cond.field)?.type === 'number'"
             v-model="cond.value"
@@ -119,7 +118,8 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import AppSelect from './AppSelect.vue'
 
 const props = defineProps({
   conditions: { type: Array, required: true },
@@ -130,6 +130,23 @@ const props = defineProps({
 const emit = defineEmits(['add', 'remove', 'save'])
 
 const saveName = ref('')
+
+const booleanOptions = [
+  { value: 'true', label: 'بله' },
+  { value: 'false', label: 'خیر' },
+]
+
+const fieldOptions = computed(() =>
+  props.fields.map((f) => ({ value: f.key, label: f.label }))
+)
+
+function operatorOptionsFor(fieldKey) {
+  return operatorsFor(fieldKey).map((op) => ({ value: op, label: opLabel(op) }))
+}
+
+function enumOptionsFor(fieldKey) {
+  return (fieldMeta(fieldKey)?.options ?? []).map((opt) => ({ value: opt, label: opt }))
+}
 
 function fieldMeta(key) {
   return props.fields.find((f) => f.key === key) ?? null
@@ -157,7 +174,8 @@ function opLabel(op) {
 }
 
 // وقتی فیلد عوض می‌شه، عملگر و مقدار رو ریست کن
-function onFieldChange(cond) {
+function onFieldChange(cond, value) {
+  cond.field = value
   const meta = fieldMeta(cond.field)
   cond.value = ''
   if (meta?.type === 'number') cond.operator = '>'
@@ -271,7 +289,10 @@ function handleSave() {
   color: #fff;
 }
 
-.qb-select,
+.qb-select {
+  flex: 1;
+  min-width: 80px;
+}
 .qb-input {
   background: var(--bg-panel);
   border: 1px solid var(--border-strong);

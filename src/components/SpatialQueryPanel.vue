@@ -25,17 +25,13 @@
 
       <div class="field-group">
         <label>عارضه مرجع</label>
-        <select
-          :value="radiusCenter?.id || ''"
-          @change="onCenterChange"
+        <AppSelect
           class="qb-select qb-select--full"
-        >
-          <option value="" disabled>یک عارضه انتخاب کنید…</option>
-          <option v-for="w in wellsWithCoords" :key="w.id" :value="w.id">
-            #{{ w.id }}
-            <template v-if="firstLabelField"> — {{ w[firstLabelField] }}</template>
-          </option>
-        </select>
+          :model-value="radiusCenter?.id || ''"
+          :options="centerOptions"
+          placeholder="یک عارضه انتخاب کنید…"
+          @update:model-value="onCenterChange"
+        />
       </div>
 
       <div class="field-group">
@@ -133,6 +129,7 @@
 
 <script setup>
 import { computed } from "vue";
+import AppSelect from "./AppSelect.vue";
 
 const props = defineProps({
   mode: { type: String, required: true },
@@ -160,8 +157,17 @@ const firstLabelField = computed(() =>
   props.fields.length ? props.fields[0] : null,
 );
 
-function onCenterChange(e) {
-  const well = props.wells.find((w) => String(w.id) === e.target.value);
+const centerOptions = computed(() =>
+  wellsWithCoords.value.map((w) => ({
+    value: w.id,
+    label: firstLabelField.value
+      ? `#${w.id} — ${w[firstLabelField.value]}`
+      : `#${w.id}`,
+  })),
+);
+
+function onCenterChange(id) {
+  const well = props.wells.find((w) => String(w.id) === String(id));
   emit("update:radiusCenter", well || null);
 }
 
@@ -244,19 +250,7 @@ function onManualRadius(e) {
   font-weight: 600;
 }
 .qb-select {
-  background: var(--bg-panel);
-  border: 1px solid var(--border-strong);
-  color: var(--text-primary);
-  font-size: 12.5px;
-  padding: 9px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
-}
-.qb-select:focus {
-  outline: none;
-  border-color: var(--accent-depth);
-  box-shadow: 0 0 0 3px var(--ring-color);
+  display: block;
 }
 .qb-select--full {
   width: 100%;
