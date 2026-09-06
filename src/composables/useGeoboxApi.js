@@ -153,14 +153,14 @@ const TOP_CANDIDATES  = ['TopHeight', 'Top_Height', 'Top', 'top']
 const DOWN_CANDIDATES = ['DownHeight', 'Down_Height', 'Down', 'Base', 'base']
 const NAME_CANDIDATES = ['Name_x', 'FormationName', 'Formation', 'LayerName', 'Name']
 
-// همه‌ی صفحات یک لایه رو پشت‌سرهم می‌گیره (محدودیت یک درخواست رو دور می‌زنه)
+// همه‌ی صفحات یک لایه — با درخواست‌های موازی دسته‌ای (سریع‌تر از حالت ترتیبی)
 export async function fetchAllFeatures(layerUuid) {
   const pageSize = 2000
-  let page = 1
-  let all = []
+  const CONCURRENCY = 5
+  const MAX_PAGE = 50 // محافظ در برابر حلقه بی‌نهایت
 
-  while (true) {
-    const data = await apiFetch(`/vectorLayers/${layerUuid}/features/`, {
+  const fetchPage = (page) =>
+    apiFetch(`/vectorLayers/${layerUuid}/features/`, {
       f: 'json',
       skip: String((page - 1) * pageSize),
       limit: String(pageSize),
@@ -169,17 +169,29 @@ export async function fetchAllFeatures(layerUuid) {
       skip_geometry: 'false',
       out_srid: '4326',
       select_fields: '[ALL]',
-    })
+    }).then((data) =>
+      Array.isArray(data)
+        ? data
+        : (data.features ?? data.results ?? data.data ?? []),
+    )
 
-    const features = Array.isArray(data)
-      ? data
-      : (data.features ?? data.results ?? data.data ?? [])
+  let page = 1
+  let all = []
 
-    all = all.concat(features)
-
-    if (features.length < pageSize) break // صفحه آخر
-    page += 1
-    if (page > 50) break // محافظ در برابر حلقه بی‌نهایت
+  while (true) {
+    const pages = []
+    for (let i = 0; i < CONCURRENCY && page + i <= MAX_PAGE; i++) {
+      pages.push(page + i)
+    }
+    if (!pages.length) break
+    const results = await Promise.all(pages.map(fetchPage))
+    for (const features of results) {
+      all = all.concat(features)
+    }
+    // اگر آخرین صفحه‌ی دسته ناقص بود، به انتها رسیدیم
+    if (results[results.length - 1].length < pageSize) break
+    page += pages.length
+    if (page > MAX_PAGE) break
   }
 
   return all

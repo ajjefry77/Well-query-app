@@ -82,13 +82,19 @@ export function useWellQuery() {
   const apiError        = ref(null)
 
   // ── بارگذاری فیلدها و عوارض یک لایه (با صفحه‌بندی کامل) ──
+  // فیلدها و عوارض مستقل‌اند → موازی گرفته می‌شوند
   async function loadLayerData(layer) {
-    if (!layerFieldsMap.value[layer.uuid]) {
-      const fields = await fetchLayerFields(layer.uuid)
+    const needFields = !layerFieldsMap.value[layer.uuid]
+    const needFeatures = !layerFeaturesMap.value[layer.uuid]
+    if (!needFields && !needFeatures) return
+    const [fields, raw] = await Promise.all([
+      needFields ? fetchLayerFields(layer.uuid) : null,
+      needFeatures ? fetchAllFeatures(layer.uuid) : null,
+    ])
+    if (needFields) {
       layerFieldsMap.value[layer.uuid] = buildQueryableFields(fields)
     }
-    if (!layerFeaturesMap.value[layer.uuid]) {
-      const raw = await fetchAllFeatures(layer.uuid)
+    if (needFeatures) {
       layerFeaturesMap.value[layer.uuid] = featuresToRows(raw).map(r => ({
         ...r,
         _layerUuid: layer.uuid,

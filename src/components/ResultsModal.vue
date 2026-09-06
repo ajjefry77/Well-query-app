@@ -110,6 +110,7 @@ defineEmits(['close', 'select', 'hover'])
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
+  margin-inline-start: auto;
   transition: color 0.15s, border-color 0.15s, transform 0.1s;
 }
 .results-modal__close:hover { color: var(--accent-danger); border-color: var(--accent-danger); transform: rotate(90deg); }

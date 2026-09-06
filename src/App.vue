@@ -51,6 +51,7 @@
         @update:radius-km="radiusKm = $event"
         @pick-point="onPickPoint"
         @clear-point="onClearPoint"
+        @clear-spatial="onClearSpatial"
         @load-query="onLoadQuery"
         @delete-query="deleteSavedQuery"
         @clear-data="handleClearData"
@@ -66,9 +67,16 @@
           :has-filter="hasAnyFilter"
           :radius-center="showRadiusOnMap ? radiusCenter : null"
           :radius-km="radiusKm"
+          :selected-id="selectedWellId"
           :theme="theme"
           @select-well="onSelectFromMap"
         />
+
+        <!-- لودینگ افزودن لایه تا آماده‌شدن نقشه -->
+        <div v-if="mapLoading" class="map-loading-overlay">
+          <span class="spinner"></span>
+          <span>در حال بارگذاری لایه‌ها…</span>
+        </div>
 
         <!-- دکمه نمایش نتایج -->
         <button
@@ -92,6 +100,7 @@
         @toggle="toggleResultsPanel"
         @open-modal="openLayerModal"
         @remove-layer="onRemoveLayer"
+        @zoom-layer="onZoomToLayer"
       />
 
       <!-- موبایل: نوار grab + تب‌های پنل پایین -->
@@ -177,6 +186,7 @@ const spatialMode      = ref('radius')
 const mapProvider      = ref('mapbox')
 const mapRef           = shallowRef(null)
 const activeWellId     = ref(null)
+const selectedWellId   = ref(null)
 const resultsPanelOpen = ref(true)
 const customPoint      = ref(null)
 const isPickingPoint   = ref(false)
@@ -269,12 +279,12 @@ function layerColor(uuid) {
 function openLayerModal() {
   showLayerModal.value = true
 }
-function applyLayerSelection(layers) {
+async function applyLayerSelection(layers) {
   showLayerModal.value = false
   if (!layers.find(l => l.uuid === activeQueryLayer.value)) {
     activeQueryLayer.value = layers[0]?.uuid ?? null
   }
-  setActiveLayers(layers)
+  await setActiveLayers(layers)
 }
 
 onMounted(() => {
@@ -338,6 +348,7 @@ const spatialGroupFields = computed(() =>
 const showRadiusOnMap = computed(() =>
   queryKind.value === 'spatial' && (spatialMode.value === 'radius' || spatialMode.value === 'point')
 )
+const mapLoading = computed(() => loadingFeatures.value || loadingFields.value)
 const displayColumns = computed(() => {
   if (queryKind.value === 'spatial') {
     return [
@@ -395,8 +406,15 @@ function onClearPoint() {
   isPickingPoint.value = false
   mapRef.value?.disablePointPicker()
 }
+function onClearSpatial() {
+  customPoint.value = null
+  radiusCenter.value = null
+  isPickingPoint.value = false
+  mapRef.value?.disablePointPicker()
+}
 function onSelectFromMap(well) {
   activeWellId.value = well.id
+  selectedWellId.value = well.id
   if (queryKind.value === 'spatial' && spatialMode.value === 'radius') {
     radiusCenter.value = well
   }
@@ -404,7 +422,12 @@ function onSelectFromMap(well) {
 }
 function onSelectFromTable(row) {
   activeWellId.value = row.id
+  selectedWellId.value = row.id
+  showResultsModal.value = false
   mapRef.value?.zoomToFeature(row.id)
+}
+function onZoomToLayer(uuid) {
+  mapRef.value?.zoomToLayer?.(uuid)
 }
 function onHoverRow(row) {
   if (row.lat && row.lng) activeWellId.value = row.id
@@ -447,6 +470,21 @@ function handleClearData() {
   border-radius: var(--radius-lg);
   position: relative;
   z-index: 0;
+}
+.map-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: color-mix(in srgb, var(--bg-panel) 55%, transparent);
+  backdrop-filter: blur(3px);
+  border-radius: var(--radius-lg);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 /* ---------- دکمه FAB نتایج ---------- */

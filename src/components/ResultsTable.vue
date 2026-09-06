@@ -23,7 +23,7 @@
             </thead>
             <tbody>
               <tr
-                v-for="row in group.rows"
+                v-for="row in groupVisibleRows(group)"
                 :key="row.id"
                 class="rt__row"
                 :class="{ 'rt__row--active': row.id === activeId }"
@@ -41,6 +41,13 @@
             </tbody>
           </table>
           <div v-else class="rt__empty-layer">نتیجه‌ای یافت نشد</div>
+          <button
+            v-if="group.rows.length > visibleCount(group)"
+            class="rt__more-btn"
+            @click="showMore(group)"
+          >
+            نمایش {{ Math.min(PAGE_SIZE, group.rows.length - visibleCount(group)) }} رکورد بیشتر ({{ visibleCount(group) }} از {{ group.rows.length }})
+          </button>
         </div>
       </div>
     </template>
@@ -56,7 +63,7 @@
           </thead>
           <tbody>
             <tr
-              v-for="row in rows"
+              v-for="row in pagedRows"
               :key="row.id"
               class="rt__row"
               :class="{ 'rt__row--active': row.id === activeId }"
@@ -73,6 +80,11 @@
             </tr>
           </tbody>
         </table>
+        <div v-if="totalPages > 1" class="rt__pager">
+          <button class="rt__page-btn" :disabled="page <= 1" @click="prevPage">قبلی</button>
+          <span class="rt__page-info mono">{{ page }} / {{ totalPages }}</span>
+          <button class="rt__page-btn" :disabled="page >= totalPages" @click="nextPage">بعدی</button>
+        </div>
       </div>
       <div v-else class="rt__empty">
         نتیجه‌ای با شرایط فعلی یافت نشد. شرط‌ها یا شعاع جستجو را تغییر دهید.
@@ -82,7 +94,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
   rows:      { type: Array,  required: true },
@@ -91,6 +103,37 @@ const props = defineProps({
   layerMeta: { type: Array,  default: () => [] },
 })
 defineEmits(['select', 'hover'])
+
+const PAGE_SIZE = 100
+const page = ref(1)
+const expandedPerGroup = ref({})
+
+watch(() => props.rows, () => {
+  page.value = 1
+  expandedPerGroup.value = {}
+})
+
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(props.rows.length / PAGE_SIZE))
+)
+const pagedRows = computed(() =>
+  props.rows.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE)
+)
+function nextPage() { if (page.value < totalPages.value) page.value++ }
+function prevPage() { if (page.value > 1) page.value-- }
+
+function visibleCount(group) {
+  return expandedPerGroup.value[group.uuid] ?? PAGE_SIZE
+}
+function groupVisibleRows(group) {
+  return group.rows.slice(0, visibleCount(group))
+}
+function showMore(group) {
+  expandedPerGroup.value = {
+    ...expandedPerGroup.value,
+    [group.uuid]: visibleCount(group) + PAGE_SIZE,
+  }
+}
 
 const LAYER_COLORS = ['#2a9d8f','#e9c46a','#f4a261','#e76f51','#264653','#a8dadc','#457b9d','#e63946']
 
@@ -221,4 +264,42 @@ function formatCell(row, col) {
   border-radius: var(--radius-md);
   line-height: 1.8;
 }
+.rt__pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+.rt__page-btn {
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  padding: 6px 16px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.rt__page-btn:hover:not(:disabled) {
+  border-color: var(--accent-depth);
+  color: var(--accent-depth);
+}
+.rt__page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.rt__page-info { font-size: 11.5px; color: var(--text-muted); }
+.rt__more-btn {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--accent-depth);
+  font-size: 12px;
+  font-family: inherit;
+  padding: 9px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.rt__more-btn:hover { background: var(--bg-input); }
 </style>

@@ -150,6 +150,7 @@ const props = defineProps({
   hasFilter: { type: Boolean, default: false },
   radiusCenter: { type: Object, default: null },
   radiusKm: { type: Number, default: 0 },
+  selectedId: { type: [String, Number], default: null },
   theme: { type: String, default: "light" },
 });
 const emit = defineEmits(["select-well"]);
@@ -588,24 +589,73 @@ function popupHTML(w, props_) {
     .slice(0, 8)
     .map(
       ([k, v]) =>
-        `<tr><td style="color:#9aab9f;padding:2px 8px 2px 0">${k}</td><td>${v ?? "—"}</td></tr>`,
+        `<tr><td class="wqa-popup__key">${k}</td><td class="wqa-popup__val">${v ?? "—"}</td></tr>`,
     )
     .join("");
-  return `<div style="font-family:'Vazirmatn',sans-serif;direction:rtl;min-width:200px">
-    <div style="font-weight:700;margin-bottom:6px;font-size:13px">عارضه #${w.id}</div>
-    <table style="font-size:12px;line-height:1.8;width:100%">${entries}</table>
+  return `<div class="wqa-popup">
+    <div class="wqa-popup__title">عارضه #${w.id}</div>
+    <table class="wqa-popup__table">${entries}</table>
   </div>`;
+}
+
+let wellsEventsBound = false;
+function bindWellEventsOnce() {
+  if (wellsEventsBound) return;
+  wellsEventsBound = true;
+  ["wells-fill", "wells-line", "wells-polyline", "wells-point"].forEach(
+    (layerId) => {
+      map.on("click", layerId, (e) => {
+        if (activeMode.value) return;
+        const fp = e.features[0].properties;
+        const well = props.wells.find((w) => String(w.id) === String(fp.id));
+        if (!well) return;
+        emit("select-well", well);
+        new mapboxgl.Popup({ maxWidth: "280px" })
+          .setLngLat(e.lngLat)
+          .setHTML(popupHTML(well, fp))
+          .addTo(map);
+      });
+      map.on("mouseenter", layerId, () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", layerId, () => {
+        map.getCanvas().style.cursor = "";
+      });
+    },
+  );
+}
+
+function fitGeoJSON(geojson) {
+  try {
+    const bounds = new mapboxgl.LngLatBounds();
+    geojson.features.forEach((f) => {
+      const g = f.geometry;
+      if (g.type === "Point") bounds.extend(g.coordinates);
+      else if (g.type === "MultiPoint")
+        g.coordinates.forEach((c) => bounds.extend(c));
+      else if (g.type === "LineString")
+        g.coordinates.forEach((c) => bounds.extend(c));
+      else if (g.type === "MultiLineString")
+        g.coordinates.forEach((l) => l.forEach((c) => bounds.extend(c)));
+      else if (g.type === "Polygon")
+        g.coordinates[0].forEach((c) => bounds.extend(c));
+      else if (g.type === "MultiPolygon")
+        g.coordinates.forEach((p) => p[0].forEach((c) => bounds.extend(c)));
+    });
+    if (!bounds.isEmpty())
+      map.fitBounds(bounds, { padding: 48, maxZoom: 14, duration: 800 });
+  } catch {}
 }
 
 function renderMarkers(fit = true) {
   if (!map || !map.isStyleLoaded()) return;
-  clearMarkers();
-  clearWellLayers();
   const highlightSet = new Set(props.highlightedIds.map(String));
   const centerId = props.radiusCenter?.id ? String(props.radiusCenter.id) : null;
+  const selectedId = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null;
   const hasGeometry = props.wells.some((w) => w._geometry);
 
   if (hasGeometry) {
+    clearMarkers();
     const geojson = buildGeoJSON(props.wells);
     wellsGeoJSON = geojson;
     geojson.features.forEach((f) => {
@@ -615,7 +665,13 @@ function renderMarkers(fit = true) {
       f.properties._dimmed = props.hasFilter && !hl ? 1 : 0;
       f.properties._isCenter =
         centerId && String(f.properties.id) === centerId ? 1 : 0;
+      f.properties._selected =
+        selectedId && String(f.properties.id) === selectedId ? 1 : 0;
     });
+    // استفاده مجدد از source/layer (بدون بازسازی و بدون fit اضافه)
+    if (map.getSource("wells-src")) {
+      map.getSource("wells-src").setData(geojson);
+    } else {
     map.addSource("wells-src", { type: "geojson", data: geojson });
     map.addLayer({
       id: "wells-fill",
@@ -629,12 +685,20 @@ function renderMarkers(fit = true) {
       paint: {
         "fill-color": [
           "case",
+          ["==", ["get", "_selected"], 1],
+          "#f0a500",
+          ["==", ["get", "_isCenter"], 1],
+          "#e74c3c",
           ["==", ["get", "_highlighted"], 1],
           "#4a9b8e", // فیلتر شده → رنگ
           "#8a9490", // عادی → خاکستری
         ],
         "fill-opacity": [
           "case",
+          ["==", ["get", "_selected"], 1],
+          0.6,
+          ["==", ["get", "_isCenter"], 1],
+          0.55,
           ["==", ["get", "_highlighted"], 1],
           0.55,
           ["==", ["get", "_dimmed"], 1],
@@ -655,13 +719,28 @@ function renderMarkers(fit = true) {
       paint: {
         "line-color": [
           "case",
+          ["==", ["get", "_selected"], 1],
+          "#f0a500",
+          ["==", ["get", "_isCenter"], 1],
+          "#e74c3c",
           ["==", ["get", "_highlighted"], 1],
           "#4a9b8e",
           "#8a9490",
         ],
-        "line-width": ["case", ["==", ["get", "_highlighted"], 1], 3, 1.5],
+        "line-width": [
+          "case",
+          ["==", ["get", "_selected"], 1],
+          4,
+          ["==", ["get", "_isCenter"], 1],
+          4,
+          ["==", ["get", "_highlighted"], 1],
+          3,
+          1.5,
+        ],
         "line-opacity": [
           "case",
+          ["==", ["get", "_selected"], 1],
+          1,
           ["==", ["get", "_highlighted"], 1],
           1,
           ["==", ["get", "_dimmed"], 1],
@@ -683,6 +762,10 @@ function renderMarkers(fit = true) {
       paint: {
         "line-width": [
           "case",
+          ["==", ["get", "_selected"], 1],
+          4,
+          ["==", ["get", "_isCenter"], 1],
+          4,
           ["==", ["get", "_highlighted"], 1],
           3,
           ["==", ["get", "_dimmed"], 1],
@@ -691,6 +774,10 @@ function renderMarkers(fit = true) {
         ],
         "line-color": [
           "case",
+          ["==", ["get", "_selected"], 1],
+          "#f0a500",
+          ["==", ["get", "_isCenter"], 1],
+          "#e74c3c",
           ["==", ["get", "_highlighted"], 1],
           "#4a9b8e",
           "#8a9490",
@@ -706,6 +793,8 @@ function renderMarkers(fit = true) {
       paint: {
         "circle-radius": [
           "case",
+          ["==", ["get", "_selected"], 1],
+          12,
           ["==", ["get", "_isCenter"], 1],
           12,
           ["==", ["get", "_highlighted"], 1],
@@ -716,6 +805,8 @@ function renderMarkers(fit = true) {
         ],
         "circle-color": [
           "case",
+          ["==", ["get", "_selected"], 1],
+          "#f0a500",
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
           ["==", ["get", "_dimmed"], 1],
@@ -724,6 +815,8 @@ function renderMarkers(fit = true) {
         ],
         "circle-opacity": [
           "case",
+          ["==", ["get", "_selected"], 1],
+          1,
           ["==", ["get", "_isCenter"], 1],
           1,
           ["==", ["get", "_dimmed"], 1],
@@ -732,12 +825,16 @@ function renderMarkers(fit = true) {
         ],
         "circle-stroke-width": [
           "case",
+          ["==", ["get", "_selected"], 1],
+          3,
           ["==", ["get", "_isCenter"], 1],
           3,
           2,
         ],
         "circle-stroke-color": [
           "case",
+          ["==", ["get", "_selected"], 1],
+          "#1a1a1a",
           ["==", ["get", "_isCenter"], 1],
           "#fff",
           ["==", ["get", "_highlighted"], 1],
@@ -748,6 +845,8 @@ function renderMarkers(fit = true) {
         ],
         "circle-stroke-opacity": [
           "case",
+          ["==", ["get", "_selected"], 1],
+          1,
           ["==", ["get", "_isCenter"], 1],
           1,
           ["==", ["get", "_dimmed"], 1],
@@ -756,85 +855,55 @@ function renderMarkers(fit = true) {
         ],
       },
     });
-    ["wells-fill", "wells-line", "wells-polyline", "wells-point"].forEach(
-      (layerId) => {
-        map.on("click", layerId, (e) => {
-          if (activeMode.value) return;
-          const fp = e.features[0].properties;
-          const well = props.wells.find((w) => String(w.id) === String(fp.id));
-          if (!well) return;
-          emit("select-well", well);
-          new mapboxgl.Popup({ maxWidth: "280px" })
-            .setLngLat(e.lngLat)
-            .setHTML(popupHTML(well, fp))
-            .addTo(map);
-        });
-        map.on("mouseenter", layerId, () => {
-          map.getCanvas().style.cursor = "pointer";
-        });
-        map.on("mouseleave", layerId, () => {
-          map.getCanvas().style.cursor = "";
-        });
-      },
-    );
-    try {
-      const bounds = new mapboxgl.LngLatBounds();
-      geojson.features.forEach((f) => {
-        const g = f.geometry;
-        if (g.type === "Point") bounds.extend(g.coordinates);
-        else if (g.type === "MultiPoint")
-          g.coordinates.forEach((c) => bounds.extend(c));
-        else if (g.type === "LineString")
-          g.coordinates.forEach((c) => bounds.extend(c));
-        else if (g.type === "MultiLineString")
-          g.coordinates.forEach((l) => l.forEach((c) => bounds.extend(c)));
-        else if (g.type === "Polygon")
-          g.coordinates[0].forEach((c) => bounds.extend(c));
-        else if (g.type === "MultiPolygon")
-          g.coordinates.forEach((p) => p[0].forEach((c) => bounds.extend(c)));
-      });
-      if (!bounds.isEmpty() && fit)
-        map.fitBounds(bounds, { padding: 48, maxZoom: 14, duration: 800 });
-    } catch {}
+    bindWellEventsOnce();
+    }
+    if (fit) fitGeoJSON(geojson);
   } else {
+    clearWellLayers();
+    clearMarkers();
     wellsGeoJSON = null;
     props.wells.forEach((w) => {
       if (!w.lat || !w.lng) return;
       const isH = highlightSet.has(String(w.id));
       const isDimmed = props.hasFilter && !isH;
       const isCenter = centerId && String(w.id) === centerId;
-      const color = isCenter
-        ? "#e74c3c"
-        : isH
-          ? "#4a9b8e"
-          : "#8a9490";
-      const opacity = isCenter ? "1" : isDimmed ? "0.25" : "1";
-      const border = isCenter
-        ? "3px solid #fff"
-        : isH
+      const isSel = selectedId && String(w.id) === selectedId;
+      const color = isSel
+        ? "#f0a500"
+        : isCenter
+          ? "#e74c3c"
+          : isH
+            ? "#4a9b8e"
+            : "#8a9490";
+      const opacity = isSel || isCenter ? "1" : isDimmed ? "0.25" : "1";
+      const border = isSel
+        ? "3px solid #1a1a1a"
+        : isCenter
           ? "3px solid #fff"
-          : "2px solid rgba(255,255,255,0.4)";
-      const size = isCenter ? 22 : isH ? 18 : isDimmed ? 8 : 12;
+          : isH
+            ? "3px solid #fff"
+            : "2px solid rgba(255,255,255,0.4)";
+      const size = isSel ? 22 : isCenter ? 22 : isH ? 18 : isDimmed ? 8 : 12;
       const el = document.createElement("div");
       el.style.cssText = `
       width:${size}px;height:${size}px;border-radius:50%;
       background:${color};border:${border};
       box-shadow:0 2px 6px rgba(0,0,0,0.4);cursor:pointer;
       opacity:${opacity};
-      ${isCenter || isH ? "outline:3px solid rgba(240,165,0,0.4);outline-offset:3px;" : ""}`;
+      ${isSel || isCenter || isH ? "outline:3px solid rgba(240,165,0,0.4);outline-offset:3px;" : ""}`;
       const entries = Object.entries(w)
         .filter(([k]) => !k.startsWith("_") && k !== "lat" && k !== "lng")
         .slice(0, 8)
         .map(
           ([k, v]) =>
-            `<tr><td style="color:#9aab9f;padding:2px 8px 2px 0">${k}</td><td>${v ?? "—"}</td></tr>`,
+            `<tr><td class="wqa-popup__key">${k}</td><td class="wqa-popup__val">${v ?? "—"}</td></tr>`,
         )
         .join("");
       const popup = new mapboxgl.Popup({ offset: 14, maxWidth: "280px" })
         .setHTML(`
-        <div style="font-family:'Vazirmatn',sans-serif;direction:rtl;min-width:200px">
-          <div style="font-weight:700;margin-bottom:6px;font-size:13px">عارضه #${w.id}</div>
-          <table style="font-size:12px;line-height:1.8;width:100%">${entries}</table>
+        <div class="wqa-popup">
+          <div class="wqa-popup__title">عارضه #${w.id}</div>
+          <table class="wqa-popup__table">${entries}</table>
         </div>`);
       el.addEventListener("click", (e) => {
         if (activeMode.value) {
@@ -857,74 +926,6 @@ function renderMarkers(fit = true) {
       if (fit) map.fitBounds(bounds, { padding: 48, maxZoom: 14, duration: 800 });
     }
   }
-}
-
-function renderRadiusAndLines() {
-  if (!map || !map.isStyleLoaded()) return;
-  ["radius-fill", "radius-line", "center-point"].forEach(
-    (id) => {
-      if (map.getLayer(id)) map.removeLayer(id);
-    },
-  );
-  ["radius-src", "center-src"].forEach((id) => {
-    if (map.getSource(id)) map.removeSource(id);
-  });
-  if (props.radiusCenter && props.radiusKm > 0) {
-    const circle = makeCirclePolygon(props.radiusCenter, props.radiusKm);
-    map.addSource("radius-src", {
-      type: "geojson",
-      data: { type: "Feature", geometry: circle },
-    });
-    map.addLayer({
-      id: "radius-fill",
-      type: "fill",
-      source: "radius-src",
-      paint: { "fill-color": "#4a9b8e", "fill-opacity": 0.08 },
-    });
-    map.addLayer({
-      id: "radius-line",
-      type: "line",
-      source: "radius-src",
-      paint: {
-        "line-color": "#4a9b8e",
-        "line-width": 1.5,
-        "line-dasharray": [2, 2],
-      },
-    });
-    map.addSource("center-src", {
-      type: "geojson",
-      data: {
-        type: "Feature",
-        geometry: {
-          type: "Point",
-          coordinates: [props.radiusCenter.lng, props.radiusCenter.lat],
-        },
-      },
-    });
-    map.addLayer({
-      id: "center-point",
-      type: "circle",
-      source: "center-src",
-      paint: {
-        "circle-radius": 7,
-        "circle-color": "#e9efe9",
-        "circle-stroke-width": 3,
-        "circle-stroke-color": "#4a9b8e",
-      },
-    });
-  }
-}
-
-function makeCirclePolygon(center, radiusKm, points = 64) {
-  const coords = [],
-    dX = radiusKm / (111.32 * Math.cos((center.lat * Math.PI) / 180)),
-    dY = radiusKm / 110.574;
-  for (let i = 0; i < points; i++) {
-    const t = (i / points) * 2 * Math.PI;
-    coords.push([center.lng + dX * Math.cos(t), center.lat + dY * Math.sin(t)]);
-  }
-  coords.push(coords[0]);
-  return { type: "Polygon", coordinates: [coords] };
 }
 
 // ─── mount ─────────────────────────────────────────────────
@@ -955,7 +956,6 @@ onMounted(() => {
     initDrawnSource();
     map.on("mousemove", onMouseMove);
     renderMarkers();
-    renderRadiusAndLines();
   });
 });
 
@@ -971,29 +971,31 @@ watch(() => props.wells, () => renderMarkers(true));
 function updateHighlightData() {
   if (!map || !map.isStyleLoaded()) return;
   if (!wellsGeoJSON || !map.getSource("wells-src")) {
-    // اگه source نیست (مثلاً marker-based)، کامل render کن
-    renderMarkers();
+    // اگه source نیست (مثلاً marker-based)، کامل render کن ولی بدون fit تا نقشه نپرد
+    renderMarkers(false);
     return;
   }
   const highlightSet = new Set(props.highlightedIds.map(String));
   const centerId = props.radiusCenter?.id ? String(props.radiusCenter.id) : null;
+  const selectedId = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null;
   wellsGeoJSON.features.forEach((f) => {
     const hl = highlightSet.has(String(f.properties.id));
     f.properties._highlighted = hl ? 1 : 0;
     f.properties._dimmed = props.hasFilter && !hl ? 1 : 0;
     f.properties._isCenter =
       centerId && String(f.properties.id) === centerId ? 1 : 0;
+    f.properties._selected =
+      selectedId && String(f.properties.id) === selectedId ? 1 : 0;
   });
   map.getSource("wells-src").setData(wellsGeoJSON);
 }
 
 watch(() => props.highlightedIds, updateHighlightData);
 watch(() => props.hasFilter, updateHighlightData);
-watch(() => [props.radiusCenter, props.radiusKm], () => {
-  renderRadiusAndLines();
+watch(() => props.selectedId, updateHighlightData);
+// عارضه مرجع (قرمز) با تغییر انتخاب به‌روز می‌شود
+watch(() => props.radiusCenter, () => {
   updateHighlightData();
-}, {
-  deep: true,
 });
 
 // ─── تعویض تم نقشه (روشن ↔ تیره) ──────────────────────────
@@ -1009,11 +1011,11 @@ function applyMapTheme(t) {
   if (draw && map.hasControl(draw)) removeDraw();
 
   map.setStyle(next);
+  wellsEventsBound = false;
   map.once("style.load", () => {
     initDrawnSource();
     refreshDrawnSource();
     renderMarkers(false);
-    renderRadiusAndLines();
     updateLabels();
     if (wasActive) {
       activeMode.value = mode;
@@ -1056,6 +1058,32 @@ defineExpose({
         map.fitBounds(bounds, { padding: 60, maxZoom: 15, duration: 800 });
     } else if (well.lat && well.lng)
       map.flyTo({ center: [well.lng, well.lat], zoom: 13, duration: 800 });
+  },
+  zoomToLayer(uuid) {
+    if (!map) return;
+    const feats = props.wells.filter((w) => String(w._layerUuid) === String(uuid));
+    if (!feats.length) return;
+    const bounds = new mapboxgl.LngLatBounds();
+    let has = false;
+    const extend = (c) => {
+      if (Array.isArray(c) && Number.isFinite(+c[0]) && Number.isFinite(+c[1])) {
+        try { bounds.extend([+c[0], +c[1]]); has = true; } catch {}
+      }
+    };
+    const walk = (coords) => {
+      if (!Array.isArray(coords)) return;
+      if (typeof coords[0] === "number") extend(coords);
+      else coords.forEach(walk);
+    };
+    feats.forEach((w) => {
+      if (w._geometry?.coordinates) {
+        try { walk(w._geometry.coordinates); } catch {}
+      } else if (Number.isFinite(+w.lat) && Number.isFinite(+w.lng)) {
+        try { bounds.extend([+w.lng, +w.lat]); has = true; } catch {}
+      }
+    });
+    if (has && !bounds.isEmpty())
+      map.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 800 });
   },
   enablePointPicker(callback) {
     if (!map) return;

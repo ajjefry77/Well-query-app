@@ -7,6 +7,7 @@
   >
     <!-- تریگر -->
     <button
+      ref="triggerBtn"
       type="button"
       class="aps__trigger"
       :disabled="disabled"
@@ -25,41 +26,51 @@
       </span>
     </button>
 
-    <!-- پنل دراپ‌داون -->
-    <transition name="aps-pop" @after-leave="afterLeave">
-      <div v-if="open" class="aps__panel">
-        <ul class="aps__list" role="listbox" :aria-activedescendant="activeId">
-          <li
-            v-for="(opt, i) in options"
-            :key="opt.value"
-            :id="`${uid}-${i}`"
-            role="option"
-            class="aps__item"
-            :class="{
-              'aps__item--active': modelValue === opt.value,
-              'aps__item--focused': i === focusIndex,
-            }"
-            :style="{ '--i': i }"
-            @click="select(opt)"
-            @mouseenter="focusIndex = i"
-          >
-            <span class="aps__dot" aria-hidden="true"></span>
-            <span class="aps__label">{{ opt.label }}</span>
-            <span class="aps__check" aria-hidden="true">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            </span>
-          </li>
-        </ul>
-      </div>
-    </transition>
+    <!-- پنل دراپ‌داون — teleport به body تا داخل پنل‌های اسکرول‌دار بریده نشود -->
+    <Teleport to="body">
+      <transition name="aps-pop" @after-leave="afterLeave">
+        <div
+          v-if="open"
+          ref="panelEl"
+          class="aps__panel aps__panel--fixed"
+          :style="panelStyle"
+          :data-theme-root="true"
+        >
+          <ul v-if="options.length" class="aps__list" role="listbox" :aria-activedescendant="activeId">
+            <li
+              v-for="(opt, i) in options"
+              :key="String(opt.value) + '-' + i"
+              :id="`${uid}-${i}`"
+              role="option"
+              :aria-selected="isActive(opt)"
+              class="aps__item"
+              :class="{
+                'aps__item--active': isActive(opt),
+                'aps__item--focused': i === focusIndex,
+              }"
+              :style="{ '--i': i }"
+              @click="select(opt)"
+              @mouseenter="focusIndex = i"
+            >
+              <span class="aps__dot" aria-hidden="true"></span>
+              <span class="aps__label" :title="opt.label">{{ opt.label }}</span>
+              <span class="aps__check" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </span>
+            </li>
+          </ul>
+          <div v-else class="aps__empty">موردی برای انتخاب نیست</div>
+        </div>
+      </transition>
+    </Teleport>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 
 const props = defineProps({
   modelValue: { type: [String, Number], default: '' },
@@ -70,6 +81,10 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue', 'change'])
 
+const root       = ref(null)
+const triggerBtn = ref(null)
+const panelEl    = ref(null)
+const panelStyle = ref({})
 const open       = ref(false)
 const focusIndex = ref(-1)
 const uid        = Math.random().toString(36).slice(2, 8)
@@ -85,7 +100,54 @@ const activeId = computed(() =>
   focusIndex.value >= 0 ? `${uid}-${focusIndex.value}` : null
 )
 
-function toggle() { open.value = !open.value; if (open.value) focusIndex.value = maxFocus() }
+function isActive(opt) {
+  return String(opt.value) === String(props.modelValue)
+}
+
+function toggle() {
+  if (props.disabled) return
+  if (open.value) closePanel()
+  else openPanel()
+}
+
+function openPanel() {
+  open.value = true
+  focusIndex.value = maxFocus()
+  nextTick(() => updatePanelPos())
+}
+
+function closePanel() {
+  open.value = false
+}
+
+function updatePanelPos() {
+  const t = triggerBtn.value
+  if (!t) return
+  const r = t.getBoundingClientRect()
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  // پنل حداقل هم‌عرض تریگر، حداقل ۲۲۰px تا متن فارسی خوانا بماند
+  let w = Math.max(r.width, 220)
+  w = Math.min(w, Math.min(360, vw - 16))
+  let left = r.left
+  // در RTL تریگر تمام‌عرض است؛ لبه راست را با تریگر هم‌تراز نگه دار
+  left = r.right - w
+  if (left < 8) left = 8
+  if (left + w > vw - 8) left = Math.max(8, vw - w - 8)
+  // اگر پایین جا نیست، رو به بالا باز کن
+  const estH = Math.min(268, 40 + props.options.length * 38)
+  let top
+  if (r.bottom + 8 + estH > vh - 8 && r.top - 8 - estH > 8) {
+    top = Math.max(8, r.top - 8 - estH)
+  } else {
+    top = r.bottom + 8
+  }
+  panelStyle.value = {
+    top: `${Math.round(top)}px`,
+    left: `${Math.round(left)}px`,
+    width: `${Math.round(w)}px`,
+  }
+}
 
 function maxFocus() {
   const hit = props.options.findIndex(o => String(o.value) === String(props.modelValue))
@@ -95,40 +157,51 @@ function maxFocus() {
 function select(opt) {
   emit('update:modelValue', opt.value)
   emit('change', opt.value)
-  open.value = false
+  closePanel()
+  triggerBtn.value?.focus?.()
 }
 
 function onKeydown(e) {
+  if (props.disabled) return
   if (!open.value) {
-    if (['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(e.key)) { e.preventDefault(); open.value = true; focusIndex.value = maxFocus() }
+    if (['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(e.key)) { e.preventDefault(); openPanel() }
     return
   }
   const n = props.options.length
+  if (!n && e.key === 'Escape') { closePanel(); return }
   switch (e.key) {
-    case 'Escape':      open.value = false; break
-    case 'ArrowDown':   e.preventDefault(); focusIndex.value = (focusIndex.value + 1) % n; break
-    case 'ArrowUp':     e.preventDefault(); focusIndex.value = (focusIndex.value - 1 + n) % n; break
+    case 'Escape':      closePanel(); triggerBtn.value?.focus?.(); break
+    case 'ArrowDown':   e.preventDefault(); focusIndex.value = n ? (focusIndex.value + 1) % n : -1; break
+    case 'ArrowUp':     e.preventDefault(); focusIndex.value = n ? (focusIndex.value - 1 + n) % n : -1; break
     case 'Enter':
-    case ' ':           e.preventDefault(); if (focusIndex.value >= 0) select(props.options[focusIndex.value]); break
-    case 'Tab':         open.value = false; break
+    case ' ':           e.preventDefault(); if (focusIndex.value >= 0 && props.options[focusIndex.value]) select(props.options[focusIndex.value]); break
+    case 'Tab':         closePanel(); break
   }
 }
 
-function onClickOutside(e) {
-  if (open.value && el.value && !el.value.contains(e.target)) open.value = false
+function onPointerDown(e) {
+  if (!open.value) return
+  const inRoot = root.value?.contains(e.target)
+  const inPanel = panelEl.value?.contains(e.target)
+  if (!inRoot && !inPanel) closePanel()
+}
+function onScrollCapture() {
+  if (open.value) updatePanelPos()
 }
 function onResize() {
-  if (open.value) open.value = false
+  if (open.value) updatePanelPos()
 }
 
 onMounted(() => {
-  document.addEventListener('mousedown', onClickOutside)
-  document.addEventListener('mouseup', onClickOutside)
+  document.addEventListener('mousedown', onPointerDown)
+  document.addEventListener('touchstart', onPointerDown, { passive: true })
+  document.addEventListener('scroll', onScrollCapture, true)
   window.addEventListener('resize', onResize)
 })
 onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', onClickOutside)
-  document.removeEventListener('mouseup', onClickOutside)
+  document.removeEventListener('mousedown', onPointerDown)
+  document.removeEventListener('touchstart', onPointerDown)
+  document.removeEventListener('scroll', onScrollCapture, true)
   window.removeEventListener('resize', onResize)
 })
 
@@ -139,6 +212,7 @@ function afterLeave() { focusIndex.value = -1 }
 .aps {
   position: relative;
   min-width: 0;
+  width: 100%;
   font-size: 12.5px;
 }
 .aps--disabled { cursor: not-allowed; }
@@ -158,6 +232,7 @@ function afterLeave() { focusIndex.value = -1 }
   min-height: 38px;
   color: var(--text-primary);
   font-family: inherit;
+  font-size: inherit;
   cursor: pointer;
   text-align: start;
   box-shadow: var(--shadow-xs);
@@ -181,9 +256,12 @@ function afterLeave() { focusIndex.value = -1 }
 .aps__trigger:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .aps__value {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.8;
 }
 .aps__value--placeholder {
   color: var(--text-muted);
@@ -196,6 +274,7 @@ function afterLeave() { focusIndex.value = -1 }
   display: inline-flex;
   color: var(--text-muted);
   transition: transform 0.38s var(--ease-spring), color 0.2s var(--ease-out);
+  pointer-events: none;
 }
 .aps__trigger:hover:not(:disabled) .aps__chev { color: var(--accent-depth); }
 .aps--open .aps__chev {
@@ -203,23 +282,23 @@ function afterLeave() { focusIndex.value = -1 }
   color: var(--accent-depth);
 }
 .aps--sm    .aps__trigger { min-height: 32px; padding: 0 10px; font-size: 12px; }
-.aps__chev  { pointer-events: none; }
 
-/* ─────────── پنل ─────────── */
+/* ─────────── پنل (fixed در body) ─────────── */
 .aps__panel {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  right: 0;
-  z-index: 60;
-  background: color-mix(in srgb, var(--bg-panel-raised) 96%, transparent);
-  backdrop-filter: blur(14px) saturate(1.3);
-  border: 1px solid var(--border-subtle);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   padding: 6px;
   box-shadow: var(--shadow-lg);
   transform-origin: top center;
   overflow: hidden;
+}
+.aps__panel--fixed {
+  position: fixed;
+  z-index: 9999;
+  max-height: 268px;
+  display: flex;
+  flex-direction: column;
 }
 .aps__list {
   margin: 0;
@@ -228,7 +307,7 @@ function afterLeave() { focusIndex.value = -1 }
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 260px;
+  max-height: 256px;
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -239,11 +318,13 @@ function afterLeave() { focusIndex.value = -1 }
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 9px 18px 9px 10px;
+  padding: 9px 10px;
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
   cursor: pointer;
   text-align: start;
+  font-size: 12.5px;
+  line-height: 1.7;
   transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 .aps__item:hover,
@@ -288,6 +369,13 @@ function afterLeave() { focusIndex.value = -1 }
   transform: scale(1) rotate(0deg);
 }
 
+.aps__empty {
+  padding: 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 /* ─────────── ترنزیشن ورود/خروج ─────────── */
 .aps-pop-enter-active,
 .aps-pop-leave-active {
@@ -304,7 +392,7 @@ function afterLeave() { focusIndex.value = -1 }
 .aps-pop-leave-from { opacity: 1; transform: translateY(0) scaleY(1) scale(1); }
 
 /* استقرای نرم آیتم‌ها (پشت‌صحنه‌ی پانل) */
-.aps__item {
+.aps__panel--fixed .aps__item {
   animation: aps-item-in 0.4s var(--ease-spring) both;
   animation-delay: calc(var(--i) * 34ms);
 }

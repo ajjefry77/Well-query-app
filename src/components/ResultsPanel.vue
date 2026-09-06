@@ -38,6 +38,8 @@
             v-for="layer in layers"
             :key="layer.uuid"
             class="active-layer-item"
+            @click="$emit('zoom-layer', layer.uuid)"
+            title="برای زوم روی لایه کلیک کنید"
           >
             <div class="active-layer-info">
               <span class="active-layer-dot" :style="{ background: detailByUuid[layer.uuid]?.color ?? '#2a9d8f' }"></span>
@@ -45,7 +47,7 @@
             </div>
             <div class="active-layer-meta">
               <span class="active-layer-count">{{ detailByUuid[layer.uuid]?.featureCount ?? 0 }} عارضه</span>
-              <button class="remove-layer-btn" @click="$emit('remove-layer', layer.uuid)" title="حذف لایه">×</button>
+              <button class="remove-layer-btn" @click.stop="$emit('remove-layer', layer.uuid)" title="حذف لایه">×</button>
             </div>
           </li>
           <li v-if="layers.length === 0" class="no-layer-item">
@@ -101,7 +103,7 @@ const props = defineProps({
   summaries: { type: Array, default: () => [] },
   showSummary: { type: Boolean, default: false },
 })
-defineEmits(['toggle', 'open-modal', 'remove-layer'])
+defineEmits(['toggle', 'open-modal', 'remove-layer', 'zoom-layer'])
 
 const OP_SYMBOLS = { '=':'=', '!=':'≠', '>':'>', '>=':'≥', '<':'<', '<=':'≤', contains:'شامل' }
 function opSymbol(op) { return OP_SYMBOLS[op] ?? op }
@@ -203,6 +205,7 @@ const detailByUuid = computed(() => {
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
+  cursor: pointer;
   transition: border-color 0.15s, background 0.15s, transform 0.1s;
 }
 .active-layer-item:hover { border-color: var(--border-strong); background: var(--bg-hover); }

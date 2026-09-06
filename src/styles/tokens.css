@@ -224,6 +224,86 @@ input[type='range'] {
   accent-color: var(--accent-depth);
 }
 
+/* ═══════════════════════ پاپ‌آپ عوارض (global، هماهنگ با تم) ═══════════════════════════════ */
+.wqa-popup {
+  font-family: var(--font-fa);
+  direction: rtl;
+  min-width: 200px;
+  max-width: 280px;
+}
+.wqa-popup__title {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+.wqa-popup__table {
+  font-size: 12px;
+  line-height: 1.8;
+  width: 100%;
+  border-collapse: collapse;
+}
+.wqa-popup__key {
+  color: var(--text-muted);
+  padding: 2px 0 2px 8px !important;
+  white-space: nowrap;
+  vertical-align: top;
+}
+.wqa-popup__val {
+  color: var(--text-primary);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+/* Mapbox popup chrome */
+.mapboxgl-popup-content {
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 12px 14px;
+}
+.mapboxgl-popup-close-button {
+  color: var(--text-muted);
+  font-size: 16px;
+  padding: 4px 8px;
+}
+.mapboxgl-popup-close-button:hover {
+  color: var(--accent-danger);
+  background: transparent;
+}
+.mapboxgl-popup-anchor-top .mapboxgl-popup-tip { border-bottom-color: var(--bg-panel); }
+.mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip { border-top-color: var(--bg-panel); }
+.mapboxgl-popup-anchor-left .mapboxgl-popup-tip { border-right-color: var(--bg-panel); }
+.mapboxgl-popup-anchor-right .mapboxgl-popup-tip { border-left-color: var(--bg-panel); }
+
+/* Leaflet popup chrome */
+.leaflet-popup-content-wrapper {
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  direction: rtl;
+}
+.leaflet-popup-content {
+  font-family: var(--font-fa);
+  line-height: 1.8;
+  margin: 12px 16px;
+}
+.leaflet-popup-tip {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-md);
+}
+.leaflet-popup-close-button {
+  color: var(--text-muted) !important;
+}
+.leaflet-popup-close-button:hover {
+  color: var(--accent-danger) !important;
+}
+
 /* اسپینر بارگذاری */
 .spinner,
 .spinner-inline {

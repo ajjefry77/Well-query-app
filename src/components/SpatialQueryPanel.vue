@@ -61,8 +61,9 @@
       </div>
 
       <div class="sq__info mono" v-if="radiusCenter">
-        مرکز: {{ radiusCenter.lat?.toFixed(5) }},
-        {{ radiusCenter.lng?.toFixed(5) }}
+        <span class="sq__center-id">#{{ radiusCenter.id }}</span><template v-if="centerLabel"> — {{ centerLabel }}</template><br />
+        مرکز: {{ centerLatLng?.lat?.toFixed(5) }},
+        {{ centerLatLng?.lng?.toFixed(5) }}
       </div>
     </div>
 
@@ -124,6 +125,14 @@
         </div>
       </div>
     </div>
+
+    <button
+      v-if="radiusCenter || customPoint"
+      class="btn-clear-spatial"
+      @click="$emit('clear-spatial')"
+    >
+      ✕ پاک کردن کوئری مکانی
+    </button>
   </div>
 </template>
 
@@ -147,15 +156,30 @@ const emit = defineEmits([
   "update:radiusKm",
   "pick-point",
   "clear-point",
+  "clear-spatial",
 ]);
 
 const wellsWithCoords = computed(() =>
-  props.wells.filter((w) => w.lat && w.lng),
+  props.wells.filter((w) => Number.isFinite(+w.lat) && Number.isFinite(+w.lng)),
 );
 
 const firstLabelField = computed(() =>
   props.fields.length ? props.fields[0] : null,
 );
+
+const centerLatLng = computed(() => {
+  const c = props.radiusCenter;
+  if (!c) return null;
+  if (Number.isFinite(+c.lat) && Number.isFinite(+c.lng))
+    return { lat: +c.lat, lng: +c.lng };
+  return null;
+});
+
+const centerLabel = computed(() => {
+  const c = props.radiusCenter;
+  if (!c || !firstLabelField.value) return '';
+  return c[firstLabelField.value] ?? '';
+});
 
 const centerOptions = computed(() =>
   wellsWithCoords.value.map((w) => ({
@@ -235,6 +259,10 @@ function onManualRadius(e) {
   border-radius: var(--radius-sm);
   padding: 8px 10px;
   direction: ltr;
+}
+.sq__center-id {
+  color: #e74c3c;
+  font-weight: 700;
 }
 .field-group {
   display: flex;
@@ -349,5 +377,22 @@ function onManualRadius(e) {
 }
 .btn-clear-point:hover {
   color: var(--accent-danger);
+}
+.btn-clear-spatial {
+  width: 100%;
+  padding: 9px 14px;
+  background: color-mix(in srgb, var(--accent-danger) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-danger) 25%, transparent);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.btn-clear-spatial:hover {
+  color: var(--accent-danger);
+  border-color: var(--accent-danger);
+  background: color-mix(in srgb, var(--accent-danger) 10%, transparent);
 }
 </style>

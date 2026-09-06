@@ -71,6 +71,7 @@
         @update:radius-km="$emit('update:radius-km', $event)"
         @pick-point="$emit('pick-point')"
         @clear-point="$emit('clear-point')"
+        @clear-spatial="$emit('clear-spatial')"
       />
       <div class="side-divider"></div>
       <SavedQueries :queries="savedQueries" @load="$emit('load-query', $event)" @delete="$emit('delete-query', $event)" />
@@ -120,6 +121,7 @@ defineEmits([
   'update:radius-km',
   'pick-point',
   'clear-point',
+  'clear-spatial',
   'load-query',
   'delete-query',
   'clear-data',

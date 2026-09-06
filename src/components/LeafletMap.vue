@@ -19,6 +19,7 @@ const props = defineProps({
   hasFilter: { type: Boolean, default: false },
   radiusCenter: { type: Object, default: null },
   radiusKm: { type: Number, default: 0 },
+  selectedId: { type: [String, Number], default: null },
   theme: { type: String, default: "light" },
 });
 const emit = defineEmits(["select-well"]);
@@ -26,7 +27,6 @@ const emit = defineEmits(["select-well"]);
 const mapEl = ref(null);
 let map = null;
 let geoLayer = null;
-let radiusLayer = null;
 const featureRefs = new Map();
 
 // ─── تعویض تم نقشه (روشن ↔ تیره) ──────────────────────────
@@ -74,9 +74,18 @@ function colorForId(id) {
 
 const GRAY = "#8a9490"
 
-function defaultStyle(feature, highlighted) {
+function defaultStyle(feature, highlighted, selected = false) {
   const color = colorForId(feature?.properties?.id ?? "");
   const dimmed = props.hasFilter && !highlighted
+  if (selected) {
+    return {
+      color: "#f0a500",
+      weight: 3.5,
+      fillColor: "#f0a500",
+      fillOpacity: 0.6,
+      opacity: 1,
+    };
+  }
   return {
     color: dimmed ? GRAY : (highlighted ? "#e9efe9" : color),
     weight: highlighted ? 2.5 : 1.5,
@@ -113,6 +122,7 @@ function renderFeatures() {
 
   const highlightSet = new Set(props.highlightedIds.map(String));
   const centerId = props.radiusCenter?.id ? String(props.radiusCenter.id) : null;
+  const selectedId = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null;
   const hasGeometry = props.wells.some((w) => w._geometry);
 
   if (hasGeometry) {
@@ -123,6 +133,17 @@ function renderFeatures() {
         const highlighted = highlightSet.has(String(feature.properties.id));
         const isCenter =
           centerId && String(feature.properties.id) === centerId;
+        const isSel =
+          selectedId && String(feature.properties.id) === selectedId;
+        if (isSel) {
+          return {
+            color: "#f0a500",
+            weight: 3.5,
+            fillColor: "#f0a500",
+            fillOpacity: 0.6,
+            opacity: 1,
+          };
+        }
         if (isCenter) {
           return {
             color: "#e74c3c",
@@ -139,6 +160,9 @@ function renderFeatures() {
         const dimmed = props.hasFilter && !highlighted
         const isCenter =
           centerId && String(feature.properties.id) === centerId;
+        const isSel =
+          selectedId && String(feature.properties.id) === selectedId;
+        if (isSel) return L.marker(latlng, { icon: makePointIcon("#f0a500", true, false) });
         const color = isCenter ? "#e74c3c" : colorForId(feature.properties.id);
         return L.marker(latlng, { icon: makePointIcon(color, highlighted, dimmed, isCenter) });
       },
@@ -154,14 +178,14 @@ function renderFeatures() {
           .slice(0, 8)
           .map(
             ([k, v]) =>
-              `<tr><td style="color:#9aab9f;padding:2px 8px 2px 0">${k}</td><td>${v ?? "—"}</td></tr>`,
+              `<tr><td class="wqa-popup__key">${k}</td><td class="wqa-popup__val">${v ?? "—"}</td></tr>`,
           )
           .join("");
 
         layer.bindPopup(`
-          <div style="font-family:'Vazirmatn',sans-serif;direction:rtl;min-width:200px;max-width:280px">
-            <div style="font-weight:700;margin-bottom:6px;font-size:13px">عارضه #${well.id}</div>
-            <table style="font-size:12px;line-height:1.8;width:100%">${rows}</table>
+          <div class="wqa-popup">
+            <div class="wqa-popup__title">عارضه #${well.id}</div>
+            <table class="wqa-popup__table">${rows}</table>
           </div>
         `);
 
@@ -181,15 +205,17 @@ function renderFeatures() {
       const highlighted = highlightSet.has(String(w.id));
       const dimmed = props.hasFilter && !highlighted
       const isCenter = centerId && String(w.id) === centerId
-      const color = isCenter ? "#e74c3c" : colorForId(w.id);
+      const isSel = selectedId && String(w.id) === selectedId
+      const color = isSel ? "#f0a500" : (isCenter ? "#e74c3c" : colorForId(w.id));
       const marker = L.circleMarker([w.lat, w.lng], {
-        radius: isCenter ? 9 : (highlighted ? 8 : (dimmed ? 4 : 5)),
-        color: dimmed ? GRAY : (isCenter ? "#fff" : (highlighted ? "#e9efe9" : color)),
-        weight: isCenter ? 3 : 1.5,
-        fillColor: dimmed ? GRAY : color,
-        fillOpacity: dimmed ? 0.15 : (isCenter ? 0.9 : (highlighted ? 0.8 : 0.5)),
-        opacity: isCenter ? 1 : (dimmed ? 0.35 : 1),
+        radius: isSel ? 9 : (isCenter ? 9 : (highlighted ? 8 : (dimmed ? 4 : 5))),
+        color: dimmed && !isSel ? GRAY : (isSel ? "#1a1a1a" : (isCenter ? "#fff" : (highlighted ? "#e9efe9" : color))),
+        weight: isSel || isCenter ? 3 : 1.5,
+        fillColor: dimmed && !isSel ? GRAY : color,
+        fillOpacity: dimmed && !isSel ? 0.15 : ((isSel || isCenter) ? 0.9 : (highlighted ? 0.8 : 0.5)),
+        opacity: (isSel || isCenter) ? 1 : (dimmed ? 0.35 : 1),
       });
+      marker._wellId = String(w.id);
       marker.on("click", () => emit("select-well", w));
       marker.addTo(geoLayer);
       featureRefs.set(String(w.id), marker);
@@ -206,29 +232,6 @@ function renderFeatures() {
         });
       } catch {}
     }
-  }
-}
-
-function renderRadius() {
-  if (!radiusLayer) return;
-  radiusLayer.clearLayers();
-  if (props.radiusCenter && props.radiusKm > 0) {
-    L.circle([props.radiusCenter.lat, props.radiusCenter.lng], {
-      radius: props.radiusKm * 1000,
-      color: "#4a9b8e",
-      weight: 1.5,
-      fillColor: "#4a9b8e",
-      fillOpacity: 0.07,
-      dashArray: "4 4",
-    }).addTo(radiusLayer);
-    L.marker([props.radiusCenter.lat, props.radiusCenter.lng], {
-      icon: L.divIcon({
-        className: "",
-        html: `<div style="width:14px;height:14px;border-radius:50%;background:#e9efe9;border:3px solid #4a9b8e;"></div>`,
-        iconSize: [14, 14],
-        iconAnchor: [7, 7],
-      }),
-    }).addTo(radiusLayer);
   }
 }
 
@@ -268,10 +271,8 @@ onMounted(() => {
   L.control.zoom({ position: "bottomleft" }).addTo(map);
 
   geoLayer = L.layerGroup().addTo(map);
-  radiusLayer = L.layerGroup().addTo(map);
 
   renderFeatures();
-  renderRadius();
 });
 
 onBeforeUnmount(() => {
@@ -284,13 +285,27 @@ function updateHighlightStyles() {
   if (!geoLayer) return
   const highlightSet = new Set(props.highlightedIds.map(String))
   const centerId = props.radiusCenter?.id ? String(props.radiusCenter.id) : null
+  const selectedId = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null
 
   geoLayer.eachLayer(layer => {
-    const id = layer.feature?.properties?.id ?? layer.feature?.properties?.id
+    const id = layer.feature?.properties?.id ?? layer._wellId
     if (!id) return
     const hl = highlightSet.has(String(id))
     const isCenter = centerId && String(id) === centerId
-    if (isCenter) {
+    const isSel = selectedId && String(id) === selectedId
+    if (isSel) {
+      if (layer.setStyle) {
+        layer.setStyle({
+          color: "#f0a500",
+          weight: 3.5,
+          fillColor: "#f0a500",
+          fillOpacity: 0.6,
+          opacity: 1,
+        })
+      } else if (layer.setIcon) {
+        layer.setIcon(makePointIcon("#f0a500", true, false))
+      }
+    } else if (isCenter) {
       if (layer.setStyle) {
         layer.setStyle({
           color: "#e74c3c",
@@ -313,10 +328,8 @@ function updateHighlightStyles() {
 
 watch(() => props.highlightedIds, updateHighlightStyles);
 watch(() => props.hasFilter, updateHighlightStyles);
-watch(() => [props.radiusCenter, props.radiusKm], () => {
-  renderRadius();
-  updateHighlightStyles();
-}, { deep: true });
+watch(() => props.radiusCenter, updateHighlightStyles);
+watch(() => props.selectedId, updateHighlightStyles);
 
 defineExpose({
   flyTo(lat, lng, zoom = 13) {
@@ -336,6 +349,37 @@ defineExpose({
       });
     } else if (typeof layer.getLatLng === "function") {
       map.flyTo(layer.getLatLng(), 13, { duration: 0.8 });
+    }
+  },
+  zoomToLayer(uuid) {
+    if (!map) return;
+    const feats = props.wells.filter((w) => String(w._layerUuid) === String(uuid));
+    if (!feats.length) return;
+    const pts = [];
+    const walk = (coords) => {
+      if (!Array.isArray(coords)) return;
+      if (typeof coords[0] === "number") {
+        if (Number.isFinite(+coords[0]) && Number.isFinite(+coords[1]))
+          pts.push([+coords[1], +coords[0]]);
+      } else coords.forEach(walk);
+    };
+    feats.forEach((w) => {
+      if (w._geometry?.type === "GeometryCollection" && Array.isArray(w._geometry.geometries)) {
+        w._geometry.geometries.forEach((g) => walk(g?.coordinates));
+      } else if (w._geometry?.coordinates) {
+        walk(w._geometry.coordinates);
+      } else if (Number.isFinite(+w.lat) && Number.isFinite(+w.lng)) {
+        pts.push([+w.lat, +w.lng]);
+      }
+    });
+    if (pts.length) {
+      try {
+        map.flyToBounds(L.latLngBounds(pts), {
+          padding: [40, 40],
+          maxZoom: 14,
+          duration: 0.8,
+        });
+      } catch {}
     }
   },
   enablePointPicker(callback) {
