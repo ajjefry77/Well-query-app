@@ -13,14 +13,16 @@ function toRad(deg) {
  * با تابع ST_DWithin یا ST_Distance پیاده‌سازی می‌شود.
  */
 export function haversineDistanceKm(pointA, pointB) {
-  const dLat = toRad(pointB.lat - pointA.lat)
-  const dLng = toRad(pointB.lng - pointA.lng)
-  const lat1 = toRad(pointA.lat)
-  const lat2 = toRad(pointB.lat)
+  const latA = Number(pointA.lat), lngA = Number(pointA.lng)
+  const latB = Number(pointB.lat), lngB = Number(pointB.lng)
+  const dLat = toRad(latB - latA)
+  const dLng = toRad(lngB - lngA)
+  const rLat1 = toRad(latA)
+  const rLat2 = toRad(latB)
 
   const a =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2
+    Math.cos(rLat1) * Math.cos(rLat2) * Math.sin(dLng / 2) ** 2
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 
   return EARTH_RADIUS_KM * c
@@ -32,9 +34,15 @@ export function haversineDistanceKm(pointA, pointB) {
  *   SELECT * FROM wells WHERE ST_DWithin(geom, point_a, radius_meters)
  */
 export function findWithinRadius(points, center, radiusKm) {
+  const r = Number(radiusKm)
+  if (!Number.isFinite(r) || r <= 0) return []
+  const cLat = Number(center?.lat), cLng = Number(center?.lng)
+  if (!Number.isFinite(cLat) || !Number.isFinite(cLng)) return []
+  const normCenter = { lat: cLat, lng: cLng }
   return points
-    .map((p) => ({ ...p, distanceKm: haversineDistanceKm(center, p) }))
-    .filter((p) => p.distanceKm <= radiusKm)
+    .filter((p) => Number.isFinite(+p.lat) && Number.isFinite(+p.lng))
+    .map((p) => ({ ...p, distanceKm: haversineDistanceKm(normCenter, p) }))
+    .filter((p) => p.distanceKm <= r)
     .sort((a, b) => a.distanceKm - b.distanceKm)
 }
 
@@ -46,25 +54,47 @@ export function findWithinRadius(points, center, radiusKm) {
 export function toGeoJSON(wells) {
   return {
     type: 'FeatureCollection',
-    features: wells.map((w) => {
-      const { _geometry, lat, lng, ...props } = w;
-      return {
-        type: 'Feature',
-        geometry: _geometry ?? {
-          type: 'Point',
-          coordinates: [lng, lat] // توجه: ترتیب در GeoJSON همیشه [long, lat] است
-        },
-        properties: props
-      };
-    })
+    features: wells
+      .filter((w) => w._geometry || (Number.isFinite(+w.lat) && Number.isFinite(+w.lng)))
+      .map((w) => {
+        const { _geometry, lat, lng, ...props } = w;
+        return {
+          type: 'Feature',
+          geometry: _geometry ?? {
+            type: 'Point',
+            coordinates: [+lng, +lat] // توجه: ترتیب در GeoJSON همیشه [long, lat] است
+          },
+          properties: props
+        };
+      })
   }
 }
 
 export function toCSV(wells) {
   if (!wells.length) return ''
-  const headers = Object.keys(wells[0])
-  const rows = wells.map((w) => headers.map((h) => `"${w[h] ?? ''}"`).join(','))
-  return [headers.join(','), ...rows].join('\n')
+  const headerSet = []
+  const seen = new Set()
+  for (const w of wells) {
+    for (const k of Object.keys(w ?? {})) {
+      if (!seen.has(k)) { seen.add(k); headerSet.push(k) }
+    }
+  }
+  const esc = (v) => {
+    if (v === null || v === undefined) return ''
+    const s = String(v)
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : `"${s}"`
+  }
+  const rows = wells.map((w) => headerSet.map((h) => esc(w[h])).join(','))
+  return [[...headerSet].map(esc).join(','), ...rows].join('\n')
+}
+
+function appendAndClick(a) {
+  document.body.appendChild(a)
+  a.click()
+  setTimeout(() => {
+    document.body.removeChild(a)
+    if (a.href.startsWith('blob:')) URL.revokeObjectURL(a.href)
+  }, 5000)
 }
 
 export function downloadFile(content, filename, mime) {
@@ -73,8 +103,5 @@ export function downloadFile(content, filename, mime) {
   const a = document.createElement('a')
   a.href = url
   a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  appendAndClick(a)
 }

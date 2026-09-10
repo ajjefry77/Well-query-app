@@ -72,11 +72,42 @@ function colorForId(id) {
   return COLORS[hash % COLORS.length];
 }
 
-const GRAY = "#8a9490"
+// کلید یکتا: شناسه‌ها ممکن است بین لایه‌ها تکراری باشند
+function wellKey(w) {
+  if (!w) return null;
+  const id = w.id ?? w.properties?.id;
+  if (id == null || id === "") return null;
+  const lu = w._layerUuid ?? w.properties?._layerUuid;
+  return lu ? `${lu}::${id}` : String(id);
+}
+function inHighlightSet(key, highlightSet) {
+  if (!key) return false;
+  if (highlightSet.has(key)) return true;
+  // سازگاری با حالت قدیمی (فقط id بدون لایه)
+  const i = key.indexOf("::");
+  if (i >= 0 && highlightSet.has(key.slice(i + 2))) return true;
+  return false;
+}
+function hasCoord(w) {
+  return Number.isFinite(+w.lat) && Number.isFinite(+w.lng);
+}
 
-function defaultStyle(feature, highlighted, selected = false) {
+const GRAY = "#8a9490"
+const MATCH_FILL = "#22c55e"
+const MATCH_BORDER = "#14532d"
+
+function defaultStyle(feature, highlighted, matched = false) {
   const color = colorForId(feature?.properties?.id ?? "");
   const dimmed = props.hasFilter && !highlighted
+  if (matched) {
+    return {
+      color: MATCH_BORDER,
+      weight: 3,
+      fillColor: MATCH_FILL,
+      fillOpacity: 0.65,
+      opacity: 1,
+    };
+  }
   if (selected) {
     return {
       color: "#f0a500",
@@ -95,11 +126,13 @@ function defaultStyle(feature, highlighted, selected = false) {
   };
 }
 
-function makePointIcon(color, highlighted, dimmed, isCenter = false) {
-  const size = isCenter ? 18 : (highlighted ? 16 : 10);
-  const bg = dimmed ? GRAY : color
-  const border = dimmed ? "rgba(120,140,135,0.4)" : (isCenter ? "#fff" : (highlighted ? "#e9efe9" : "rgba(12,18,16,0.6)"))
-  const shadow = (isCenter || highlighted) ? "0 0 0 4px rgba(240,165,0,0.25)" : "none"
+function makePointIcon(color, highlighted, dimmed, isCenter = false, matched = false) {
+  const size = isCenter ? 20 : (matched ? 18 : (highlighted ? 16 : 10));
+  const bg = dimmed ? GRAY : (isCenter ? color : (matched ? MATCH_FILL : color))
+  const border = dimmed ? "rgba(120,140,135,0.4)" : (isCenter ? "#fff" : (matched ? MATCH_BORDER : (highlighted ? "#e9efe9" : "rgba(12,18,16,0.6)")))
+  const shadow = isCenter
+    ? "0 0 0 4px rgba(240,165,0,0.25)"
+    : (matched ? "0 0 0 5px rgba(34,197,94,0.35)" : (highlighted ? "0 0 0 4px rgba(240,165,0,0.25)" : "none"))
   const opacity = isCenter ? "1" : (dimmed ? "0.35" : "1")
   return L.divIcon({
     className: "geo-marker",
@@ -115,14 +148,14 @@ function makePointIcon(color, highlighted, dimmed, isCenter = false) {
   });
 }
 
-function renderFeatures() {
+function renderFeatures(fit = true) {
   if (!geoLayer) return;
   geoLayer.clearLayers();
   featureRefs.clear();
 
-  const highlightSet = new Set(props.highlightedIds.map(String));
-  const centerId = props.radiusCenter?.id ? String(props.radiusCenter.id) : null;
-  const selectedId = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null;
+  const highlightSet = new Set((props.highlightedIds || []).map(String));
+  const centerKey = wellKey(props.radiusCenter);
+  const selectedKey = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null;
   const hasGeometry = props.wells.some((w) => w._geometry);
 
   if (hasGeometry) {
@@ -130,11 +163,10 @@ function renderFeatures() {
 
     L.geoJSON(geojson, {
       style: (feature) => {
-        const highlighted = highlightSet.has(String(feature.properties.id));
-        const isCenter =
-          centerId && String(feature.properties.id) === centerId;
-        const isSel =
-          selectedId && String(feature.properties.id) === selectedId;
+        const key = wellKey(feature);
+        const highlighted = inHighlightSet(key, highlightSet);
+        const isCenter = centerKey && key === centerKey;
+        const isSel = selectedKey && (key === selectedKey || String(feature.properties.id) === selectedKey);
         if (isSel) {
           return {
             color: "#f0a500",
@@ -153,23 +185,23 @@ function renderFeatures() {
             opacity: 1,
           };
         }
-        return defaultStyle(feature, highlighted);
+        return defaultStyle(feature, highlighted, highlighted && props.hasFilter);
       },
       pointToLayer: (feature, latlng) => {
-        const highlighted = highlightSet.has(String(feature.properties.id));
+        const key = wellKey(feature);
+        const highlighted = inHighlightSet(key, highlightSet);
         const dimmed = props.hasFilter && !highlighted
-        const isCenter =
-          centerId && String(feature.properties.id) === centerId;
-        const isSel =
-          selectedId && String(feature.properties.id) === selectedId;
+        const matched = highlighted && props.hasFilter
+        const isCenter = centerKey && key === centerKey;
+        const isSel = selectedKey && (key === selectedKey || String(feature.properties.id) === selectedKey);
         if (isSel) return L.marker(latlng, { icon: makePointIcon("#f0a500", true, false) });
         const color = isCenter ? "#e74c3c" : colorForId(feature.properties.id);
-        return L.marker(latlng, { icon: makePointIcon(color, highlighted, dimmed, isCenter) });
+        return L.marker(latlng, { icon: makePointIcon(color, highlighted, dimmed, isCenter, matched) });
       },
       onEachFeature: (feature, layer) => {
-        const well = props.wells.find(
-          (w) => String(w.id) === String(feature.properties.id),
-        );
+        const key = wellKey(feature);
+        const well = props.wells.find((w) => wellKey(w) === key)
+          ?? props.wells.find((w) => String(w.id) === String(feature.properties.id));
         if (!well) return;
 
         const props_ = feature.properties;
@@ -190,41 +222,52 @@ function renderFeatures() {
         `);
 
         layer.on("click", () => emit("select-well", well));
+        const wkey = wellKey(well);
+        featureRefs.set(wkey, layer);
         featureRefs.set(String(well.id), layer);
       },
     }).addTo(geoLayer);
 
-    try {
-      const bounds = geoLayer.getBounds();
-      if (bounds.isValid())
-        map.fitBounds(bounds, { padding: [32, 32], maxZoom: 14 });
-    } catch {}
+    // عوارض بدون ژئومتری (فقط lat/lng) — در حالت ترکیبی هم نمایش داده شوند
+    addCoordMarkers(highlightSet, centerKey, selectedKey);
+
+    if (fit) {
+      try {
+        const bounds = geoLayer.getBounds();
+        if (bounds.isValid())
+          map.fitBounds(bounds, { padding: [32, 32], maxZoom: 14 });
+      } catch {}
+    }
   } else {
     props.wells.forEach((w) => {
-      if (!w.lat || !w.lng) return;
-      const highlighted = highlightSet.has(String(w.id));
+      if (!hasCoord(w)) return;
+      const key = wellKey(w);
+      const highlighted = inHighlightSet(key, highlightSet);
       const dimmed = props.hasFilter && !highlighted
-      const isCenter = centerId && String(w.id) === centerId
-      const isSel = selectedId && String(w.id) === selectedId
-      const color = isSel ? "#f0a500" : (isCenter ? "#e74c3c" : colorForId(w.id));
-      const marker = L.circleMarker([w.lat, w.lng], {
-        radius: isSel ? 9 : (isCenter ? 9 : (highlighted ? 8 : (dimmed ? 4 : 5))),
-        color: dimmed && !isSel ? GRAY : (isSel ? "#1a1a1a" : (isCenter ? "#fff" : (highlighted ? "#e9efe9" : color))),
-        weight: isSel || isCenter ? 3 : 1.5,
+      const matched = highlighted && props.hasFilter
+      const isCenter = centerKey && key === centerKey
+      const isSel = selectedKey && (key === selectedKey || String(w.id) === selectedKey)
+      const baseColor = isSel ? "#f0a500" : (isCenter ? "#e74c3c" : colorForId(w.id));
+      const color = matched && !isSel && !isCenter ? MATCH_FILL : baseColor;
+      const marker = L.circleMarker([+w.lat, +w.lng], {
+        radius: isSel ? 9 : (isCenter ? 10 : (matched ? 9 : (highlighted ? 8 : (dimmed ? 4 : 5)))),
+        color: dimmed && !isSel ? GRAY : (matched ? MATCH_BORDER : (isSel ? "#1a1a1a" : (isCenter ? "#fff" : (highlighted ? "#e9efe9" : color)))),
+        weight: isSel || isCenter || matched ? 3 : 1.5,
         fillColor: dimmed && !isSel ? GRAY : color,
-        fillOpacity: dimmed && !isSel ? 0.15 : ((isSel || isCenter) ? 0.9 : (highlighted ? 0.8 : 0.5)),
-        opacity: (isSel || isCenter) ? 1 : (dimmed ? 0.35 : 1),
+        fillOpacity: dimmed && !isSel ? 0.15 : ((isSel || isCenter || matched) ? 0.9 : (highlighted ? 0.8 : 0.5)),
+        opacity: (isSel || isCenter || matched) ? 1 : (dimmed ? 0.35 : 1),
       });
-      marker._wellId = String(w.id);
+      marker._wellId = key;
       marker.on("click", () => emit("select-well", w));
       marker.addTo(geoLayer);
+      featureRefs.set(key, marker);
       featureRefs.set(String(w.id), marker);
     });
 
     const latlngs = props.wells
-      .filter((w) => w.lat && w.lng)
-      .map((w) => [w.lat, w.lng]);
-    if (latlngs.length) {
+      .filter(hasCoord)
+      .map((w) => [+w.lat, +w.lng]);
+    if (fit && latlngs.length) {
       try {
         map.fitBounds(L.latLngBounds(latlngs), {
           padding: [32, 32],
@@ -233,6 +276,34 @@ function renderFeatures() {
       } catch {}
     }
   }
+}
+
+function addCoordMarkers(highlightSet, centerKey, selectedKey) {
+  props.wells
+    .filter((w) => !w._geometry && hasCoord(w))
+    .forEach((w) => {
+      const key = wellKey(w);
+      const highlighted = inHighlightSet(key, highlightSet);
+      const dimmed = props.hasFilter && !highlighted
+      const matched = highlighted && props.hasFilter
+      const isCenter = centerKey && key === centerKey
+      const isSel = selectedKey && (key === selectedKey || String(w.id) === selectedKey)
+      const baseColor = isSel ? "#f0a500" : (isCenter ? "#e74c3c" : colorForId(w.id));
+      const color = matched && !isSel && !isCenter ? MATCH_FILL : baseColor;
+      const marker = L.circleMarker([+w.lat, +w.lng], {
+        radius: isSel ? 9 : (isCenter ? 10 : (matched ? 9 : (highlighted ? 8 : (dimmed ? 4 : 5)))),
+        color: dimmed && !isSel ? GRAY : (matched ? MATCH_BORDER : (isSel ? "#1a1a1a" : (isCenter ? "#fff" : (highlighted ? "#e9efe9" : color)))),
+        weight: isSel || isCenter || matched ? 3 : 1.5,
+        fillColor: dimmed && !isSel ? GRAY : color,
+        fillOpacity: dimmed && !isSel ? 0.15 : ((isSel || isCenter || matched) ? 0.9 : (highlighted ? 0.8 : 0.5)),
+        opacity: (isSel || isCenter || matched) ? 1 : (dimmed ? 0.35 : 1),
+      });
+      marker._wellId = key;
+      marker.on("click", () => emit("select-well", w));
+      marker.addTo(geoLayer);
+      featureRefs.set(key, marker);
+      featureRefs.set(String(w.id), marker);
+    });
 }
 
 onMounted(() => {
@@ -281,51 +352,62 @@ onBeforeUnmount(() => {
 
 watch(() => props.theme, syncTheme);
 
+function styleSingleLayer(layer, highlightSet, centerKey, selectedKey) {
+  const key = layer.feature ? wellKey(layer.feature) : (layer._wellId || null);
+  const plainId = layer.feature?.properties?.id ?? (layer._wellId && layer._wellId.includes('::') ? layer._wellId.slice(layer._wellId.indexOf('::') + 2) : layer._wellId);
+  if (!key && !plainId) return;
+  const hl = inHighlightSet(key, highlightSet);
+  const isCenter = centerKey && key === centerKey;
+  const isSel = selectedKey && (key === selectedKey || String(plainId) === selectedKey);
+  if (isSel) {
+    if (layer.setStyle) {
+      layer.setStyle({
+        color: "#f0a500",
+        weight: 3.5,
+        fillColor: "#f0a500",
+        fillOpacity: 0.6,
+        opacity: 1,
+      });
+    } else if (layer.setIcon) {
+      layer.setIcon(makePointIcon("#f0a500", true, false));
+    }
+  } else if (isCenter) {
+    if (layer.setStyle) {
+      layer.setStyle({
+        color: "#e74c3c",
+        weight: 3,
+        fillColor: "#e74c3c",
+        fillOpacity: 0.55,
+        opacity: 1,
+      });
+    } else if (layer.setIcon) {
+      layer.setIcon(makePointIcon("#e74c3c", true, false, true));
+    }
+  } else if (layer.setStyle) {
+    layer.setStyle(defaultStyle(layer.feature, hl, hl && props.hasFilter));
+  } else if (layer.setIcon) {
+    const dimmed = props.hasFilter && !hl;
+    layer.setIcon(makePointIcon(colorForId(plainId ?? ""), hl, dimmed, false, hl && props.hasFilter));
+  }
+}
+
 function updateHighlightStyles() {
   if (!geoLayer) return
-  const highlightSet = new Set(props.highlightedIds.map(String))
-  const centerId = props.radiusCenter?.id ? String(props.radiusCenter.id) : null
-  const selectedId = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null
+  const highlightSet = new Set((props.highlightedIds || []).map(String))
+  const centerKey = wellKey(props.radiusCenter);
+  const selectedKey = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null
 
   geoLayer.eachLayer(layer => {
-    const id = layer.feature?.properties?.id ?? layer._wellId
-    if (!id) return
-    const hl = highlightSet.has(String(id))
-    const isCenter = centerId && String(id) === centerId
-    const isSel = selectedId && String(id) === selectedId
-    if (isSel) {
-      if (layer.setStyle) {
-        layer.setStyle({
-          color: "#f0a500",
-          weight: 3.5,
-          fillColor: "#f0a500",
-          fillOpacity: 0.6,
-          opacity: 1,
-        })
-      } else if (layer.setIcon) {
-        layer.setIcon(makePointIcon("#f0a500", true, false))
-      }
-    } else if (isCenter) {
-      if (layer.setStyle) {
-        layer.setStyle({
-          color: "#e74c3c",
-          weight: 3,
-          fillColor: "#e74c3c",
-          fillOpacity: 0.55,
-          opacity: 1,
-        })
-      } else if (layer.setIcon) {
-        layer.setIcon(makePointIcon("#e74c3c", true, false, true))
-      }
-    } else if (layer.setStyle) {
-      layer.setStyle(defaultStyle(layer.feature, hl))
-    } else if (layer.setIcon) {
-      const dimmed = props.hasFilter && !hl
-      layer.setIcon(makePointIcon(colorForId(id), hl, dimmed))
+    // لایه GeoJSON یک گروه است؛ استایل باید روی فرزندها اعمال شود
+    if (typeof layer.eachLayer === "function" && !layer.feature && layer._wellId === undefined) {
+      layer.eachLayer(child => styleSingleLayer(child, highlightSet, centerKey, selectedKey));
+    } else {
+      styleSingleLayer(layer, highlightSet, centerKey, selectedKey);
     }
   })
 }
 
+watch(() => props.wells, () => renderFeatures(true));
 watch(() => props.highlightedIds, updateHighlightStyles);
 watch(() => props.hasFilter, updateHighlightStyles);
 watch(() => props.radiusCenter, updateHighlightStyles);
@@ -339,7 +421,9 @@ defineExpose({
     if (map) map.invalidateSize();
   },
   zoomToFeature(id) {
-    const layer = featureRefs.get(String(id));
+    const key = String(id);
+    const layer = featureRefs.get(key)
+      ?? [...featureRefs.entries()].find(([k]) => k === key || k.endsWith("::" + key))?.[1];
     if (!layer || !map) return;
     if (typeof layer.getBounds === "function") {
       map.flyToBounds(layer.getBounds(), {

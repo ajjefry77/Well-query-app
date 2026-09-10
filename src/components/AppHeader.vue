@@ -39,9 +39,11 @@
         <div class="header-layer-summary">
           <span class="layer-summary-label">لایه‌های فعال:</span>
           <span v-if="activeLayers.length === 0" class="layer-summary-empty">انتخاب نشده</span>
-          <span v-else class="layer-summary-count">{{ activeLayers.length }} لایه</span>
-          <span v-if="loadingLayers" class="spinner-inline"></span>
-          <div v-if="apiError" class="layer-error">{{ apiError }}</div>
+          <span v-else class="layer-summary-count">{{ activeLayers.length.toLocaleString('fa-IR') }} لایه</span>
+          <span v-if="loadingLayers" class="spinner-inline" role="status" aria-label="در حال بارگذاری"></span>
+          <div v-if="apiError" class="layer-error" :title="apiError">{{ apiError }}
+            <button class="retry-btn" @click="$emit('retry')">تلاش مجدد</button>
+          </div>
         </div>
 
         <SegmentedControl
@@ -122,7 +124,7 @@ const props = defineProps({
   theme: { type: String, required: true },
   isMobile: { type: Boolean, default: false },
 })
-defineEmits(['update:query-kind', 'update:map-provider', 'update:crs', 'toggle-theme'])
+defineEmits(['update:query-kind', 'update:map-provider', 'update:crs', 'toggle-theme', 'retry'])
 
 const collapsed = ref(false)
 
@@ -218,7 +220,12 @@ const crsOptions = [
 .layer-summary-label { color: var(--text-muted); font-size: 11px; }
 .layer-summary-empty { color: var(--text-muted); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .layer-summary-count { color: var(--accent-depth); font-weight: 700; }
-.layer-error { font-size: 11px; color: var(--accent-danger); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.layer-error { font-size: 11px; color: var(--accent-danger); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+.retry-btn {
+  background: transparent; border: 1px solid currentColor; color: inherit;
+  font-size: 10px; font-family: inherit; padding: 2px 8px; border-radius: 20px; cursor: pointer; flex-shrink: 0;
+}
+.retry-btn:hover { background: color-mix(in srgb, var(--accent-danger) 12%, transparent); }
 
 .app-header__map-switch {
   margin-inline-start: auto;

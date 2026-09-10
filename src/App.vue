@@ -13,6 +13,7 @@
       @update:map-provider="mapProvider = $event"
       @update:crs="crs = $event"
       @toggle-theme="toggleTheme"
+      @retry="loadVectorLayers"
     />
 
     <!-- صفحه چینه‌شناسی -->
@@ -83,9 +84,10 @@
           class="results-fab"
           :class="{ 'results-fab--active': displayRows.length > 0 }"
           @click="showResultsModal = true"
+          aria-label="نمایش نتایج"
         >
           <span class="results-fab__label">نمایش نتایج</span>
-          <span class="results-fab__count" v-if="displayRows.length > 0">{{ displayRows.length }}</span>
+          <span class="results-fab__count" v-if="displayRows.length > 0">{{ displayRows.length.toLocaleString('fa-IR') }}</span>
         </button>
       </section>
 
@@ -150,6 +152,7 @@ import MobileSheet from './components/MobileSheet.vue'
 import { useWellQuery } from './composables/useWellQuery.js'
 import { useCoordinates } from './composables/useCoordinates.js'
 import { useTheme } from './composables/useTheme.js'
+import { layerColor } from './composables/useLayerColors.js'
 
 // بارگذاری تنبل: نقشه‌ها و نمودار چینه‌شناسی فقط هنگام نیاز لود می‌شوند
 const MapboxMap = defineAsyncComponent(() => import('./components/MapboxMap.vue'))
@@ -219,6 +222,7 @@ function onSheetGrabStart(e) {
   dragState = { startY: e.clientY, startH: sheetHeight.value, wasClosed, moved: false }
   window.addEventListener('pointermove', onSheetGrabMove)
   window.addEventListener('pointerup', onSheetGrabEnd)
+  window.addEventListener('pointercancel', onSheetGrabEnd)
 }
 function onSheetGrabMove(e) {
   if (!dragState) return
@@ -229,6 +233,7 @@ function onSheetGrabEnd() {
   if (!dragState) return
   window.removeEventListener('pointermove', onSheetGrabMove)
   window.removeEventListener('pointerup', onSheetGrabEnd)
+  window.removeEventListener('pointercancel', onSheetGrabEnd)
   dragging.value = false
   const { wasClosed, moved } = dragState
 
@@ -270,12 +275,6 @@ function toggleResultsPanel() {
 // ── مدال لایه‌ها ──
 const showLayerModal = ref(false)
 
-const LAYER_COLORS = ['#2a9d8f','#e9c46a','#f4a261','#e76f51','#264653','#a8dadc','#457b9d','#e63946']
-function layerColor(uuid) {
-  const idx = (vectorLayers.value.findIndex(l => l.uuid === uuid) ?? 0) % LAYER_COLORS.length
-  return LAYER_COLORS[Math.max(0, idx)]
-}
-
 function openLayerModal() {
   showLayerModal.value = true
 }
@@ -287,11 +286,8 @@ async function applyLayerSelection(layers) {
   await setActiveLayers(layers)
 }
 
-onMounted(() => {
-  loadVectorLayers()
-  // در موبایل پنل‌ها همیشه باز بمانند (دکمه toggle حذف شده)
-  const mq = window.matchMedia('(max-width: 760px)')
-  const syncViewport = () => {
+function syncViewport(mq) {
+  return () => {
     isMobile.value = mq.matches
     if (isMobile.value) {
       queryPanelOpen.value = true
@@ -302,13 +298,25 @@ onMounted(() => {
       }
     }
   }
-  syncViewport()
-  mq.addEventListener('change', syncViewport)
+}
+
+let mq = null
+let viewportHandler = null
+onMounted(() => {
+  loadVectorLayers()
+  // در موبایل پنل‌ها همیشه باز بمانند (دکمه toggle حذف شده)
+  mq = window.matchMedia('(max-width: 760px)')
+  viewportHandler = syncViewport(mq)
+  viewportHandler()
+  mq.addEventListener('change', viewportHandler)
   window.addEventListener('resize', onWindowResize)
-  onBeforeUnmount(() => {
-    mq.removeEventListener('change', syncViewport)
-    window.removeEventListener('resize', onWindowResize)
-  })
+})
+onBeforeUnmount(() => {
+  mq?.removeEventListener('change', viewportHandler)
+  window.removeEventListener('resize', onWindowResize)
+  window.removeEventListener('pointermove', onSheetGrabMove)
+  window.removeEventListener('pointerup', onSheetGrabEnd)
+  window.removeEventListener('pointercancel', onSheetGrabEnd)
 })
 
 // ── جزئیات هر لایه فعال ──
@@ -317,9 +325,12 @@ const layerDetails = computed(() => {
   for (const layer of activeLayers.value) {
     const uuid = layer.uuid
     const allConds = getLayerConditions(uuid)
+    const name = layer.display_name || layer.name
     map[uuid] = {
       uuid,
-      name: layer.display_name || layer.name,
+      layerUuid: uuid,
+      name,
+      layerName: name,
       color: layerColor(uuid),
       fields: layerFields(uuid),
       featureCount: layerFeatureCount(uuid),
@@ -374,7 +385,14 @@ const displayLayerMeta = computed(() => {
     fields: layerFields(layer.uuid),
   }))
 })
-const highlightedIds = computed(() => combinedResults.value.map(w => w.id))
+// کلید یکتا برای هر عارضه (شناسه‌ها ممکن است بین لایه‌ها تکراری باشند)
+function rowKey(r) {
+  if (!r) return ''
+  return r._layerUuid ? `${r._layerUuid}::${r.id}` : String(r.id ?? '')
+}
+// سقف ارسال به نقشه برای جلوگیری از فریز روی 100k سطر
+const MAX_HIGHLIGHT = 5000
+const highlightedIds = computed(() => combinedResults.value.slice(0, MAX_HIGHLIGHT).map(rowKey))
 
 // ── handlers ──
 function onRemoveLayer(uuid) {
@@ -413,28 +431,29 @@ function onClearSpatial() {
   mapRef.value?.disablePointPicker()
 }
 function onSelectFromMap(well) {
-  activeWellId.value = well.id
-  selectedWellId.value = well.id
+  activeWellId.value = rowKey(well)
+  selectedWellId.value = rowKey(well)
   if (queryKind.value === 'spatial' && spatialMode.value === 'radius') {
     radiusCenter.value = well
   }
-  mapRef.value?.zoomToFeature(well.id)
+  mapRef.value?.zoomToFeature(rowKey(well))
 }
 function onSelectFromTable(row) {
-  activeWellId.value = row.id
-  selectedWellId.value = row.id
+  activeWellId.value = rowKey(row)
+  selectedWellId.value = rowKey(row)
   showResultsModal.value = false
-  mapRef.value?.zoomToFeature(row.id)
+  mapRef.value?.zoomToFeature(rowKey(row))
 }
 function onZoomToLayer(uuid) {
   mapRef.value?.zoomToLayer?.(uuid)
 }
 function onHoverRow(row) {
-  if (row.lat && row.lng) activeWellId.value = row.id
+  if (!row || row.lat == null || row.lng == null) return
+  if (Number.isFinite(+row.lat) && Number.isFinite(+row.lng)) activeWellId.value = rowKey(row)
 }
 async function handleExport(format) {
   const { exportData } = await import('./composables/useExport.js')
-  exportData(format, displayRows.value, convertFeature)
+  exportData(format, displayRows.value, convertFeature, { crs: crs.value })
 }
 
 function handleClearData() {
@@ -490,7 +509,7 @@ function handleClearData() {
 /* ---------- دکمه FAB نتایج ---------- */
 .results-fab {
   position: absolute;
-  top: 20px;
+  bottom: 20px;
   inset-inline-end: 20px;
   z-index: 500;
   display: flex;
@@ -533,6 +552,7 @@ function handleClearData() {
 /* ---------- ریسپانسیو ---------- */
 @media (max-width: 1024px) {
   .app-main {
+    grid-template-columns: 1fr;
     grid-template-rows: 1fr auto;
   }
   .results-panel {
@@ -583,6 +603,6 @@ function handleClearData() {
     padding: 64px 14px 14px;
   }
 
-  .results-fab { top: 12px; inset-inline-end: 12px; padding: 8px 10px; }
+  .results-fab { bottom: calc(var(--sheet-h, 42vh) + 12px); inset-inline-end: 12px; padding: 8px 10px; }
 }
 </style>

@@ -51,8 +51,12 @@ export function useCoordinates() {
   const crs = ref('wgs84') // 'wgs84' | 'utm'
 
   function convertFeature(feature) {
+    if (!feature?.geometry) return feature
     if (crs.value === 'wgs84') return feature
-    const [lng, lat] = feature.geometry.coordinates
+    if (feature.geometry.type !== 'Point') return feature
+    const coords = feature.geometry.coordinates
+    if (!Array.isArray(coords) || !Number.isFinite(+coords[0]) || !Number.isFinite(+coords[1])) return feature
+    const [lng, lat] = coords
     const utm = latLngToUTM(lat, lng)
     return {
       ...feature,

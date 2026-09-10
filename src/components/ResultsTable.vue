@@ -7,12 +7,12 @@
         :key="group.uuid"
         class="rt__layer-group"
       >
-        <div class="rt__layer-header" @click="toggleGroup(group.uuid)">
+        <button class="rt__layer-header" @click="toggleGroup(group.uuid)" :aria-expanded="!collapsedGroups.has(group.uuid)">
           <span class="rt__layer-dot" :style="{ background: group.color }"></span>
           <span class="rt__layer-title">{{ group.name }}</span>
-          <span class="rt__layer-count mono">{{ group.rows.length }} عارضه</span>
-          <span class="rt__layer-chevron">{{ collapsedGroups.has(group.uuid) ? '▼' : '▲' }}</span>
-        </div>
+          <span class="rt__layer-count mono">{{ group.rows.length.toLocaleString('fa-IR') }} عارضه</span>
+          <span class="rt__layer-chevron" aria-hidden="true">{{ collapsedGroups.has(group.uuid) ? '▼' : '▲' }}</span>
+        </button>
 
         <div class="rt__table-wrap" v-show="!collapsedGroups.has(group.uuid)">
           <table class="rt__table" v-if="group.rows.length">
@@ -24,9 +24,9 @@
             <tbody>
               <tr
                 v-for="row in groupVisibleRows(group)"
-                :key="row.id"
+                :key="row._layerUuid + '::' + row.id"
                 class="rt__row"
-                :class="{ 'rt__row--active': row.id === activeId }"
+                :class="{ 'rt__row--active': isActive(row) }"
                 @click="$emit('select', row)"
                 @mouseenter="$emit('hover', row)"
               >
@@ -46,7 +46,7 @@
             class="rt__more-btn"
             @click="showMore(group)"
           >
-            نمایش {{ Math.min(PAGE_SIZE, group.rows.length - visibleCount(group)) }} رکورد بیشتر ({{ visibleCount(group) }} از {{ group.rows.length }})
+            نمایش {{ Math.min(PAGE_SIZE, group.rows.length - visibleCount(group)).toLocaleString('fa-IR') }} رکورد بیشتر ({{ visibleCount(group).toLocaleString('fa-IR') }} از {{ group.rows.length.toLocaleString('fa-IR') }})
           </button>
         </div>
       </div>
@@ -64,9 +64,9 @@
           <tbody>
             <tr
               v-for="row in pagedRows"
-              :key="row.id"
+              :key="row._layerUuid + '::' + row.id"
               class="rt__row"
-              :class="{ 'rt__row--active': row.id === activeId }"
+              :class="{ 'rt__row--active': isActive(row) }"
               @click="$emit('select', row)"
               @mouseenter="$emit('hover', row)"
             >
@@ -82,7 +82,7 @@
         </table>
         <div v-if="totalPages > 1" class="rt__pager">
           <button class="rt__page-btn" :disabled="page <= 1" @click="prevPage">قبلی</button>
-          <span class="rt__page-info mono">{{ page }} / {{ totalPages }}</span>
+          <span class="rt__page-info mono">{{ page.toLocaleString('fa-IR') }} / {{ totalPages.toLocaleString('fa-IR') }}</span>
           <button class="rt__page-btn" :disabled="page >= totalPages" @click="nextPage">بعدی</button>
         </div>
       </div>
@@ -95,6 +95,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { layerColor, formatFaNumber } from '../composables/useLayerColors.js'
 
 const props = defineProps({
   rows:      { type: Array,  required: true },
@@ -102,7 +103,7 @@ const props = defineProps({
   activeId:  { type: String, default: null },
   layerMeta: { type: Array,  default: () => [] },
 })
-defineEmits(['select', 'hover'])
+defineEmits(['select', 'hover', 'export'])
 
 const PAGE_SIZE = 100
 const page = ref(1)
@@ -135,8 +136,6 @@ function showMore(group) {
   }
 }
 
-const LAYER_COLORS = ['#2a9d8f','#e9c46a','#f4a261','#e76f51','#264653','#a8dadc','#457b9d','#e63946']
-
 const layerGroups = computed(() => {
   if (!props.layerMeta.length) return []
   return props.layerMeta.map((meta, idx) => {
@@ -148,7 +147,7 @@ const layerGroups = computed(() => {
     return {
       uuid:    meta.uuid,
       name:    meta.name,
-      color:   meta.color ?? LAYER_COLORS[idx % LAYER_COLORS.length],
+      color:   meta.color ?? layerColor(meta.uuid, idx),
       rows:    layerRows,
       columns: layerCols,
     }
@@ -164,11 +163,24 @@ function toggleGroup(uuid) {
 
 function formatCell(row, col) {
   const val = row[col.key]
-  if (col.key === 'distanceKm') return val !== undefined ? val.toFixed(2) : '—'
+  if (col.key === 'distanceKm') {
+    if (val === undefined || val === null) return '—'
+    const n = Number(val)
+    return Number.isFinite(n) ? `${n.toLocaleString('fa-IR', { maximumFractionDigits: 2 })} کیلومتر` : '—'
+  }
   if (typeof val === 'boolean') return val ? 'بله' : 'خیر'
   if (val === null || val === undefined) return '—'
-  if (typeof val === 'number') return val.toLocaleString('fa-IR')
+  if (typeof val === 'number') return formatFaNumber(val)
   return val
+}
+
+function isActive(row) {
+  if (props.activeId == null || props.activeId === '') return false
+  if (String(rowKey(row)) === String(props.activeId)) return true
+  return String(row.id) === String(props.activeId)
+}
+function rowKey(row) {
+  return row._layerUuid ? `${row._layerUuid}::${row.id}` : String(row.id ?? '')
 }
 </script>
 
@@ -191,10 +203,13 @@ function formatCell(row, col) {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
+  font-family: inherit;
   padding: 9px 14px;
   background: var(--bg-panel-raised);
   cursor: pointer;
   user-select: none;
+  border: none;
   border-bottom: 1px solid var(--border-subtle);
   transition: background 0.12s;
   position: sticky;
@@ -233,7 +248,7 @@ function formatCell(row, col) {
   z-index: 1;
 }
 .rt__table th {
-  text-align: right;
+  text-align: start;
   padding: 10px 14px;
   font-weight: 600;
   color: var(--text-secondary);
@@ -253,7 +268,7 @@ function formatCell(row, col) {
 }
 .rt__row:hover { background: var(--bg-hover); }
 .rt__row--active { background: color-mix(in srgb, var(--accent-copper) 12%, transparent); }
-.rt__row--active td:first-child { box-shadow: inset 3px 0 0 var(--accent-copper); }
+.rt__row--active td:first-child { box-shadow: inset -3px 0 0 var(--accent-copper); }
 
 .rt__empty {
   padding: 40px 16px;

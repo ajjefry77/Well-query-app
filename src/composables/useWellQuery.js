@@ -13,8 +13,9 @@ import {
 // لایهٔ انتخاب‌شده و شرط‌های کوئری دیگر در localStorage نگه‌داری نمی‌شوند.
 const LS_KEYS = {
   savedQueries: 'wqa:savedQueries',
-  radiusKm:     'wqa:radiusKm',
 }
+// کلیدهای قدیمی شعاع که دیگر ذخیره نمی‌شوند؛ با رفرش باید به دیفالت برگردد
+const LEGACY_RADIUS_KEYS = ['wqa:radiusKm', 'wqa:radiusUnit']
 
 function lsGet(key, fallback) {
   try {
@@ -34,14 +35,22 @@ function lsSet(key, value) {
 function evaluateCondition(row, { field, operator, value }) {
   const rowValue = row[field]
   if (rowValue === null || rowValue === undefined) return false
+  const v = typeof value === 'string' ? value.trim() : value
   switch (operator) {
-    case '=':       return String(rowValue) === String(value)
-    case '!=':      return String(rowValue) !== String(value)
-    case '>':       return Number(rowValue) > Number(value)
-    case '>=':      return Number(rowValue) >= Number(value)
-    case '<':       return Number(rowValue) < Number(value)
-    case '<=':      return Number(rowValue) <= Number(value)
-    case 'contains':return String(rowValue).toLowerCase().includes(String(value).toLowerCase())
+    case '=':       return String(rowValue) === String(v)
+    case '!=':      return String(rowValue) !== String(v)
+    case '>':
+    case '>=':
+    case '<':
+    case '<=': {
+      const a = Number(rowValue), b = Number(v)
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return false
+      if (operator === '>') return a > b
+      if (operator === '>=') return a >= b
+      if (operator === '<') return a < b
+      return a <= b
+    }
+    case 'contains':return String(rowValue).toLowerCase().includes(String(v ?? '').toLowerCase())
     default:        return false
   }
 }
@@ -83,23 +92,33 @@ export function useWellQuery() {
 
   // ── بارگذاری فیلدها و عوارض یک لایه (با صفحه‌بندی کامل) ──
   // فیلدها و عوارض مستقل‌اند → موازی گرفته می‌شوند
-  async function loadLayerData(layer) {
+  const inFlight = new Map()
+  async function loadLayerData(layer, opts = {}) {
     const needFields = !layerFieldsMap.value[layer.uuid]
     const needFeatures = !layerFeaturesMap.value[layer.uuid]
     if (!needFields && !needFeatures) return
-    const [fields, raw] = await Promise.all([
-      needFields ? fetchLayerFields(layer.uuid) : null,
-      needFeatures ? fetchAllFeatures(layer.uuid) : null,
-    ])
-    if (needFields) {
-      layerFieldsMap.value[layer.uuid] = buildQueryableFields(fields)
-    }
-    if (needFeatures) {
-      layerFeaturesMap.value[layer.uuid] = featuresToRows(raw).map(r => ({
-        ...r,
-        _layerUuid: layer.uuid,
-        _layerName: layer.display_name || layer.name,
-      }))
+    inFlight.get(layer.uuid)?.abort()
+    const ctrl = new AbortController()
+    inFlight.set(layer.uuid, ctrl)
+    const signal = opts.signal ?? ctrl.signal
+    try {
+      const [fields, raw] = await Promise.all([
+        needFields ? fetchLayerFields(layer.uuid, { signal }) : null,
+        needFeatures ? fetchAllFeatures(layer.uuid, { signal }) : null,
+      ])
+      if (signal.aborted) return
+      if (needFields) {
+        layerFieldsMap.value[layer.uuid] = buildQueryableFields(Array.isArray(fields) ? fields : (fields?.fields ?? fields?.results ?? []))
+      }
+      if (needFeatures) {
+        layerFeaturesMap.value[layer.uuid] = featuresToRows(raw).map(r => ({
+          ...r,
+          _layerUuid: layer.uuid,
+          _layerName: layer.display_name || layer.name,
+        }))
+      }
+    } finally {
+      if (inFlight.get(layer.uuid) === ctrl) inFlight.delete(layer.uuid)
     }
   }
 
@@ -164,7 +183,11 @@ export function useWellQuery() {
 
   // ── حذف یک لایه ──
   function removeLayer(uuid) {
+    inFlight.get(uuid)?.abort()
+    inFlight.delete(uuid)
     activeLayers.value = activeLayers.value.filter(l => l.uuid !== uuid)
+    delete layerFeaturesMap.value[uuid]
+    delete layerFieldsMap.value[uuid]
     rebuildAggregated()
     delete layerConditions.value[uuid]
   }
@@ -172,6 +195,8 @@ export function useWellQuery() {
   // ── تنظیم دسته‌ای لایه‌ها ──
   async function setActiveLayers(layers) {
     if (!layers.length) {
+      for (const [, c] of inFlight) c.abort()
+      inFlight.clear()
       activeLayers.value = []
       rebuildAggregated()
       return
@@ -180,22 +205,30 @@ export function useWellQuery() {
     const needsLoad = layers.filter(l =>
       !layerFieldsMap.value[l.uuid] || !layerFeaturesMap.value[l.uuid]
     )
+    const failed = new Set()
     if (needsLoad.length) {
       loadingFields.value   = true
       loadingFeatures.value = true
       try {
-        await Promise.all(needsLoad.map(loadLayerData))
-      } catch (e) {
-        apiError.value = e.message
+        const results = await Promise.allSettled(needsLoad.map(loadLayerData))
+        results.forEach((r, i) => {
+          if (r.status === 'rejected' && r.reason?.name !== 'AbortError') {
+            failed.add(needsLoad[i].uuid)
+          }
+        })
+        if (failed.size) {
+          apiError.value = `بارگذاری ${failed.size} لایه ناموفق بود و نادیده گرفته شد.`
+        }
       } finally {
         loadingFields.value   = false
         loadingFeatures.value = false
       }
     }
-    activeLayers.value = layers
+    const okLayers = layers.filter(l => !failed.has(l.uuid))
+    activeLayers.value = okLayers
     rebuildAggregated()
 
-    for (const l of layers) ensureLayerConditions(l.uuid)
+    for (const l of okLayers) ensureLayerConditions(l.uuid)
   }
 
   // ── کوئری توصیفی ──
@@ -283,35 +316,44 @@ export function useWellQuery() {
 
   const hasAnyFilter = computed(() => hasAttributeFilter.value || hasSpatialFilter.value)
 
-  // ── کوئری مکانی ──
+  // ── کوئری مکانی (فقط کیلومتر، بدون سقف) ──
+  // شعاع عمداً در localStorage ذخیره نمی‌شود تا با رفرش صفحه به دیفالت برگردد
+  const DEFAULT_RADIUS_KM = 3
   const radiusCenter  = ref(null)
-  const radiusKm      = ref(lsGet(LS_KEYS.radiusKm, 3))
-
-  watch(radiusKm, val => lsSet(LS_KEYS.radiusKm, val))
+  const radiusKm      = ref(DEFAULT_RADIUS_KM)
+  // پاک‌سازی مقادیر قدیمی ذخیره‌شده (نسخه‌های قبلی) تا حتماً دیفالت اعمال شود
+  try { LEGACY_RADIUS_KEYS.forEach(k => localStorage.removeItem(k)) } catch {}
 
   const radiusResults = computed(() => {
     if (!radiusCenter.value) return []
     const center = radiusCenter.value
+    const rKm = Number(radiusKm.value)
+    if (!Number.isFinite(rKm) || rKm <= 0) return []
+    const centerKey = center._layerUuid ? `${center._layerUuid}::${center.id}` : null
     const candidates = allFeatures.value.filter(f => {
-      if (!f.lat || !f.lng) return false
-      return center.id === undefined || f.id !== center.id
+      if (!Number.isFinite(+f.lat) || !Number.isFinite(+f.lng)) return false
+      if (centerKey) return `${f._layerUuid}::${f.id}` !== centerKey
+      return center.id === undefined || String(f.id) !== String(center.id)
     })
-    return findWithinRadius(candidates, center, radiusKm.value)
+    const clampedKm = Math.min(rKm, 20000)
+    return findWithinRadius(candidates, center, clampedKm)
   })
 
   // ── کوئری‌های ذخیره‌شده ──
-  const savedQueries = ref(lsGet(LS_KEYS.savedQueries, []))
+  const rawSaved = lsGet(LS_KEYS.savedQueries, [])
+  const savedQueries = ref(Array.isArray(rawSaved) ? rawSaved.filter(q => q && typeof q.layerUuid === 'string' && Array.isArray(q.conditions)) : [])
 
   watch(savedQueries, val => lsSet(LS_KEYS.savedQueries, val), { deep: true })
 
   function saveCurrentQuery(name, layerUuid) {
     const uuid = layerUuid ?? selectedLayer.value?.uuid
     if (!uuid) return
+    const cleanName = String(name ?? '').trim().slice(0, 120) || 'بدون نام'
     const layer = activeLayers.value.find(l => l.uuid === uuid) ?? vectorLayers.value.find(l => l.uuid === uuid)
     const conds = layerConditions.value[uuid] ?? []
     savedQueries.value.push({
-      id: Date.now(),
-      name,
+      id: crypto.randomUUID(),
+      name: cleanName,
       type: 'attribute',
       layerUuid: uuid,
       layerName: layer?.display_name || layer?.name,
@@ -324,8 +366,9 @@ export function useWellQuery() {
   // ۲) شرط‌های همان کوئری روی همان لایه اعمال می‌شود
   // به این ترتیب اگر چند کوئری برای چند لایهٔ مختلف بارگذاری شوند، همه با هم روی نقشه باقی می‌مانند.
   async function loadSavedQuery(query) {
-    const uuid = query.layerUuid
-    if (!uuid) return null
+    const uuid = query?.layerUuid
+    if (!uuid || typeof uuid !== 'string') return null
+    const safeConds = Array.isArray(query.conditions) ? query.conditions.filter(c => c && typeof c.field === 'string') : []
 
     let layer = activeLayers.value.find(l => l.uuid === uuid)
     if (!layer) {
@@ -334,7 +377,7 @@ export function useWellQuery() {
       await addLayer(layer)
     }
 
-    layerConditions.value[uuid] = JSON.parse(JSON.stringify(query.conditions ?? []))
+    layerConditions.value[uuid] = JSON.parse(JSON.stringify(safeConds))
     return uuid
   }
 
@@ -344,13 +387,18 @@ export function useWellQuery() {
 
   // ── پاک کردن همه داده‌های ذخیره‌شده ──
   function clearAllLocalData() {
-    // پاک کردن localStorage (فقط کوئری‌های ذخیره‌شده و تنظیم شعاع در localStorage بودند)
+    // پاک کردن localStorage (فقط کوئری‌های ذخیره‌شده در localStorage است)
     Object.values(LS_KEYS).forEach(key => localStorage.removeItem(key))
+    try { LEGACY_RADIUS_KEYS.forEach(k => localStorage.removeItem(k)) } catch {}
+    for (const [, c] of inFlight) c.abort()
+    inFlight.clear()
     // ریست state بدون reload
     savedQueries.value    = []
     activeLayers.value    = []
+    layerFeaturesMap.value = {}
+    layerFieldsMap.value = {}
     layerConditions.value = {}
-    radiusKm.value        = 3
+    radiusKm.value        = DEFAULT_RADIUS_KM
     radiusCenter.value    = null
     rebuildAggregated()
   }

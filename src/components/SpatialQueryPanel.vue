@@ -35,29 +35,29 @@
       </div>
 
       <div class="field-group">
-        <label>شعاع جستجو: <span class="mono accent">{{ radiusKm }} km</span></label>
+        <label>شعاع جستجو: <span class="mono accent">{{ displayRadius }} کیلومتر</span></label>
         <div class="radius-control">
           <input
             type="range"
-            min="0.5"
-            max="50"
-            step="0.5"
-            :value="radiusKm"
-            @input="$emit('update:radiusKm', +$event.target.value)"
+            :min="sliderCfg.min"
+            :max="sliderCfg.max"
+            :step="sliderCfg.step"
+            :value="Math.min(displayRadius, sliderCfg.max)"
+            @input="onSliderRadius($event)"
             class="slider"
           />
           <input
             type="number"
-            min="0.5"
-            max="50"
-            step="0.1"
-            :value="radiusKm"
+            :min="numberCfg.min"
+            :step="numberCfg.step"
+            :value="displayRadius"
             @input="onManualRadius($event)"
             class="radius-input"
-            aria-label="شعاع جستجو"
+            aria-label="شعاع جستجو (کیلومتر)"
           />
-          <span class="radius-unit">km</span>
+          <span class="radius-unit">کیلومتر</span>
         </div>
+        <p class="sq__hint sq__hint--tiny">اسلایدر تا {{ sliderCfg.max }} کیلومتر است؛ برای مقادیر بزرگ‌تر عدد را دستی وارد کنید (بدون سقف).</p>
       </div>
 
       <div class="sq__info mono" v-if="radiusCenter">
@@ -100,29 +100,29 @@
       </div>
 
       <div class="field-group">
-        <label>شعاع جستجو: <span class="mono accent">{{ radiusKm }} km</span></label>
+        <label>شعاع جستجو: <span class="mono accent">{{ displayRadius }} کیلومتر</span></label>
         <div class="radius-control">
           <input
             type="range"
-            min="0.5"
-            max="50"
-            step="0.5"
-            :value="radiusKm"
-            @input="$emit('update:radiusKm', +$event.target.value)"
+            :min="sliderCfg.min"
+            :max="sliderCfg.max"
+            :step="sliderCfg.step"
+            :value="Math.min(displayRadius, sliderCfg.max)"
+            @input="onSliderRadius($event)"
             class="slider"
           />
           <input
             type="number"
-            min="0.5"
-            max="50"
-            step="0.1"
-            :value="radiusKm"
+            :min="numberCfg.min"
+            :step="numberCfg.step"
+            :value="displayRadius"
             @input="onManualRadius($event)"
             class="radius-input"
-            aria-label="شعاع جستجو"
+            aria-label="شعاع جستجو (کیلومتر)"
           />
-          <span class="radius-unit">km</span>
+          <span class="radius-unit">کیلومتر</span>
         </div>
+        <p class="sq__hint sq__hint--tiny">اسلایدر تا {{ sliderCfg.max }} کیلومتر است؛ برای مقادیر بزرگ‌تر عدد را دستی وارد کنید (بدون سقف).</p>
       </div>
     </div>
 
@@ -145,6 +145,8 @@ const props = defineProps({
   wells: { type: Array, required: true },
   radiusCenter: { type: Object, default: null },
   radiusKm: { type: Number, required: true },
+  // نگهداشته‌شده برای سازگاری با نسخه‌های قدیمی؛ دیگر استفاده نمی‌شود (فقط کیلومتر)
+  radiusUnit: { type: String, default: "km" },
   fields: { type: Array, default: () => [] },
   customPoint: { type: Object, default: null },
   isPicking: { type: Boolean, default: false },
@@ -152,8 +154,9 @@ const props = defineProps({
 
 const emit = defineEmits([
   "update:mode",
-  "update:radiusCenter",
-  "update:radiusKm",
+  "update:radius-center",
+  "update:radius-km",
+  "update:radius-unit",
   "pick-point",
   "clear-point",
   "clear-spatial",
@@ -192,16 +195,32 @@ const centerOptions = computed(() =>
 
 function onCenterChange(id) {
   const well = props.wells.find((w) => String(w.id) === String(id));
-  emit("update:radiusCenter", well || null);
+  emit("update:radius-center", well || null);
 }
 
 function onManualRadius(e) {
   let val = parseFloat(e.target.value);
   if (Number.isNaN(val)) return;
-  if (val < 0.5) val = 0.5;
-  if (val > 50) val = 50;
-  emit("update:radiusKm", val);
+  // فقط کیلومتر، بدون سقف؛ فقط کف ۰٫۱ کیلومتر
+  if (val < 0.1) val = 0.1;
+  emit("update:radius-km", val);
 }
+
+function onSliderRadius(e) {
+  const val = parseFloat(e.target.value);
+  if (Number.isNaN(val)) return;
+  emit("update:radius-km", val);
+}
+
+// فقط کیلومتر — اسلایدر صرفاً برای راحتی است، ورودی دستی سقفی ندارد
+const displayRadius = computed(() => {
+  if (!Number.isFinite(props.radiusKm)) return 0;
+  return Math.round(props.radiusKm * 10) / 10;
+});
+
+const sliderCfg = { min: 0.5, max: 500, step: 0.5 };
+
+const numberCfg = { min: 0.1, step: 0.1 };
 </script>
 
 <style scoped>
@@ -251,6 +270,10 @@ function onManualRadius(e) {
   color: var(--text-muted);
   line-height: 1.7;
 }
+.sq__hint--tiny {
+  font-size: 11px;
+  opacity: 0.85;
+}
 .sq__info {
   font-size: 11px;
   color: var(--text-muted);
@@ -298,7 +321,7 @@ function onManualRadius(e) {
   flex: 1;
 }
 .radius-input {
-  width: 74px;
+  width: 84px;
   background: var(--bg-panel);
   border: 1px solid var(--border-strong);
   color: var(--text-primary);

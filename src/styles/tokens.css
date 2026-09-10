@@ -32,6 +32,12 @@
   --header-h: 60px;
   --panel-w: 320px;
   --map-bg: var(--bg-deep);
+
+  /* لایه‌بندی */
+  --z-map: 0;
+  --z-sheet: 30;
+  --z-header: 900;
+  --z-modal: 2000;
 }
 
 /* ────────────────────────── تم روشن ───────────────────────────────── */
@@ -208,14 +214,14 @@ input[type='number'] {
   border-radius: var(--radius-xs);
 }
 
-/* کاستوم‌کردن select arrow */
+/* کاستوم‌کردن select arrow (منطقی برای RTL/LTR) */
 select {
   appearance: none;
   background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23769c8b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e");
   background-repeat: no-repeat;
-  background-position: left 10px center;
+  background-position: inset-inline-start 10px center;
   background-size: 12px;
-  padding-left: 30px !important;
+  padding-inline-start: 30px !important;
   cursor: pointer;
 }
 
@@ -256,7 +262,8 @@ input[type='range'] {
 }
 
 /* Mapbox popup chrome */
-.mapboxgl-popup-content {
+/* نکته: mapbox-gl.css دیرتر (async) لود می‌شود، پس specificity بالاتر لازم است */
+.map-shell .mapboxgl-popup-content {
   background: var(--bg-panel);
   color: var(--text-primary);
   border: 1px solid var(--border-strong);
@@ -264,22 +271,22 @@ input[type='range'] {
   box-shadow: var(--shadow-lg);
   padding: 12px 14px;
 }
-.mapboxgl-popup-close-button {
+.map-shell .mapboxgl-popup-close-button {
   color: var(--text-muted);
   font-size: 16px;
   padding: 4px 8px;
 }
-.mapboxgl-popup-close-button:hover {
+.map-shell .mapboxgl-popup-close-button:hover {
   color: var(--accent-danger);
   background: transparent;
 }
-.mapboxgl-popup-anchor-top .mapboxgl-popup-tip { border-bottom-color: var(--bg-panel); }
-.mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip { border-top-color: var(--bg-panel); }
-.mapboxgl-popup-anchor-left .mapboxgl-popup-tip { border-right-color: var(--bg-panel); }
-.mapboxgl-popup-anchor-right .mapboxgl-popup-tip { border-left-color: var(--bg-panel); }
+.map-shell .mapboxgl-popup-anchor-top .mapboxgl-popup-tip { border-bottom-color: var(--bg-panel); }
+.map-shell .mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip { border-top-color: var(--bg-panel); }
+.map-shell .mapboxgl-popup-anchor-left .mapboxgl-popup-tip { border-right-color: var(--bg-panel); }
+.map-shell .mapboxgl-popup-anchor-right .mapboxgl-popup-tip { border-left-color: var(--bg-panel); }
 
 /* Leaflet popup chrome */
-.leaflet-popup-content-wrapper {
+.map-shell .leaflet-popup-content-wrapper {
   background: var(--bg-panel);
   color: var(--text-primary);
   border: 1px solid var(--border-strong);
@@ -287,20 +294,20 @@ input[type='range'] {
   box-shadow: var(--shadow-lg);
   direction: rtl;
 }
-.leaflet-popup-content {
+.map-shell .leaflet-popup-content {
   font-family: var(--font-fa);
   line-height: 1.8;
   margin: 12px 16px;
 }
-.leaflet-popup-tip {
+.map-shell .leaflet-popup-tip {
   background: var(--bg-panel);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-md);
 }
-.leaflet-popup-close-button {
+.map-shell .leaflet-popup-close-button {
   color: var(--text-muted) !important;
 }
-.leaflet-popup-close-button:hover {
+.map-shell .leaflet-popup-close-button:hover {
   color: var(--accent-danger) !important;
 }
 
@@ -324,4 +331,12 @@ input[type='range'] {
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
 }

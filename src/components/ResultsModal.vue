@@ -2,13 +2,22 @@
   <Teleport to="body">
     <Transition name="modal">
       <div v-if="open" class="results-modal-backdrop" @click.self="$emit('close')">
-        <div class="results-modal">
+        <div class="results-modal" role="dialog" aria-modal="true" aria-label="نتایج">
           <div class="results-modal__header">
-<div class="results-modal__title">
+          <div class="results-modal__title">
                نتایج
-               <span class="results-modal__count mono">{{ rows.length }} رکورد</span>
+               <span class="results-modal__count mono">{{ rows.length.toLocaleString('fa-IR') }} رکورد</span>
              </div>
-             <button class="results-modal__close" @click="$emit('close')">×</button>
+             <div class="results-modal__exports" role="group" aria-label="خروجی">
+               <button
+                 v-for="f in EXPORT_FORMATS"
+                 :key="f"
+                 class="export-btn"
+                 @click="$emit('export', f)"
+                 :aria-label="`خروجی ${f}`"
+               >{{ f.toUpperCase() }}</button>
+             </div>
+             <button class="results-modal__close" @click="$emit('close')" aria-label="بستن">×</button>
           </div>
 
           <div class="results-modal__body">
@@ -29,6 +38,7 @@
 </template>
 
 <script setup>
+import { onMounted, onBeforeUnmount } from 'vue'
 import ResultsTable from './ResultsTable.vue'
 
 const EXPORT_FORMATS = ['geojson', 'csv', 'kml', 'kmz', 'shp', 'dxf']
@@ -40,7 +50,13 @@ defineProps({
   layerMeta: { type: Array, default: () => [] },
   activeId: { type: [String, Number], default: null },
 })
-defineEmits(['close', 'select', 'hover'])
+const emit = defineEmits(['close', 'select', 'hover', 'export'])
+
+function onKey(e) {
+  if (e.key === 'Escape') emit('close')
+}
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <style scoped>
@@ -84,7 +100,7 @@ defineEmits(['close', 'select', 'hover'])
 }
 .results-modal__exports {
   display: flex; gap: 6px; flex-wrap: wrap;
-  margin-right: auto;
+  margin-inline-start: auto;
 }
 .export-btn {
   background: var(--bg-input);
@@ -110,7 +126,6 @@ defineEmits(['close', 'select', 'hover'])
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
-  margin-inline-start: auto;
   transition: color 0.15s, border-color 0.15s, transform 0.1s;
 }
 .results-modal__close:hover { color: var(--accent-danger); border-color: var(--accent-danger); transform: rotate(90deg); }

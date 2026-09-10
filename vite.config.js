@@ -6,11 +6,11 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'https://api.geobox.ir/v1',
+        target: process.env.VITE_PROXY_TARGET || 'https://api.geobox.ir/v1',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
-        timeout: 70000,
-        proxyTimeout: 70000,
+        timeout: 20000,
+        proxyTimeout: 20000,
       },
     },
   },
@@ -22,6 +22,7 @@ export default defineConfig({
           if (id.includes('node_modules')) {
             if (id.includes('mapbox-gl') || id.includes('@mapbox/mapbox-gl-draw')) return 'vendor-mapbox'
             if (id.includes('leaflet')) return 'vendor-leaflet'
+            if (id.includes('jszip') || id.includes('shp-write') || id.includes('dxf-writer')) return 'vendor-export'
           }
         },
       },

@@ -1,13 +1,24 @@
 // composables/useExport.js
-import JSZip from 'jszip'
-import shpwrite from '@mapbox/shp-write'
-import DxfWriter from 'dxf-writer'
-import { toGeoJSON, toCSV, downloadFile } from './useGeoUtils.js'
+import { toCSV, downloadFile } from './useGeoUtils.js'
 
 // ─── KML helpers ─────────────────────────────────────────
 
+function escapeXml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+function num(n) {
+  const v = Number(n)
+  return Number.isFinite(v) ? String(v) : '0'
+}
+
 function coordsToStr(coords) {
-  return coords.map(([x, y, z = 0]) => `${x},${y},${z}`).join(' ')
+  return coords.map(([x, y, z = 0]) => `${num(x)},${num(y)},${num(z)}`).join(' ')
 }
 
 function geometryToKML(geometry) {
@@ -15,9 +26,9 @@ function geometryToKML(geometry) {
   const { type, coordinates: c } = geometry
   switch (type) {
     case 'Point':
-      return `<Point><coordinates>${c[0]},${c[1]},${c[2] ?? 0}</coordinates></Point>`
+      return `<Point><coordinates>${num(c[0])},${num(c[1])},${num(c[2] ?? 0)}</coordinates></Point>`
     case 'MultiPoint':
-      return c.map(([x, y, z = 0]) => `<Point><coordinates>${x},${y},${z}</coordinates></Point>`).join('\n')
+      return c.map(([x, y, z = 0]) => `<Point><coordinates>${num(x)},${num(y)},${num(z)}</coordinates></Point>`).join('\n')
     case 'LineString':
       return `<LineString><tessellate>1</tessellate><coordinates>${coordsToStr(c)}</coordinates></LineString>`
     case 'MultiLineString':
@@ -41,7 +52,7 @@ function geometryToKML(geometry) {
 function buildKML(features) {
   const placemarks = features
     .map(f => {
-      const name = f.properties?.name ?? f.properties?.id ?? ''
+      const name = escapeXml(f.properties?.name ?? f.properties?.id ?? '')
       return `<Placemark><name>${name}</name>${geometryToKML(f.geometry)}</Placemark>`
     })
     .join('\n')
@@ -55,29 +66,35 @@ function downloadBlob(blob, filename) {
   const a = document.createElement('a')
   a.href = url
   a.download = filename
+  document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(url)
+  setTimeout(() => {
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }, 5000)
 }
 
 // ─── Main export function ─────────────────────────────────
 
-export async function exportData(format, rows, convertFeature) {
+export async function exportData(format, rows, convertFeature, opts = {}) {
   if (!rows.length) return
   const timestamp = new Date().toISOString().slice(0, 10)
+  const crs = opts.crs ?? 'wgs84'
 
   const toFeatures = () =>
     rows
-      .filter(r => r._geometry || (r.lat && r.lng))
+      .filter(r => r._geometry || (Number.isFinite(+r.lat) && Number.isFinite(+r.lng)))
       .map(r => {
-        const geometry = r._geometry ?? { type: 'Point', coordinates: [r.lng, r.lat] }
-        const { _geometry, lat, lng, ...props } = r
+        const geometry = r._geometry ?? { type: 'Point', coordinates: [+r.lng, +r.lat] }
+        const { _geometry, _layerUuid, lat, lng, distanceKm, ...props } = r
         const base = { type: 'Feature', properties: props, geometry }
-        return geometry.type === 'Point' ? convertFeature(base) : base
+        return typeof convertFeature === 'function' ? convertFeature(base) : base
       })
 
   switch (format) {
     case 'geojson': {
-      const geo = toGeoJSON(rows.filter(r => r._geometry || (r.lat && r.lng)))
+      const features = toFeatures()
+      const geo = { type: 'FeatureCollection', features }
       downloadFile(JSON.stringify(geo, null, 2), `query-${timestamp}.geojson`, 'application/geo+json')
       break
     }
@@ -97,6 +114,7 @@ export async function exportData(format, rows, convertFeature) {
     }
     case 'kmz': {
       const kml = buildKML(toFeatures())
+      const { default: JSZip } = await import('jszip')
       const zip = new JSZip()
       zip.file('doc.kml', kml)
       downloadBlob(await zip.generateAsync({ type: 'blob' }), `query-${timestamp}.kmz`)
@@ -106,6 +124,7 @@ export async function exportData(format, rows, convertFeature) {
       const features = toFeatures()
       if (!features.length) return
       try {
+        const { default: shpwrite } = await import('@mapbox/shp-write')
         const result = await shpwrite.zip({ type: 'FeatureCollection', features }, { outputType: 'arraybuffer' })
         downloadBlob(new Blob([result], { type: 'application/zip' }), `query-${timestamp}.zip`)
       } catch (err) {
@@ -115,8 +134,9 @@ export async function exportData(format, rows, convertFeature) {
       break
     }
     case 'dxf': {
+      const { default: DxfWriter } = await import('dxf-writer')
       const d = new DxfWriter()
-      d.setUnits('Meters')
+      d.setUnits(crs === 'utm' ? 'Meters' : 'Unitless')
       toFeatures().forEach(f => {
         const { type, coordinates } = f.geometry
         switch (type) {

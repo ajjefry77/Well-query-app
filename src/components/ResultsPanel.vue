@@ -65,13 +65,13 @@
 
         <div
           v-for="item in summaries"
-          :key="item.layerUuid"
+          :key="item.layerUuid ?? item.uuid"
           class="qs-layer-block"
         >
           <template v-if="item.activeConds.length > 0">
             <div class="qs-layer-name">
               <span class="qs-dot" :style="{ background: item.color }"></span>
-              <span>{{ item.layerName }}</span>
+              <span>{{ item.layerName ?? item.name }}</span>
               <span class="qs-count-badge">{{ item.activeConds.length }}</span>
             </div>
             <div
@@ -110,7 +110,7 @@ function opSymbol(op) { return OP_SYMBOLS[op] ?? op }
 
 const detailByUuid = computed(() => {
   const map = {}
-  for (const s of props.summaries) map[s.layerUuid] = s
+  for (const s of props.summaries) map[s.layerUuid ?? s.uuid] = s
   return map
 })
 </script>

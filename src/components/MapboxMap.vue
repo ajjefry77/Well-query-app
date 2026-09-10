@@ -556,14 +556,30 @@ function clearAll() {
 // ─── رندر عوارض ───────────────────────────────────────────
 const WELL_COLOR = "#7ec88a";
 
+// کلید یکتا: شناسه‌ها ممکن است بین لایه‌ها تکراری باشند
+function wellKey(w) {
+  if (!w) return null;
+  const id = w.id ?? w.properties?.id;
+  if (id == null || id === "") return null;
+  const lu = w._layerUuid ?? w.properties?._layerUuid;
+  return lu ? `${lu}::${id}` : String(id);
+}
+function inHighlightSet(key, highlightSet) {
+  if (!key) return false;
+  if (highlightSet.has(key)) return true;
+  const i = key.indexOf("::");
+  if (i >= 0 && highlightSet.has(key.slice(i + 2))) return true;
+  return false;
+}
+
 function buildGeoJSON(wells) {
   return {
     type: "FeatureCollection",
     features: wells
-      .filter((w) => w._geometry)
+      .filter((w) => w._geometry || (Number.isFinite(+w.lat) && Number.isFinite(+w.lng)))
       .map((w) => ({
         type: "Feature",
-        geometry: w._geometry,
+        geometry: w._geometry ?? { type: "Point", coordinates: [+w.lng, +w.lat] },
         properties: { ...w, _geometry: undefined },
       })),
   };
@@ -607,7 +623,9 @@ function bindWellEventsOnce() {
       map.on("click", layerId, (e) => {
         if (activeMode.value) return;
         const fp = e.features[0].properties;
-        const well = props.wells.find((w) => String(w.id) === String(fp.id));
+        const fpKey = wellKey({ properties: fp, id: fp.id });
+        const well = props.wells.find((w) => wellKey(w) === fpKey)
+          ?? props.wells.find((w) => String(w.id) === String(fp.id));
         if (!well) return;
         emit("select-well", well);
         new mapboxgl.Popup({ maxWidth: "280px" })
@@ -649,9 +667,9 @@ function fitGeoJSON(geojson) {
 
 function renderMarkers(fit = true) {
   if (!map || !map.isStyleLoaded()) return;
-  const highlightSet = new Set(props.highlightedIds.map(String));
-  const centerId = props.radiusCenter?.id ? String(props.radiusCenter.id) : null;
-  const selectedId = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null;
+  const highlightSet = new Set((props.highlightedIds || []).map(String));
+  const centerKey = wellKey(props.radiusCenter);
+  const selectedKey = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null;
   const hasGeometry = props.wells.some((w) => w._geometry);
 
   if (hasGeometry) {
@@ -659,14 +677,17 @@ function renderMarkers(fit = true) {
     const geojson = buildGeoJSON(props.wells);
     wellsGeoJSON = geojson;
     geojson.features.forEach((f) => {
-      const hl = highlightSet.has(String(f.properties.id));
+      const key = wellKey(f);
+      const hl = inHighlightSet(key, highlightSet);
+      const match = props.hasFilter && hl;
       f.properties._color = WELL_COLOR;
       f.properties._highlighted = hl ? 1 : 0;
       f.properties._dimmed = props.hasFilter && !hl ? 1 : 0;
+      f.properties._match = match ? 1 : 0;
       f.properties._isCenter =
-        centerId && String(f.properties.id) === centerId ? 1 : 0;
+        centerKey && key === centerKey ? 1 : 0;
       f.properties._selected =
-        selectedId && String(f.properties.id) === selectedId ? 1 : 0;
+        selectedKey && (key === selectedKey || String(f.properties.id) === selectedKey) ? 1 : 0;
     });
     // استفاده مجدد از source/layer (بدون بازسازی و بدون fit اضافه)
     if (map.getSource("wells-src")) {
@@ -689,6 +710,8 @@ function renderMarkers(fit = true) {
           "#f0a500",
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
+          ["==", ["get", "_match"], 1],
+          "#22c55e", // داخل کوئری → سبز مشخص
           ["==", ["get", "_highlighted"], 1],
           "#4a9b8e", // فیلتر شده → رنگ
           "#8a9490", // عادی → خاکستری
@@ -699,6 +722,8 @@ function renderMarkers(fit = true) {
           0.6,
           ["==", ["get", "_isCenter"], 1],
           0.55,
+          ["==", ["get", "_match"], 1],
+          0.65,
           ["==", ["get", "_highlighted"], 1],
           0.55,
           ["==", ["get", "_dimmed"], 1],
@@ -723,6 +748,8 @@ function renderMarkers(fit = true) {
           "#f0a500",
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
+          ["==", ["get", "_match"], 1],
+          "#14532d",
           ["==", ["get", "_highlighted"], 1],
           "#4a9b8e",
           "#8a9490",
@@ -733,6 +760,8 @@ function renderMarkers(fit = true) {
           4,
           ["==", ["get", "_isCenter"], 1],
           4,
+          ["==", ["get", "_match"], 1],
+          3.5,
           ["==", ["get", "_highlighted"], 1],
           3,
           1.5,
@@ -766,6 +795,8 @@ function renderMarkers(fit = true) {
           4,
           ["==", ["get", "_isCenter"], 1],
           4,
+          ["==", ["get", "_match"], 1],
+          3.5,
           ["==", ["get", "_highlighted"], 1],
           3,
           ["==", ["get", "_dimmed"], 1],
@@ -778,6 +809,8 @@ function renderMarkers(fit = true) {
           "#f0a500",
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
+          ["==", ["get", "_match"], 1],
+          "#22c55e",
           ["==", ["get", "_highlighted"], 1],
           "#4a9b8e",
           "#8a9490",
@@ -797,6 +830,8 @@ function renderMarkers(fit = true) {
           12,
           ["==", ["get", "_isCenter"], 1],
           12,
+          ["==", ["get", "_match"], 1],
+          11,
           ["==", ["get", "_highlighted"], 1],
           9,
           ["==", ["get", "_dimmed"], 1],
@@ -809,6 +844,8 @@ function renderMarkers(fit = true) {
           "#f0a500",
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
+          ["==", ["get", "_match"], 1],
+          "#22c55e",
           ["==", ["get", "_dimmed"], 1],
           "#8a9490",
           ["get", "_color"],
@@ -837,6 +874,8 @@ function renderMarkers(fit = true) {
           "#1a1a1a",
           ["==", ["get", "_isCenter"], 1],
           "#fff",
+          ["==", ["get", "_match"], 1],
+          "#14532d",
           ["==", ["get", "_highlighted"], 1],
           "#1a1a1a",
           ["==", ["get", "_dimmed"], 1],
@@ -863,34 +902,40 @@ function renderMarkers(fit = true) {
     clearMarkers();
     wellsGeoJSON = null;
     props.wells.forEach((w) => {
-      if (!w.lat || !w.lng) return;
-      const isH = highlightSet.has(String(w.id));
+      if (!Number.isFinite(+w.lat) || !Number.isFinite(+w.lng)) return;
+      const key = wellKey(w);
+      const isH = inHighlightSet(key, highlightSet);
       const isDimmed = props.hasFilter && !isH;
-      const isCenter = centerId && String(w.id) === centerId;
-      const isSel = selectedId && String(w.id) === selectedId;
+      const isMatch = props.hasFilter && isH;
+      const isCenter = centerKey && key === centerKey;
+      const isSel = selectedKey && (key === selectedKey || String(w.id) === selectedKey);
       const color = isSel
         ? "#f0a500"
         : isCenter
           ? "#e74c3c"
-          : isH
-            ? "#4a9b8e"
-            : "#8a9490";
-      const opacity = isSel || isCenter ? "1" : isDimmed ? "0.25" : "1";
+          : isMatch
+            ? "#22c55e"
+            : isH
+              ? "#4a9b8e"
+              : "#8a9490";
+      const opacity = isSel || isCenter || isMatch ? "1" : isDimmed ? "0.25" : "1";
       const border = isSel
         ? "3px solid #1a1a1a"
         : isCenter
           ? "3px solid #fff"
-          : isH
-            ? "3px solid #fff"
-            : "2px solid rgba(255,255,255,0.4)";
-      const size = isSel ? 22 : isCenter ? 22 : isH ? 18 : isDimmed ? 8 : 12;
+          : isMatch
+            ? "3px solid #14532d"
+            : isH
+              ? "3px solid #fff"
+              : "2px solid rgba(255,255,255,0.4)";
+      const size = isSel ? 22 : isCenter ? 22 : isMatch ? 20 : isH ? 18 : isDimmed ? 8 : 12;
       const el = document.createElement("div");
       el.style.cssText = `
       width:${size}px;height:${size}px;border-radius:50%;
       background:${color};border:${border};
       box-shadow:0 2px 6px rgba(0,0,0,0.4);cursor:pointer;
       opacity:${opacity};
-      ${isSel || isCenter || isH ? "outline:3px solid rgba(240,165,0,0.4);outline-offset:3px;" : ""}`;
+      ${isSel || isCenter || isMatch ? "outline:3px solid rgba(34,197,94,0.45);outline-offset:3px;" : (isH ? "outline:3px solid rgba(240,165,0,0.4);outline-offset:3px;" : "")}`;
       const entries = Object.entries(w)
         .filter(([k]) => !k.startsWith("_") && k !== "lat" && k !== "lng")
         .slice(0, 8)
@@ -919,10 +964,10 @@ function renderMarkers(fit = true) {
           .addTo(map),
       );
     });
-    const pts = props.wells.filter((w) => w.lat && w.lng);
+    const pts = props.wells.filter((w) => Number.isFinite(+w.lat) && Number.isFinite(+w.lng));
     if (pts.length) {
       const bounds = new mapboxgl.LngLatBounds();
-      pts.forEach((w) => bounds.extend([w.lng, w.lat]));
+      pts.forEach((w) => bounds.extend([+w.lng, +w.lat]));
       if (fit) map.fitBounds(bounds, { padding: 48, maxZoom: 14, duration: 800 });
     }
   }
@@ -975,17 +1020,19 @@ function updateHighlightData() {
     renderMarkers(false);
     return;
   }
-  const highlightSet = new Set(props.highlightedIds.map(String));
-  const centerId = props.radiusCenter?.id ? String(props.radiusCenter.id) : null;
-  const selectedId = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null;
+  const highlightSet = new Set((props.highlightedIds || []).map(String));
+  const centerKey = wellKey(props.radiusCenter);
+  const selectedKey = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null;
   wellsGeoJSON.features.forEach((f) => {
-    const hl = highlightSet.has(String(f.properties.id));
+    const key = wellKey(f);
+    const hl = inHighlightSet(key, highlightSet);
     f.properties._highlighted = hl ? 1 : 0;
     f.properties._dimmed = props.hasFilter && !hl ? 1 : 0;
+    f.properties._match = (props.hasFilter && hl) ? 1 : 0;
     f.properties._isCenter =
-      centerId && String(f.properties.id) === centerId ? 1 : 0;
+      centerKey && key === centerKey ? 1 : 0;
     f.properties._selected =
-      selectedId && String(f.properties.id) === selectedId ? 1 : 0;
+      selectedKey && (key === selectedKey || String(f.properties.id) === selectedKey) ? 1 : 0;
   });
   map.getSource("wells-src").setData(wellsGeoJSON);
 }
@@ -1037,7 +1084,9 @@ defineExpose({
   },
   zoomToFeature(id) {
     if (!map) return;
-    const well = props.wells.find((w) => String(w.id) === String(id));
+    const key = String(id);
+    const well = props.wells.find((w) => wellKey(w) === key)
+      ?? props.wells.find((w) => String(w.id) === key);
     if (!well) return;
     if (well._geometry) {
       const g = well._geometry;

@@ -14,7 +14,8 @@ function applyTheme(t, animate = false) {
   const root = document.documentElement
   if (animate) {
     root.classList.add('theme-transition')
-    setTimeout(() => root.classList.remove('theme-transition'), 450)
+    if (applyTheme._t) clearTimeout(applyTheme._t)
+    applyTheme._t = setTimeout(() => root.classList.remove('theme-transition'), 450)
   }
   root.dataset.theme = t
 }
@@ -31,7 +32,10 @@ export function useTheme() {
   function toggle() {
     setTheme(theme.value === 'dark' ? 'light' : 'dark')
   }
-  return { theme, setTheme, toggle }
+  function applyInitialTheme() {
+    applyTheme(theme.value)
+  }
+  return { theme, setTheme, toggle, applyInitialTheme }
 }
 
 // اجرای اولیه قبل از mount برای جلوگیری از پرش (FOUC)

@@ -1,6 +1,6 @@
 <template>
   <aside class="side-panel" :class="{ 'side-panel--collapsed': !open }">
-    <button class="query-toggle" @click="$emit('toggle')">
+    <button class="query-toggle" @click="$emit('toggle')" aria-label="جمع یا باز کردن پنل کوئری">
       <svg
         class="toggle-chevron"
         :class="{ 'is-closed': !open }"
@@ -12,19 +12,20 @@
         stroke-width="2.4"
         stroke-linecap="round"
         stroke-linejoin="round"
+        style="transform: scaleX(-1)"
       >
         <polyline points="15 18 9 12 15 6" />
       </svg>
     </button>
     <div class="side-panel__scroll" v-show="open">
       <div v-if="queryKind === 'attribute'" class="per-layer-qb">
-        <div v-if="loadingFeatures || loadingFields" class="qb-loading">
+        <div v-if="loadingFeatures || loadingFields" class="qb-loading" role="status">
           <span class="spinner-inline"></span>
           <span>{{ loadingFields ? "دریافت فیلدها…" : "دریافت عارضه‌ها…" }}</span>
         </div>
 
         <div v-else-if="layers.length === 0" class="qb-no-layer">
-          ابتدا یک لایه از پنل راست اضافه کنید
+          ابتدا یک لایه از پنل چپ اضافه کنید
         </div>
 
         <template v-else>
