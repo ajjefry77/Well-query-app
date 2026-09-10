@@ -509,7 +509,7 @@ function handleClearData() {
 /* ---------- دکمه FAB نتایج ---------- */
 .results-fab {
   position: absolute;
-  bottom: 20px;
+  top: 20px;
   inset-inline-end: 20px;
   z-index: 500;
   display: flex;
@@ -603,6 +603,6 @@ function handleClearData() {
     padding: 64px 14px 14px;
   }
 
-  .results-fab { bottom: calc(var(--sheet-h, 42vh) + 12px); inset-inline-end: 12px; padding: 8px 10px; }
+  .results-fab { top: 12px; inset-inline-end: 12px; padding: 8px 10px; }
 }
 </style>

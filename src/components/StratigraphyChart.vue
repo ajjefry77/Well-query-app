@@ -54,17 +54,21 @@
         <button class="picker-btn strat-header__cfg-btn" @click="showConfigModal = true">⚙ تنظیم لایه</button>
 
         <!-- فیلتر سازند -->
-        <div class="strat-filters">
+        <div class="strat-filters" role="group" aria-label="فیلتر سازند">
           <span class="filter-label">فیلتر سازند</span>
-          <div class="filter-pills">
+          <span class="filter-count" v-if="formationDefs.length > 1">{{ (formationDefs.length - 1).toLocaleString('fa-IR') }} سازند</span>
+          <div class="filter-pills" ref="filterPillsRef">
             <button
               v-for="f in formationDefs"
               :key="f.key"
+              ref="pillRefs"
               class="pill"
               :class="{ 'pill--active': activeFilter === f.key }"
               :style="activeFilter === f.key
                 ? { background: f.color, borderColor: f.color, color: '#fff' }
                 : { borderColor: f.color, color: f.color }"
+              :aria-pressed="activeFilter === f.key"
+              :title="f.label"
               @click="activeFilter = f.key"
             >{{ f.label }}</button>
           </div>
@@ -513,6 +517,17 @@ const fmBg = n => {
 const activeFilter = ref('all')
 const isVisible    = n => activeFilter.value === 'all' || activeFilter.value === n
 
+// اسکرول خودکار پیل فعال به داخل دید (مهم در موبایل با اسکرول افقی)
+const filterPillsRef = ref(null)
+function scrollActivePill() {
+  requestAnimationFrame(() => {
+    filterPillsRef.value?.querySelector?.('.pill--active')?.scrollIntoView({
+      behavior: 'smooth', block: 'nearest', inline: 'nearest',
+    })
+  })
+}
+watch(activeFilter, scrollActivePill)
+
 // ────────────────────────────────────────────
 // ابعاد چارت
 // ────────────────────────────────────────────
@@ -562,9 +577,11 @@ const chartLayout = computed(() => {
 const COL_W   = computed(() => chartLayout.value.col)
 const COL_GAP = computed(() => chartLayout.value.gap)
 // ارتفاع چارت هم متناسب با ارتفاع در دسترس کم می‌شود تا اسکرول عمودی هم نشود.
-const CHART_H = computed(() =>
-  Math.max(CHART_H_MIN, Math.min(CHART_H_MAX, bodyH.value - 200))
-)
+const CHART_H = computed(() => {
+  const minH = bodyW.value > 0 && bodyW.value < 500 ? 260 : CHART_H_MIN
+  const availH = bodyH.value ? bodyH.value - 200 : CHART_H_MAX
+  return Math.max(minH, Math.min(CHART_H_MAX, availH))
+})
 
 const minDepth = computed(() => {
   let mn = Infinity
@@ -782,22 +799,64 @@ const thickness = (well, name) => {
   color: var(--accent-depth-bright);
 }
 
-.strat-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
-.filter-label  { font-size: 11px; color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
-.filter-pills  { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; max-width: 100%; }
+.strat-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+}
+.filter-label  { font-size: 11px; color: var(--text-secondary); font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+.filter-count { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); white-space: nowrap; flex-shrink: 0; }
+.filter-pills  {
+  display: flex;
+  gap: 6px;
+  flex-wrap: nowrap;
+  min-width: 0;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px;
+  margin: -2px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 40%, transparent) transparent;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: 8px;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  mask-image: linear-gradient(to left, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to left, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+}
+.filter-pills::-webkit-scrollbar { height: 6px; }
+.filter-pills::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 35%, transparent);
+  border-radius: var(--radius-full);
+}
+.filter-pills::-webkit-scrollbar-track { background: transparent; }
 
 .pill {
-  padding: 3px 12px;
+  padding: 4px 12px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
   border-radius: var(--radius-full);
   border: 1.5px solid;
-  background: transparent;
+  background: var(--bg-panel);
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
   transition: all .18s var(--ease-out);
   font-family: inherit;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  scroll-snap-align: start;
 }
-.pill:hover { opacity: .75; transform: translateY(-1px); }
+.pill:hover { opacity: .8; transform: translateY(-1px); }
+.pill:focus-visible { outline: 2px solid var(--ring-color); outline-offset: 2px; }
 .pill--active { box-shadow: var(--shadow-sm); }
 
 /* ══ layout اصلی ══════════════════════════════════════════════════════ */
@@ -1217,17 +1276,9 @@ const thickness = (well, name) => {
 
 /* ══ ریسپانسیو ═════════════════════════════════════════════════════════ */
 @media (max-width: 1024px) {
-  .strat-filters { flex-wrap: nowrap; }
-  .filter-pills {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    max-width: 100%;
-    padding-bottom: 2px;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
-  .filter-pills::-webkit-scrollbar { display: none; height: 0; }
-  .pill { flex: 0 0 auto; white-space: nowrap; }
+  .strat-header { padding: 10px 16px; }
+  .strat-filters { padding: 7px 8px; }
+  .pill { min-height: 30px; }
 }
 
 @media (max-width: 760px) {
@@ -1243,14 +1294,23 @@ const thickness = (well, name) => {
     min-width: 0;
   }
   .strat-header__brand h2 { font-size: 13px; }
-  .brand-icon { width: 36px; height: 36px; font-size: 18px; }
-  .strat-header__cfg-btn.picker-btn { order: 2; padding: 7px 12px; }
+  .brand-icon { width: 36px; height: 36px; font-size: 18px; flex-shrink: 0; }
+  .strat-header__cfg-btn.picker-btn { order: 2; padding: 8px 12px; min-height: 36px; flex-shrink: 0; }
   .strat-filters {
     order: 3;
     flex: 1 1 100%;
-    flex-wrap: nowrap;
+    margin-inline: 0;
+    padding: 6px 8px;
+    gap: 6px;
   }
-  .filter-label { display: none; }
+  .filter-label { font-size: 10px; }
+  .filter-count { display: none; }
+  .filter-pills {
+    scroll-snap-type: x mandatory;
+    padding: 4px 2px;
+    margin: -4px -2px;
+  }
+  .pill { min-height: 34px; font-size: 11px; padding: 6px 14px; }
 
   .strat-content {
     flex-direction: column;
@@ -1289,8 +1349,10 @@ const thickness = (well, name) => {
 
 @media (max-width: 520px) {
   .strat-header__brand p { display: none; }
-  .strat-header__cfg-btn.picker-btn { padding: 6px 10px; font-size: 11px; }
-  .pill { font-size: 10px; padding: 3px 10px; }
+  .strat-header__brand h2 { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .strat-header__cfg-btn.picker-btn { padding: 8px 10px; font-size: 11px; min-height: 36px; }
+  .strat-filters { border-radius: var(--radius-sm); }
+  .pill { font-size: 11px; padding: 6px 12px; min-height: 34px; }
   .chart-main-title { font-size: 12.5px; }
 }
 </style>

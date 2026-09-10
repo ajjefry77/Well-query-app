@@ -39,7 +39,6 @@
               class="color-preview-dot"
               :style="{ background: selectedColor }"
             ></span>
-            <span class="color-custom-label">رنگ دلخواه</span>
           </label>
           <span class="color-hex" dir="ltr">{{ selectedColor }}</span>
         </div>

@@ -295,7 +295,7 @@ function afterLeave() { focusIndex.value = -1 }
 }
 .aps__panel--fixed {
   position: fixed;
-  z-index: 9999;
+  z-index: 11000;
   max-height: 268px;
   display: flex;
   flex-direction: column;
