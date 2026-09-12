@@ -131,11 +131,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .results-modal__close:hover { color: var(--accent-danger); border-color: var(--accent-danger); transform: rotate(90deg); }
 .results-modal__body {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 16px 22px;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 22px 14px;
   -webkit-overflow-scrolling: touch;
-  will-change: scroll-position;
 }
 
 /* ---------- انیمیشن مودال ---------- */

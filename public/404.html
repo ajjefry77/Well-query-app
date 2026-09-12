@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>۴۰۴ | واکاوی لایه‌های مکانی</title>
+  <script>
+    // فالبک هاست استاتیک: مسیر درخواستی را به index.html منتقل می‌کند تا روتر داخلی صفحه ۴۰۴ را نمایش دهد
+    (function () {
+      var path = window.location.pathname + window.location.search + window.location.hash;
+      try { sessionStorage.setItem('wqa:redirect', path); } catch (e) {}
+      window.location.replace('/' );
+    })();
+  </script>
+</head>
+<body>
+  <p style="font-family: sans-serif; text-align: center; padding: 40px;">در حال انتقال…</p>
+</body>
+</html>
