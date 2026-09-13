@@ -145,13 +145,13 @@ const layerOptions = computed(() =>
 .side-panel {
   background: var(--bg-panel);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   min-height: 0;
   overflow: hidden;
   position: relative;
-  transition: width 0.3s var(--ease-out);
+  transition: width var(--dur-base) var(--ease-out);
   width: 320px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-xs);
   display: flex;
   flex-direction: column;
 }
@@ -159,26 +159,24 @@ const layerOptions = computed(() =>
 .query-toggle {
   position: absolute;
   top: 50%;
-  left: -11px;
+  left: -1px;
   transform: translateY(-50%);
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 48px;
   background: var(--bg-panel-raised);
-  border: none;
-  border-radius: 50%;
-  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  border-inline-start: none;
+  border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 10;
-  box-shadow: var(--shadow-sm);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, transform 0.15s;
 }
 .query-toggle:hover {
-  background: color-mix(in srgb, var(--accent-depth) 12%, var(--bg-panel-raised));
-  color: var(--accent-depth);
-  transform: translateY(-50%) scale(1.08);
+  color: var(--brand);
+  background: var(--bg-hover);
 }
 .toggle-chevron {
   transition: transform 0.3s var(--ease-out);
@@ -201,7 +199,7 @@ const layerOptions = computed(() =>
 .layer-dropdown-label {
   font-size: 11px; font-weight: 700;
   color: var(--text-muted);
-  text-transform: uppercase; letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
 }
 .layer-dropdown-select-wrap {
   display: flex; align-items: center; gap: 8px;
@@ -223,24 +221,19 @@ const layerOptions = computed(() =>
   justify-content: center;
   gap: 7px;
   margin-top: auto;
-  background: color-mix(in srgb, var(--accent-danger) 6%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent-danger) 25%, transparent);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
   color: var(--text-muted);
   font-size: 12px;
   font-family: inherit;
-  padding: 9px 14px;
-  border-radius: var(--radius-md);
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   white-space: nowrap;
-  transition: color 0.15s, border-color 0.15s, background 0.15s, transform 0.1s;
 }
 .clear-data-btn:hover {
   color: var(--accent-danger);
   border-color: var(--accent-danger);
-  background: color-mix(in srgb, var(--accent-danger) 10%, transparent);
-}
-.clear-data-btn:active {
-  transform: scale(0.98);
 }
 
 /* ---------- ریسپانسیو ---------- */

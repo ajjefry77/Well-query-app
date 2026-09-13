@@ -1,6 +1,7 @@
-import { reactive, defineComponent, h } from 'vue'
-import HomeView from '../views/HomeView.vue'
-import NotFound from '../views/NotFound.vue'
+import { reactive, defineComponent, h, defineAsyncComponent } from 'vue'
+
+const HomeView = defineAsyncComponent(() => import('../views/HomeView.vue'))
+const NotFound = defineAsyncComponent(() => import('../views/NotFound.vue'))
 
 const SITE_TITLE = 'واکاوی لایه‌های مکانی'
 

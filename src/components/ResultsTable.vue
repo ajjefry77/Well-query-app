@@ -312,7 +312,7 @@ function rowKey(row) {
 /* ---------- گروه لایه ---------- */
 .rt__layer-group {
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   overflow: hidden;
   flex-shrink: 0;
   display: flex;
@@ -325,21 +325,20 @@ function rowKey(row) {
   gap: 8px;
   width: 100%;
   font-family: inherit;
-  padding: 9px 14px;
+  padding: 8px 12px;
   background: var(--bg-panel-raised);
   cursor: pointer;
   user-select: none;
   border: none;
   border-bottom: 1px solid var(--border-subtle);
-  transition: background 0.12s;
   position: sticky;
   top: 0;
   z-index: 3;
 }
-.rt__layer-header:hover { background: var(--bg-input); }
-.rt__layer-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.rt__layer-title { font-size: 13px; font-weight: 700; color: var(--text-primary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rt__layer-count { font-size: 11px; color: var(--accent-depth); direction: ltr; }
+.rt__layer-header:hover { background: var(--bg-hover); }
+.rt__layer-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.rt__layer-title { font-size: 12.5px; font-weight: 700; color: var(--text-primary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rt__layer-count { font-size: 11px; color: var(--text-secondary); direction: ltr; font-family: var(--font-mono); }
 .rt__layer-chevron { font-size: 10px; color: var(--text-muted); }
 .rt__empty-layer {
   padding: 14px 16px;
@@ -355,7 +354,7 @@ function rowKey(row) {
 }
 .rt__table-wrap--single {
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   flex: 1;
   min-height: 0;
   max-height: none;
@@ -388,11 +387,11 @@ function rowKey(row) {
 }
 .rt__table th {
   text-align: start;
-  padding: 10px 14px;
+  padding: 8px 12px;
   padding-inline-end: 20px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-secondary);
-  font-size: 11.5px;
+  font-size: 11px;
   border-bottom: 1px solid var(--border-strong);
   white-space: nowrap;
   overflow: hidden;
@@ -406,9 +405,10 @@ function rowKey(row) {
   white-space: nowrap;
 }
 .rt__table td {
-  padding: 9px 14px;
+  padding: 7px 12px;
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-primary);
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -437,22 +437,22 @@ function rowKey(row) {
 }
 .rt__table th:hover .rt__resizer::after { background: var(--border-strong); }
 .rt__resizer:hover::after,
-.rt__resizer:active::after { background: var(--accent-depth) !important; }
+.rt__resizer:active::after { background: var(--brand) !important; }
 .rt__row {
   cursor: pointer;
-  transition: background 0.12s var(--ease-out);
 }
 .rt__row:hover { background: var(--bg-hover); }
-.rt__row--active { background: color-mix(in srgb, var(--accent-copper) 12%, transparent); }
-.rt__row--active td:first-child { box-shadow: inset -3px 0 0 var(--accent-copper); }
+.rt__row--active { background: var(--brand-soft); }
+.rt__row--active td:first-child { box-shadow: inset -3px 0 0 var(--brand); }
 
 .rt__empty {
-  padding: 40px 16px;
+  padding: 32px 16px;
   text-align: center;
   color: var(--text-muted);
-  font-size: 13px;
-  border: 1px dashed var(--border-subtle);
-  border-radius: var(--radius-md);
+  font-size: 12.5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-raised);
   line-height: 1.8;
 }
 .rt__pager {
@@ -469,36 +469,34 @@ function rowKey(row) {
   flex-shrink: 0;
 }
 .rt__page-btn {
-  background: var(--bg-input);
+  background: var(--bg-panel);
   border: 1px solid var(--border-strong);
   color: var(--text-secondary);
   font-size: 12px;
   font-family: inherit;
-  padding: 6px 16px;
-  border-radius: var(--radius-full);
+  padding: 5px 14px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
 }
 .rt__page-btn:hover:not(:disabled) {
-  border-color: var(--accent-depth);
-  color: var(--accent-depth);
+  border-color: var(--brand);
+  color: var(--brand);
 }
 .rt__page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .rt__page-info { font-size: 11.5px; color: var(--text-muted); }
 .rt__more-btn {
   width: 100%;
-  background: transparent;
   border: none;
   border-top: 1px solid var(--border-subtle);
-  color: var(--accent-depth);
+  color: var(--brand);
   font-size: 12px;
+  font-weight: 600;
   font-family: inherit;
-  padding: 9px;
+  padding: 8px;
   cursor: pointer;
-  transition: background 0.12s;
   position: sticky;
   bottom: 0;
   background: var(--bg-panel);
 }
-.rt__more-btn:hover { background: var(--bg-input); }
+.rt__more-btn:hover { background: var(--bg-panel-raised); }
 </style>

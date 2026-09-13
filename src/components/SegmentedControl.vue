@@ -72,29 +72,22 @@ onBeforeUnmount(() => {
 .sc {
   position: relative;
   display: flex;
-  gap: 4px;
-  background: var(--bg-input);
-  padding: 4px;
-  border-radius: var(--radius-full);
+  gap: 2px;
+  background: var(--bg-panel-raised);
+  padding: 3px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
   overflow: hidden;
 }
 .sc__thumb {
   position: absolute;
-  top: 4px;
-  bottom: 4px;
+  top: 3px;
+  bottom: 3px;
   left: 0;
   width: 0;
-  border-radius: var(--radius-full);
-  background: linear-gradient(
-    180deg,
-    var(--bg-panel),
-    color-mix(in srgb, var(--bg-panel) 88%, var(--accent-depth) 7%)
-  );
-  box-shadow:
-    var(--shadow-sm),
-    inset 0 0 0 1px color-mix(in srgb, var(--accent-depth) 25%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #ffffff 35%, transparent);
+  border-radius: 5px;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-xs), inset 0 0 0 1px var(--border-subtle);
   z-index: 0;
   pointer-events: none;
   will-change: transform, width;
@@ -102,8 +95,8 @@ onBeforeUnmount(() => {
 }
 .sc--ready .sc__thumb {
   transition:
-    transform 0.45s cubic-bezier(0.34, 1.2, 0.64, 1),
-    width 0.45s cubic-bezier(0.34, 1.2, 0.64, 1);
+    transform 0.22s var(--ease-out),
+    width 0.22s var(--ease-out);
 }
 .sc__btn {
   position: relative;
@@ -111,19 +104,19 @@ onBeforeUnmount(() => {
   background: transparent;
   border: none;
   color: var(--text-secondary);
-  font-size: 13px;
-  padding: 7px 16px;
-  border-radius: var(--radius-full);
-  font-weight: 500;
+  font-size: 12.5px;
+  padding: 6px 14px;
+  border-radius: 5px;
+  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: color 0.2s var(--ease-out);
+  transition: color var(--dur-fast) var(--ease-out);
 }
 .sc__btn:hover:not(.sc__btn--active) {
   color: var(--text-primary);
 }
 .sc__btn--active {
-  color: var(--accent-depth);
+  color: var(--brand);
   font-weight: 700;
 }
 

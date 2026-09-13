@@ -1,5 +1,5 @@
-// رنگ یکتا و پایدار برای هر لایه — تنها منبع حقیقت
-export const LAYER_COLORS = ['#2a9d8f', '#e9c46a', '#f4a261', '#e76f51', '#264653', '#a8dadc', '#457b9d', '#e63946']
+// رنگ یکتا و پایدار برای هر لایه — پالت سازمانی muted (خوانا در هر دو تم)
+export const LAYER_COLORS = ['#0f5c7e', '#5b7d99', '#7c6a45', '#4a6b5d', '#8a4a3c', '#3f6d8e', '#6b7f59', '#55606e']
 
 export function hashString(s) {
   let h = 0

@@ -3,16 +3,34 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>واکاوی لایه‌های مکانی</title>
+    <meta name="description" content="سامانه سازمانی واکاوی لایه‌های مکانی — استعلام توصیفی و مکانی ژئوباکس" />
+    <meta name="theme-color" content="#0f5c7e" />
+    <title>واکاوی لایه‌های مکانی | سامانه سازمانی</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="dns-prefetch" href="https://api.mapbox.com" />
     <link
       href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
     />
-
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
+    <style>
+      html,body{margin:0;background:#edf1f4}
+      #app{min-height:100vh;min-height:100dvh}
+      .boot{display:flex;min-height:100vh;min-height:100dvh;align-items:center;justify-content:center;gap:10px;color:#47637a;font:13px/1.8 system-ui,Tahoma,sans-serif}
+      .boot i{width:22px;height:22px;border-radius:50%;border:3px solid #dde5eb;border-top-color:#0f5c7e;animation:spin .8s linear infinite}
+      @keyframes spin{to{transform:rotate(360deg)}}
+    </style>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app"><div class="boot" aria-hidden="true"><i></i><span>در حال بارگذاری…</span></div></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

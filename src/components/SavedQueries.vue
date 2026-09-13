@@ -23,32 +23,29 @@ defineEmits(['load', 'delete'])
 </script>
 
 <style scoped>
-.sv { display: flex; flex-direction: column; gap: 10px; }
-.sv h3 { margin: 0; font-size: 14px; font-weight: 700; }
+.sv { display: flex; flex-direction: column; gap: 8px; }
+.sv h3 { margin: 0; font-size: 12px; font-weight: 700; color: var(--text-secondary); }
 .sv__list { display: flex; flex-direction: column; gap: 6px; }
 .sv__item { display: flex; align-items: stretch; gap: 6px; }
 .sv__load {
-  flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
-  background: var(--bg-input); border: 1px solid var(--border-subtle);
-  color: var(--text-primary); padding: 10px 12px; border-radius: var(--radius-md);
-  font-size: 12.5px; text-align: right;
-  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+  flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  background: var(--bg-panel-raised); border: 1px solid var(--border-subtle);
+  color: var(--text-primary); padding: 8px 10px; border-radius: var(--radius-sm);
+  font-size: 12px; text-align: right;
 }
 .sv__load:hover {
-  border-color: var(--accent-copper);
-  background: color-mix(in srgb, var(--accent-copper) 6%, var(--bg-input));
-  transform: translateX(-2px);
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
 }
 .sv__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .sv__meta-row { display: flex; gap: 8px; align-items: center; }
-.sv__layer { color: var(--accent-depth); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; }
+.sv__layer { color: var(--text-secondary); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; }
 .sv__cond { color: var(--text-muted); font-size: 10.5px; flex-shrink: 0; }
 .sv__delete {
-  background: transparent; border: 1px solid var(--border-subtle);
-  color: var(--text-muted); width: 34px; border-radius: var(--radius-md);
+  background: transparent; border: 1px solid transparent;
+  color: var(--text-muted); width: 32px; border-radius: var(--radius-sm);
   font-size: 15px; flex-shrink: 0;
-  transition: all 0.15s;
 }
-.sv__delete:hover { border-color: var(--accent-danger); color: var(--accent-danger); background: color-mix(in srgb, var(--accent-danger) 8%, transparent); }
-.sv__empty { font-size: 12px; color: var(--text-muted); margin: 0; padding: 10px 0; }
+.sv__delete:hover { border-color: var(--border-subtle); color: var(--accent-danger); background: var(--bg-panel); }
+.sv__empty { font-size: 12px; color: var(--text-muted); margin: 0; padding: 8px 0; }
 </style>

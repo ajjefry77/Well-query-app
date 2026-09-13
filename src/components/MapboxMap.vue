@@ -125,22 +125,54 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watch } from "vue";
-import mapboxgl from "mapbox-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
-import MapboxDraw from "@mapbox/mapbox-gl-draw";
-import "@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css";
-import { centerOfMass, length as turfLength, area as turfArea } from "@turf/turf";
-import * as utm from "utm";
 
-mapboxgl.accessToken =
-  import.meta.env.VITE_MAPBOX_TOKEN ?? "pk.YOUR_TOKEN_HERE";
+// ─── لود تنبل mapbox/draw: ایمپورت استاتیک حذف شد تا باندل اولیه ~۱MB سبک‌تر شود ───
+// mapbox-gl فقط وقتی این کامپوننت (async) باز شود دانلود می‌شود، نه در لود اول صفحه.
+let mapboxgl = null;
+let MapboxDraw = null;
+let utmMod = null;
+function ensureMapCss(href) {
+  try {
+    if (document.querySelector(`link[data-wqa="${href}"]`)) return;
+    const l = document.createElement("link");
+    l.rel = "stylesheet";
+    l.href = href;
+    l.dataset.wqa = href;
+    document.head.appendChild(l);
+  } catch {}
+}
 
-if (mapboxgl.getRTLTextPluginStatus() === "unavailable") {
-  mapboxgl.setRTLTextPlugin(
-      'https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-rtl-text/v0.2.3/mapbox-gl-rtl-text.js',
-      null,
-      true // Lazy load the plugin
-  );
+// ─── جایگزین سبک @turf/turf (حذف ~۶۰۰KB): هاورساین + مساحت پلانار ───
+const _R = 6371;
+const _rad = (d) => (d * Math.PI) / 180;
+function _hav(a, b, c, d) {
+  const dLa = _rad(c - a), dLn = _rad(d - b);
+  const s = Math.sin(dLa / 2) ** 2 + Math.cos(_rad(a)) * Math.cos(_rad(c)) * Math.sin(dLn / 2) ** 2;
+  return 2 * _R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+function lineLengthKm(coords) {
+  let s = 0;
+  for (let i = 1; i < coords.length; i++) s += _hav(coords[i-1][1], coords[i-1][0], coords[i][1], coords[i][0]);
+  return s;
+}
+function ringAreaM2(ring) {
+  if (!ring?.length) return 0;
+  const avgLat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
+  const kx = 111320 * Math.cos(_rad(avgLat)), ky = 110540;
+  let a = 0;
+  for (let i = 0; i + 1 < ring.length; i++) a += (ring[i][0]*kx) * (ring[i+1][1]*ky) - (ring[i+1][0]*kx) * (ring[i][1]*ky);
+  return Math.abs(a / 2);
+}
+function turfLengthLite(f) {
+  const g = f.geometry ?? f;
+  if (g.type === "LineString") return lineLengthKm(g.coordinates);
+  return 0;
+}
+function turfAreaLite(f) {
+  const g = f.geometry ?? f;
+  if (g.type === "Polygon") return ringAreaM2(g.coordinates[0]);
+  if (g.type === "MultiPolygon") return g.coordinates.reduce((s, p) => s + ringAreaM2(p[0]), 0);
+  return 0;
 }
 
 const props = defineProps({
@@ -379,7 +411,13 @@ function formatArea(m2) {
 
 function getFeatureCenter(feature) {
   try {
-    return centerOfMass(feature).geometry.coordinates;
+    const g = feature.geometry ?? feature;
+    if (g.type === "Point") return g.coordinates;
+    const coords = g.type === "Polygon" ? g.coordinates[0] : (g.type === "LineString" ? g.coordinates : null);
+    if (!coords?.length) return null;
+    let sx = 0, sy = 0, n = 0;
+    for (const c of coords) { if (Number.isFinite(c[0]) && Number.isFinite(c[1])) { sx += c[0]; sy += c[1]; n++; } }
+    return n ? [sx / n, sy / n] : null;
   } catch {
     return null;
   }
@@ -392,12 +430,12 @@ function updateLabels() {
   drawnFeatures.forEach((f) => {
     let text = null;
     if (f.geometry.type === "LineString" && f.geometry.coordinates.length >= 2)
-      text = formatLength(turfLength(f, { units: "kilometers" }));
+      text = formatLength(turfLengthLite(f));
     else if (
       f.geometry.type === "Polygon" &&
       f.geometry.coordinates[0]?.length >= 4
     )
-      text = formatArea(turfArea(f));
+      text = formatArea(turfAreaLite(f));
     if (!text) return;
     const center = getFeatureCenter(f);
     if (!center) return;
@@ -425,10 +463,10 @@ function updateLiveLabel() {
   if (!live) return;
   let text = null;
   if (live.geometry.type === "LineString")
-    text = formatLength(turfLength(live, { units: "kilometers" }));
+    text = formatLength(turfLengthLite(live));
   else if (live.geometry.type === "Polygon") {
     try {
-      const a = turfArea(live);
+      const a = turfAreaLite(live);
       if (a > 0) text = formatArea(a);
     } catch {}
   }
@@ -450,7 +488,15 @@ function getDrawMode(subTool) {
   return null;
 }
 
+async function ensureDrawLoaded() {
+  if (MapboxDraw) return;
+  ensureMapCss("https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css");
+  const m = await import("@mapbox/mapbox-gl-draw");
+  MapboxDraw = m.default ?? m;
+}
+
 function createDrawInstance(mode, subTool) {
+  if (!MapboxDraw) { ensureDrawLoaded().then(() => createDrawInstance(mode, subTool)); return; }
   draw = new MapboxDraw({
     displayControlsDefault: false,
     controls: {},
@@ -977,23 +1023,46 @@ let mouseRafPending = false;
 function onMouseMove(e) {
   if (mouseRafPending) return;
   mouseRafPending = true;
-  requestAnimationFrame(() => {
+  requestAnimationFrame(async () => {
     mouseRafPending = false;
     mouse.value.lat = e.lngLat.lat.toFixed(6);
     mouse.value.lng = e.lngLat.lng.toFixed(6);
-    const p = utm.fromLatLon(e.lngLat.lat, e.lngLat.lng);
-    mouse.value.utm = `Zone ${p.zoneNum}${p.zoneLetter} | E ${p.easting.toFixed(2)} | N ${p.northing.toFixed(2)}`;
+    try {
+      if (!utmMod) utmMod = await import("utm");
+      const p = (utmMod.fromLatLon ?? utmMod.default?.fromLatLon)(e.lngLat.lat, e.lngLat.lng);
+      mouse.value.utm = `Zone ${p.zoneNum}${p.zoneLetter} | E ${p.easting.toFixed(2)} | N ${p.northing.toFixed(2)}`;
+    } catch {}
     if (activeMode.value === "measure") updateLiveLabel();
   });
 }
 
-onMounted(() => {
+onMounted(async () => {
+  const [{ default: mb }] = await Promise.all([
+    import("mapbox-gl"),
+  ]);
+  mapboxgl = mb;
+  ensureMapCss("https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css");
+  mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN ?? "pk.YOUR_TOKEN_HERE";
+  try {
+    if (mapboxgl.getRTLTextPluginStatus() === "unavailable") {
+      mapboxgl.setRTLTextPlugin(
+        "https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-rtl-text/v0.2.3/mapbox-gl-rtl-text.js",
+        null,
+        true,
+      );
+    }
+  } catch {}
+  const weak = (() => { try { return (navigator?.deviceMemory ?? 8) <= 4 || (navigator?.hardwareConcurrency ?? 8) <= 4; } catch { return false; } })();
   map = new mapboxgl.Map({
     container: mapEl.value,
     style: lastStyle,
     center: [53, 32],
     zoom: 5,
     attributionControl: false,
+    antialias: !weak,
+    preserveDrawingBuffer: false,
+    trackResize: true,
+    fadeDuration: weak ? 0 : 300,
   });
   map.addControl(new mapboxgl.NavigationControl(), "bottom-left");
   map.on("load", () => {
@@ -1185,9 +1254,10 @@ defineExpose({
   position: relative;
   width: 100%;
   height: 100%;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   overflow: hidden;
   border: 1px solid var(--border-subtle);
+  background: var(--bg-panel);
 }
 .map-el {
   width: 100%;
@@ -1204,41 +1274,39 @@ defineExpose({
 .tool-toggle-btn {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 10px;
+  gap: 6px;
+  padding: 7px 10px;
   background: var(--bg-panel);
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  font-size: 11px;
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
   font-weight: 600;
   font-family: inherit;
   color: var(--text-primary);
   cursor: pointer;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-  transition: background 0.15s, box-shadow 0.15s, border-color 0.15s, color 0.15s;
+  box-shadow: var(--shadow-sm);
   white-space: nowrap;
 }
 .tool-toggle-btn:hover {
+  border-color: var(--border-strong);
   background: var(--bg-panel-raised);
-  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
 }
 .tool-toggle-btn.active {
-  border-color: var(--accent-depth);
-  color: var(--accent-depth);
+  border-color: var(--brand);
+  color: var(--brand);
 }
 .tool-toggle-btn.active svg {
-  stroke: var(--accent-depth);
+  stroke: var(--brand);
 }
 
 .tool-panel {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  background: color-mix(in srgb, var(--bg-panel) 96%, transparent);
-  backdrop-filter: blur(10px);
+  background: var(--bg-panel);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: 8px 6px;
+  border-radius: var(--radius-sm);
+  padding: 6px;
   min-width: 150px;
   box-shadow: var(--shadow-md);
   display: flex;
@@ -1278,18 +1346,17 @@ defineExpose({
 }
 .tool-item:hover {
   background: var(--bg-hover);
-  color: var(--accent-depth);
 }
 .tool-item.active {
-  background: color-mix(in srgb, var(--accent-depth) 12%, transparent);
-  color: var(--accent-depth);
+  background: var(--brand-soft);
+  color: var(--brand);
   font-weight: 600;
 }
 .tool-item.danger {
   color: var(--accent-danger);
 }
 .tool-item.danger:hover {
-  background: color-mix(in srgb, var(--accent-danger) 8%, transparent);
+  background: var(--bg-panel-raised);
 }
 .tool-icon {
   font-size: 14px;
@@ -1316,8 +1383,7 @@ defineExpose({
   flex: 1;
 }
 .color-custom-input:hover {
-  border-color: var(--accent-depth);
-  background: color-mix(in srgb, var(--accent-depth) 6%, var(--bg-input));
+  border-color: var(--brand);
 }
 .color-custom-input input[type="color"] {
   width: 0;
@@ -1354,18 +1420,13 @@ defineExpose({
   bottom: 0;
   left: 0;
   right: 0;
-  height: 42px;
-
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-
-  padding: 0 14px;
-
-  background: color-mix(in srgb, var(--bg-panel) 74%, transparent);
-  backdrop-filter: blur(8px);
+  padding: 0 10px;
+  background: var(--bg-panel);
   border-top: 1px solid var(--border-subtle);
-
   z-index: 999;
 }
 
@@ -1379,20 +1440,13 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 8px;
-
-  padding: 6px 12px;
-
-  background: color-mix(in srgb, var(--bg-panel) 82%, transparent);
+  padding: 4px 10px;
+  background: var(--bg-panel-raised);
   border: 1px solid var(--border-subtle);
-
-  border-radius: var(--radius-full);
-
-  backdrop-filter: blur(6px);
-
+  border-radius: var(--radius-xs);
   color: var(--text-primary);
-
-  font-size: 12px;
-  font-family: monospace;
+  font-size: 11px;
+  font-family: var(--font-mono);
 }
 
 .status-chip .label {

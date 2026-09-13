@@ -62,17 +62,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 <style scoped>
 .results-modal-backdrop {
   position: fixed; inset: 0;
-  background: color-mix(in srgb, var(--bg-deep) 55%, rgba(0,0,0,0.55));
+  background: rgba(15, 25, 33, 0.5);
   display: flex; align-items: center; justify-content: center;
   z-index: 2000;
-  backdrop-filter: blur(6px);
   padding: 24px;
   overscroll-behavior: contain;
 }
 .results-modal {
   background: var(--bg-panel);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
   width: 100%; max-width: 1300px;
   height: 90vh;
   display: flex; flex-direction: column;
@@ -83,76 +82,70 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 22px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-panel-raised);
   flex-shrink: 0;
   flex-wrap: wrap;
 }
 .results-modal__title {
-  font-size: 16px; font-weight: 700;
+  font-size: 14px; font-weight: 700;
   color: var(--text-primary);
   display: flex; align-items: baseline; gap: 10px;
   white-space: nowrap;
 }
 .results-modal__count {
-  font-size: 12px;
-  color: var(--accent-depth);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 0 8px;
 }
 .results-modal__exports {
   display: flex; gap: 6px; flex-wrap: wrap;
   margin-inline-start: auto;
 }
 .export-btn {
-  background: var(--bg-input);
+  background: var(--bg-panel);
   border: 1px solid var(--border-strong);
   color: var(--text-secondary);
   font-size: 11px; font-family: var(--font-mono);
-  padding: 6px 12px; border-radius: var(--radius-full); cursor: pointer;
-  transition: border-color 0.15s, color 0.15s, background 0.15s, transform 0.1s;
+  padding: 5px 10px; border-radius: var(--radius-xs); cursor: pointer;
 }
 .export-btn:hover {
-  border-color: var(--accent-copper);
-  color: var(--accent-copper-bright);
-  background: color-mix(in srgb, var(--accent-copper) 10%, var(--bg-input));
+  border-color: var(--brand);
+  color: var(--brand);
 }
-.export-btn:active { transform: scale(0.95); }
 .results-modal__close {
   background: transparent;
-  border: 1px solid var(--border-strong);
+  border: 1px solid transparent;
   color: var(--text-muted);
-  font-size: 20px;
-  width: 36px; height: 36px;
-  border-radius: var(--radius-full);
+  font-size: 18px;
+  width: 30px; height: 30px;
+  border-radius: var(--radius-xs);
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
-  transition: color 0.15s, border-color 0.15s, transform 0.1s;
 }
-.results-modal__close:hover { color: var(--accent-danger); border-color: var(--accent-danger); transform: rotate(90deg); }
+.results-modal__close:hover { color: var(--text-primary); background: var(--bg-panel); border-color: var(--border-subtle); }
 .results-modal__body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  padding: 16px 22px 14px;
+  padding: 12px 16px;
   -webkit-overflow-scrolling: touch;
 }
 
 /* ---------- انیمیشن مودال ---------- */
-.modal-enter-active { transition: opacity 0.28s var(--ease-out); }
-.modal-leave-active { transition: opacity 0.2s var(--ease-out); }
-.modal-enter-active .results-modal {
-  transition: transform 0.28s var(--ease-out);
-}
+.modal-enter-active, .modal-leave-active { transition: opacity var(--dur-base) var(--ease-out); }
+.modal-enter-active .results-modal { transition: transform var(--dur-base) var(--ease-out); }
 .modal-enter-from,
 .modal-leave-to { opacity: 0; }
-.modal-enter-from .results-modal {
-  transform: translateY(16px) scale(0.97);
-}
-.modal-leave-to .results-modal {
-  transform: translateY(8px) scale(0.99);
-}
+.modal-enter-from .results-modal { transform: translateY(8px); }
+.modal-leave-to .results-modal { transform: translateY(4px); }
 
 @media (max-width: 760px) {
   .results-modal-backdrop { padding: 0; }

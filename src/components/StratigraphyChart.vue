@@ -13,7 +13,6 @@
 
     <!-- وقتی هنوز کانفیگ تنظیم نشده -->
     <div v-if="!hasConfig && !showConfigModal" class="strat-state">
-      <span class="strat-state__icon">🪨</span>
       <p>برای نمایش نمودار، لایه و فیلدهای موردنظر را تنظیم کنید</p>
       <button class="picker-btn" @click="showConfigModal = true">تنظیم لایه</button>
     </div>
@@ -26,14 +25,12 @@
 
     <!-- error -->
     <div v-else-if="error" class="strat-state strat-state--error">
-      <span class="strat-state__icon">⚠️</span>
       <p>{{ error }}</p>
       <button class="picker-btn" @click="showConfigModal = true">تغییر تنظیمات لایه</button>
     </div>
 
     <!-- empty -->
     <div v-else-if="!allWells.length" class="strat-state">
-      <span class="strat-state__icon">🪨</span>
       <p>داده‌ای یافت نشد</p>
       <button class="picker-btn" @click="showConfigModal = true">تغییر تنظیمات لایه</button>
     </div>
@@ -44,14 +41,16 @@
       <!-- هدر -->
       <div class="strat-header">
         <div class="strat-header__brand">
-          <span class="brand-icon">🪨</span>
+          <span class="brand-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-4 9 4-9 4-9-4Z"/><path d="M3 8v8l9 4 9-4V8"/><path d="M12 12v8"/></svg>
+          </span>
           <div>
-            <h2>نمودار کرلیشن چینه‌شناسی</h2>
-            <p>مقایسه سازندهای زمین‌شناسی در چاه‌های انتخاب‌شده</p>
+            <h2>نمودار همبستگی چینه‌شناسی</h2>
+            <p>مقایسه سازندهای زمین‌شناسی در چاه‌های منتخب</p>
           </div>
         </div>
 
-        <button class="picker-btn strat-header__cfg-btn" @click="showConfigModal = true">⚙ تنظیم لایه</button>
+        <button class="picker-btn strat-header__cfg-btn" @click="showConfigModal = true">تنظیم لایه</button>
 
         <!-- فیلتر سازند -->
         <div class="strat-filters" role="group" aria-label="فیلتر سازند">
@@ -321,7 +320,6 @@
         <Transition name="popup">
           <div v-if="hovered" class="fm-popup" :style="{ top: popupPos.y + 'px', left: popupPos.x + 'px' }">
             <div class="fm-popup__header" :style="{ background: fmColor(hovered.fm.name) }">
-              <span class="fm-popup__icon">🪨</span>
               <div>
                 <div class="fm-popup__name">{{ hovered.fm.name }}</div>
                 <div class="fm-popup__well">{{ hovered.well.name }}</div>
@@ -764,39 +762,35 @@ const thickness = (well, name) => {
   row-gap: 10px;
   column-gap: 14px;
   padding: 12px 20px;
-  background: linear-gradient(180deg, var(--bg-panel-raised), var(--bg-panel));
+  background: var(--bg-panel);
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
-  box-shadow: var(--shadow-sm);
 }
 .strat-header__brand { display: flex; align-items: center; gap: 12px; flex: 0 1 auto; min-width: 0; }
 .brand-icon {
-  font-size: 22px;
-  width: 44px; height: 44px;
+  width: 36px; height: 36px;
   display: flex; align-items: center; justify-content: center;
-  background: color-mix(in srgb, var(--accent-depth) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent-depth) 25%, transparent);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-xs);
+  background: var(--brand);
+  color: #fff;
+  border-radius: var(--radius-sm);
 }
-.strat-header__brand h2 { font-size: 14px; font-weight: 800; color: var(--text-primary); margin-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.strat-header__brand h2 { font-size: 13.5px; font-weight: 700; color: var(--text-primary); margin-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .strat-header__brand p  { font-size: 11px; color: var(--text-muted); max-width: 340px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .strat-header__cfg-btn.picker-btn {
   flex: 0 0 auto;
   padding: 6px 12px;
   font-size: 11.5px;
-  border-radius: var(--radius-full);
-  border-color: var(--accent-depth);
-  color: var(--accent-depth);
-  background: color-mix(in srgb, var(--accent-depth) 8%, transparent);
+  border-radius: var(--radius-sm);
+  border-color: var(--border-strong);
+  color: var(--brand);
   display: inline-flex;
   align-items: center;
   gap: 5px;
 }
 .strat-header__cfg-btn.picker-btn:hover {
-  background: color-mix(in srgb, var(--accent-depth) 14%, transparent);
-  border-color: var(--accent-depth-bright);
-  color: var(--accent-depth-bright);
+  background: var(--brand-soft);
+  border-color: var(--brand);
+  color: var(--brand);
 }
 
 .strat-filters {
@@ -1188,13 +1182,12 @@ const thickness = (well, name) => {
   box-shadow: var(--shadow-sm);
 }
 .panel__title {
-  font-size: 12px; font-weight: 800;
-  color: var(--text-primary);
-  background: linear-gradient(180deg, var(--bg-panel-raised), color-mix(in srgb, var(--bg-panel-raised) 60%, var(--bg-panel)));
+  font-size: 11.5px; font-weight: 700;
+  color: var(--text-secondary);
+  background: var(--bg-panel-raised);
   padding: 8px 14px;
   text-align: center;
   border-bottom: 1px solid var(--border-subtle);
-  letter-spacing: 0.2px;
 }
 
 /* legend */
@@ -1250,8 +1243,7 @@ const thickness = (well, name) => {
 }
 .fm-popup__header {
   display: flex; align-items: center; gap: 10px;
-  padding: 12px 14px; color: #fff;
-  background-image: linear-gradient(135deg, rgba(255,255,255,0.14), transparent 55%);
+  padding: 10px 14px; color: #fff;
 }
 .fm-popup__icon { font-size: 18px; flex-shrink: 0; }
 .fm-popup__name { font-size: 13.5px; font-weight: 900; text-shadow: 0 1px 3px rgba(0,0,0,.25); }

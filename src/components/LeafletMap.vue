@@ -30,11 +30,11 @@ let geoLayer = null;
 const featureRefs = new Map();
 
 // ─── تعویض تم نقشه (روشن ↔ تیره) ──────────────────────────
-const DARK_TILE_KEY = "تیره 🌙";
-const LIGHT_TILE_KEYS = ["توپوگرافی 🗺", "ماهواره‌ای 🛰"];
+const DARK_TILE_KEY = "تیره";
+const LIGHT_TILE_KEYS = ["توپوگرافی", "ماهواره‌ای"];
 let tileLayers = null;
-let activeTileKey = "توپوگرافی 🗺";
-let lastLightTile = "توپوگرافی 🗺";
+let activeTileKey = "توپوگرافی";
+let lastLightTile = "توپوگرافی";
 
 function switchTile(key) {
   if (!map || !tileLayers || activeTileKey === key) return;
@@ -53,18 +53,18 @@ function syncTheme() {
     lastLightTile = activeTileKey;
     switchTile(DARK_TILE_KEY);
   } else if (!dark && activeTileKey === DARK_TILE_KEY) {
-    switchTile(lastLightTile || "توپوگرافی 🗺");
+    switchTile(lastLightTile || "توپوگرافی");
   }
 }
 
 const COLORS = [
-  "#c97a4a",
-  "#4a9b8e",
-  "#d4a546",
-  "#8b7bb8",
-  "#c0563f",
-  "#5b9bd5",
-  "#7ec88a",
+  "#0f5c7e",
+  "#5b7d99",
+  "#7c6a45",
+  "#4a6b5d",
+  "#8a4a3c",
+  "#3f6d8e",
+  "#6b7f59",
 ];
 function colorForId(id) {
   let hash = 0;
@@ -307,18 +307,25 @@ function addCoordMarkers(highlightSet, centerKey, selectedKey) {
 }
 
 onMounted(() => {
+  const weak = (() => { try { return (navigator?.deviceMemory ?? 8) <= 4 || (navigator?.hardwareConcurrency ?? 8) <= 4 || navigator?.connection?.saveData; } catch { return false; } })();
   map = L.map(mapEl.value, {
     center: [32, 53],
     zoom: 5,
     zoomControl: false,
+    preferCanvas: true,
+    fadeAnimation: !weak,
+    zoomAnimation: !weak,
+    markerZoomAnimation: !weak,
+    updateWhenZooming: false,
+    keepBuffer: weak ? 2 : 4,
   });
 
   tileLayers = {
-    "توپوگرافی 🗺": L.tileLayer(
+    "توپوگرافی": L.tileLayer(
       "https://mapiq.ir:3002/api/proxy/mapir/google/vt/lyrs=p&hl=fa&x={x}&y={y}&z={z}",
       { attribution: "Map IR", maxZoom: 19 },
     ),
-    "ماهواره‌ای 🛰": L.tileLayer(
+    "ماهواره‌ای": L.tileLayer(
       "https://mapiq.ir:3002/api/proxy/mapir/google/vt/lyrs=s&hl=fa&x={x}&y={y}&z={z}",
       { attribution: "Map IR", maxZoom: 19 },
     ),
@@ -327,8 +334,8 @@ onMounted(() => {
       { attribution: "© OpenStreetMap © CARTO", subdomains: "abcd", maxZoom: 19 },
     ),
   };
-  activeTileKey = "توپوگرافی 🗺";
-  tileLayers["توپوگرافی 🗺"].addTo(map);
+  activeTileKey = "توپوگرافی";
+  tileLayers["توپوگرافی"].addTo(map);
   L.control
     .layers(tileLayers, {}, { position: "topright", collapsed: false })
     .addTo(map);

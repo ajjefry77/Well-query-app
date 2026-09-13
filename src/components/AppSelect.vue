@@ -219,39 +219,31 @@ function afterLeave() { focusIndex.value = -1 }
 
 /* ─────────── تریگر ─────────── */
 .aps__trigger {
-  --trigger-bg: var(--bg-input);
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  background: linear-gradient(180deg, var(--bg-panel), color-mix(in srgb, var(--bg-panel) 90%, var(--accent-depth) 3%));
+  background: var(--bg-panel);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  padding: 0 12px;
-  min-height: 38px;
+  padding: 0 10px;
+  min-height: 36px;
   color: var(--text-primary);
   font-family: inherit;
   font-size: inherit;
   cursor: pointer;
   text-align: start;
-  box-shadow: var(--shadow-xs);
   transition:
-    border-color var(--dur-base) var(--ease-out),
-    box-shadow var(--dur-base) var(--ease-out),
-    background var(--dur-base) var(--ease-out),
-    transform var(--dur-base) var(--ease-spring);
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
 }
 .aps__trigger:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--accent-depth) 70%, var(--border-strong));
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-sm);
+  border-color: var(--text-muted);
 }
-.aps__trigger:active:not(:disabled) { transform: translateY(0) scale(0.985); }
 .aps--open .aps__trigger {
-  border-color: var(--accent-depth);
-  box-shadow: 0 0 0 4px var(--ring-color), var(--shadow-sm);
-  transform: translateY(-1px);
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px var(--ring-color);
 }
 .aps__trigger:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -268,18 +260,17 @@ function afterLeave() { focusIndex.value = -1 }
   font-weight: 400;
 }
 
-/* شورون چرخان نرم */
+/* شورون */
 .aps__chev {
   flex-shrink: 0;
   display: inline-flex;
   color: var(--text-muted);
-  transition: transform 0.38s var(--ease-spring), color 0.2s var(--ease-out);
+  transition: transform var(--dur-fast) var(--ease-out);
   pointer-events: none;
 }
-.aps__trigger:hover:not(:disabled) .aps__chev { color: var(--accent-depth); }
 .aps--open .aps__chev {
   transform: rotate(180deg);
-  color: var(--accent-depth);
+  color: var(--text-secondary);
 }
 .aps--sm    .aps__trigger { min-height: 32px; padding: 0 10px; font-size: 12px; }
 
@@ -313,37 +304,33 @@ function afterLeave() { focusIndex.value = -1 }
 }
 
 .aps__item {
-  --i: 0;
   position: relative;
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 9px 10px;
-  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  border-radius: var(--radius-xs);
   color: var(--text-secondary);
   cursor: pointer;
   text-align: start;
   font-size: 12.5px;
   line-height: 1.7;
-  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+  transition: background var(--dur-fast) var(--ease-out);
 }
 .aps__item:hover,
 .aps__item--focused {
-  background: color-mix(in srgb, var(--accent-depth) 9%, var(--bg-panel));
+  background: var(--bg-hover);
   color: var(--text-primary);
 }
 
 .aps__dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
-  background: color-mix(in srgb, var(--accent-depth) 30%, transparent);
-  transition: transform var(--dur-base) var(--ease-spring), background var(--dur-fast) var(--ease-out);
+  background: var(--border-strong);
 }
-.aps__item:hover .aps__dot,
-.aps__item--focused .aps__dot { transform: scale(1.4); background: var(--accent-depth); }
-.aps__item--active .aps__dot { background: var(--accent-depth); transform: scale(1.4); }
+.aps__item--active .aps__dot { background: var(--brand); }
 
 .aps__label {
   flex: 1;
@@ -353,20 +340,17 @@ function afterLeave() { focusIndex.value = -1 }
   white-space: nowrap;
 }
 .aps__item--active .aps__label {
-  color: var(--accent-depth);
+  color: var(--text-primary);
   font-weight: 700;
 }
 
 .aps__check {
   flex-shrink: 0;
-  color: var(--accent-depth);
+  color: var(--brand);
   opacity: 0;
-  transform: scale(0.4) rotate(-20deg);
-  transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-spring);
 }
 .aps__item--active .aps__check {
   opacity: 1;
-  transform: scale(1) rotate(0deg);
 }
 
 .aps__empty {
@@ -379,28 +363,15 @@ function afterLeave() { focusIndex.value = -1 }
 /* ─────────── ترنزیشن ورود/خروج ─────────── */
 .aps-pop-enter-active,
 .aps-pop-leave-active {
-  transition:
-    opacity 0.28s var(--ease-out),
-    transform 0.34s var(--ease-out);
+  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
 }
 .aps-pop-enter-from,
 .aps-pop-leave-to {
   opacity: 0;
-  transform: translateY(-10px) scaleY(0.92) scale(0.97);
+  transform: translateY(-4px);
 }
 .aps-pop-enter-to,
-.aps-pop-leave-from { opacity: 1; transform: translateY(0) scaleY(1) scale(1); }
-
-/* استقرای نرم آیتم‌ها (پشت‌صحنه‌ی پانل) */
-.aps__panel--fixed .aps__item {
-  animation: aps-item-in 0.4s var(--ease-spring) both;
-  animation-delay: calc(var(--i) * 34ms);
-}
-.aps__item--active { animation-delay: 0s; }
-@keyframes aps-item-in {
-  from { opacity: 0; transform: translateY(8px) scale(0.96); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
-}
+.aps-pop-leave-from { opacity: 1; transform: translateY(0); }
 
 @media (prefers-reduced-motion: reduce) {
   .aps__item { animation: none; }
@@ -410,7 +381,7 @@ function afterLeave() { focusIndex.value = -1 }
 /* اسکرول‌بار داخلی */
 .aps__list::-webkit-scrollbar { width: 8px; }
 .aps__list::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--text-muted) 35%, transparent);
-  border-radius: var(--radius-full);
+  background: var(--border-strong);
+  border-radius: 4px;
 }
 </style>

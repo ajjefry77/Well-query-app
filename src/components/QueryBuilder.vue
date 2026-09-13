@@ -202,12 +202,17 @@ function handleSave() {
 }
 .qb__header h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
+  color: var(--text-primary);
 }
 .qb__count {
   font-size: 11.5px;
-  color: var(--accent-depth);
+  color: var(--text-secondary);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 1px 8px;
   direction: ltr;
 }
 .qb__hint {
@@ -234,41 +239,41 @@ function handleSave() {
   justify-content: center;
 }
 .logic-toggle {
-  background: var(--bg-input);
+  background: var(--bg-panel);
   border: 1px solid var(--border-strong);
-  color: var(--accent-depth);
+  color: var(--text-secondary);
   font-size: 11px;
   font-weight: 700;
-  padding: 4px 16px;
-  border-radius: var(--radius-full);
-  transition: all var(--dur-fast) var(--ease-out);
+  padding: 3px 14px;
+  border-radius: var(--radius-xs);
+  transition: border-color var(--dur-fast) var(--ease-out);
 }
 .logic-toggle:hover {
-  border-color: var(--accent-depth);
-  background: color-mix(in srgb, var(--accent-depth) 8%, var(--bg-input));
+  border-color: var(--brand);
+  color: var(--brand);
 }
 .logic-toggle--or {
   color: var(--accent-amber);
+  border-color: var(--accent-amber);
 }
 
 .condition-row__body {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: var(--bg-input);
+  background: var(--bg-panel-raised);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   padding: 8px;
   flex-wrap: wrap;
-  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+  transition: border-color var(--dur-fast) var(--ease-out);
 }
 .condition-row__body:focus-within {
-  border-color: var(--accent-depth);
-  box-shadow: 0 0 0 3px var(--ring-color);
+  border-color: var(--brand);
 }
 
 .not-toggle {
-  background: transparent;
+  background: var(--bg-panel);
   border: 1px solid var(--border-strong);
   color: var(--text-muted);
   font-family: var(--font-mono);
@@ -277,7 +282,6 @@ function handleSave() {
   padding: 5px 8px;
   border-radius: var(--radius-xs);
   flex-shrink: 0;
-  transition: all var(--dur-fast) var(--ease-out);
 }
 .not-toggle:hover:not(.not-toggle--active) {
   border-color: var(--accent-danger);
@@ -299,16 +303,14 @@ function handleSave() {
   color: var(--text-primary);
   font-size: 12px;
   padding: 7px 8px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   flex: 1;
   min-width: 80px;
-  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 }
 .qb-select:focus,
 .qb-input:focus {
   outline: none;
-  border-color: var(--accent-depth);
-  box-shadow: 0 0 0 3px var(--ring-color);
+  border-color: var(--brand);
 }
 .qb-select--op {
   flex: 1.2;
@@ -343,18 +345,17 @@ function handleSave() {
 
 .add-condition-btn {
   align-self: flex-start;
-  background: transparent;
+  background: var(--bg-panel);
   border: 1px dashed var(--border-strong);
-  color: var(--accent-depth);
-  font-size: 12.5px;
-  padding: 8px 16px;
-  border-radius: var(--radius-full);
-  transition: all var(--dur-fast) var(--ease-out);
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
 }
 .add-condition-btn:hover:not(:disabled) {
-  border-color: var(--accent-depth);
-  background: color-mix(in srgb, var(--accent-depth) 8%, transparent);
-  transform: translateY(-1px);
+  border-color: var(--brand);
+  background: var(--brand-soft);
 }
 .add-condition-btn:disabled {
   opacity: 0.3;
@@ -368,24 +369,19 @@ function handleSave() {
   border-top: 1px solid var(--border-subtle);
 }
 .save-btn {
-  background: var(--accent-copper);
+  background: var(--brand);
   color: #fff;
   font-weight: 700;
-  font-size: 12.5px;
-  border: none;
-  padding: 9px 16px;
-  border-radius: var(--radius-full);
+  font-size: 12px;
+  border: 1px solid var(--brand-strong);
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
   white-space: nowrap;
   flex-shrink: 0;
-  transition: all var(--dur-fast) var(--ease-out);
-  box-shadow: var(--shadow-xs);
 }
 .save-btn:hover:not(:disabled) {
-  background: var(--accent-copper-bright);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-sm);
+  background: var(--brand-strong);
 }
-.save-btn:active:not(:disabled) { transform: scale(0.97); }
 .save-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;

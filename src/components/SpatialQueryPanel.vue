@@ -18,10 +18,11 @@
     </div>
 
     <!-- حالت: فاصله از عارضه -->
-    <div v-if="mode === 'radius'" class="sq__panel">
-      <p class="sq__hint">
-        یک عارضه را به‌عنوان مرکز انتخاب کنید و شعاع جستجو را تنظیم نمایید
-      </p>
+    <Transition name="sq-slide" mode="out-in">
+      <div v-if="mode === 'radius'" key="radius" class="sq__panel">
+        <p class="sq__hint">
+          یک عارضه را به‌عنوان مرکز انتخاب کنید و شعاع جستجو را تنظیم نمایید
+        </p>
 
       <div class="field-group">
         <label>عارضه مرجع</label>
@@ -65,10 +66,10 @@
         مرکز: {{ centerLatLng?.lat?.toFixed(5) }},
         {{ centerLatLng?.lng?.toFixed(5) }}
       </div>
-    </div>
-
-    <!-- حالت: فاصله از نقطه دلخواه -->
-    <div v-if="mode === 'point'" class="sq__panel">
+      </div>
+    </Transition>
+    <Transition name="sq-slide" mode="out-in">
+      <div v-if="mode === 'point'" key="point" class="sq__panel">
       <p class="sq__hint">
         روی نقشه کلیک کنید تا نقطه مرکزی مشخص شود، سپس شعاع جستجو را تنظیم
         نمایید
@@ -83,10 +84,10 @@
         >
           {{
             isPicking
-              ? "🎯 روی نقشه کلیک کنید..."
+              ? "در انتظار کلیک روی نقشه…"
               : customPoint
-                ? "📍 تغییر نقطه"
-                : "📍 انتخاب نقطه از نقشه"
+                ? "تغییر نقطه مرکزی"
+                : "انتخاب نقطه از نقشه"
           }}
         </button>
 
@@ -95,7 +96,7 @@
             {{ customPoint.lat.toFixed(5) }},
             {{ customPoint.lng.toFixed(5) }}
           </span>
-          <button class="btn-clear-point" @click="$emit('clear-point')">✕</button>
+          <button class="btn-clear-point" @click="$emit('clear-point')">حذف</button>
         </div>
       </div>
 
@@ -124,14 +125,15 @@
         </div>
         <p class="sq__hint sq__hint--tiny">اسلایدر تا {{ sliderCfg.max }} کیلومتر است؛ برای مقادیر بزرگ‌تر عدد را دستی وارد کنید (بدون سقف).</p>
       </div>
-    </div>
+      </div>
+    </Transition>
 
     <button
       v-if="radiusCenter || customPoint"
       class="btn-clear-spatial"
       @click="$emit('clear-spatial')"
     >
-      ✕ پاک کردن کوئری مکانی
+      پاک کردن کوئری مکانی
     </button>
   </div>
 </template>
@@ -231,10 +233,10 @@ const numberCfg = { min: 0.1, step: 0.1 };
 }
 .sq__tabs {
   display: flex;
-  gap: 4px;
-  background: var(--bg-input);
-  padding: 4px;
-  border-radius: var(--radius-full);
+  gap: 2px;
+  background: var(--bg-panel-raised);
+  padding: 3px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
 }
 .sq__tab {
@@ -242,22 +244,20 @@ const numberCfg = { min: 0.1, step: 0.1 };
   background: transparent;
   border: none;
   color: var(--text-secondary);
-  font-size: 12.5px;
-  padding: 8px 6px;
-  border-radius: var(--radius-full);
-  font-weight: 500;
+  font-size: 12px;
+  padding: 7px 6px;
+  border-radius: 5px;
+  font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s var(--ease-out), color 0.15s, box-shadow 0.15s;
 }
 .sq__tab:hover:not(.sq__tab--active) {
-  background: var(--bg-panel-raised);
   color: var(--text-primary);
 }
 .sq__tab--active {
   background: var(--bg-panel);
-  color: var(--accent-depth);
+  color: var(--brand);
   font-weight: 700;
-  box-shadow: var(--shadow-xs), inset 0 0 0 1px color-mix(in srgb, var(--accent-depth) 25%, transparent);
+  box-shadow: var(--shadow-xs), inset 0 0 0 1px var(--border-subtle);
 }
 .sq__panel {
   display: flex;
@@ -276,15 +276,15 @@ const numberCfg = { min: 0.1, step: 0.1 };
 }
 .sq__info {
   font-size: 11px;
-  color: var(--text-muted);
-  background: var(--bg-input);
+  color: var(--text-secondary);
+  background: var(--bg-panel-raised);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   padding: 8px 10px;
   direction: ltr;
 }
 .sq__center-id {
-  color: #e74c3c;
+  color: var(--text-primary);
   font-weight: 700;
 }
 .field-group {
@@ -297,8 +297,8 @@ const numberCfg = { min: 0.1, step: 0.1 };
   color: var(--text-secondary);
 }
 .accent {
-  color: var(--accent-depth);
-  font-weight: 600;
+  color: var(--brand);
+  font-weight: 700;
 }
 .qb-select {
   display: block;
@@ -326,11 +326,10 @@ const numberCfg = { min: 0.1, step: 0.1 };
   border: 1px solid var(--border-strong);
   color: var(--text-primary);
   font-size: 12.5px;
-  padding: 7px 10px;
-  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  border-radius: var(--radius-xs);
   font-family: var(--font-mono);
   text-align: center;
-  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
   -moz-appearance: textfield;
   appearance: textfield;
 }
@@ -341,8 +340,7 @@ const numberCfg = { min: 0.1, step: 0.1 };
 }
 .radius-input:focus {
   outline: none;
-  border-color: var(--accent-depth);
-  box-shadow: 0 0 0 3px var(--ring-color);
+  border-color: var(--brand);
 }
 .radius-unit {
   font-size: 11px;
@@ -352,30 +350,25 @@ const numberCfg = { min: 0.1, step: 0.1 };
 
 .btn-pick {
   width: 100%;
-  padding: 10px 14px;
-  background: var(--bg-input);
-  border: 1.5px dashed var(--border-strong);
-  border-radius: var(--radius-md);
+  padding: 9px 14px;
+  background: var(--bg-panel);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 12.5px;
+  font-weight: 600;
   text-align: center;
   cursor: pointer;
-  transition: all 0.2s var(--ease-out);
 }
 .btn-pick:hover:not(.btn-pick--active) {
-  border-color: var(--accent-depth);
-  color: var(--accent-depth);
-  background: color-mix(in srgb, var(--accent-depth) 5%, var(--bg-input));
+  border-color: var(--brand);
+  color: var(--brand);
 }
 .btn-pick--active {
-  border-color: var(--accent-depth);
-  color: var(--accent-depth);
-  background: color-mix(in srgb, var(--accent-depth) 8%, transparent);
-  animation: pulse 1.2s infinite;
-}
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+  border-color: var(--brand);
+  border-style: solid;
+  color: var(--brand);
+  background: var(--brand-soft);
 }
 
 .point-info {
@@ -403,19 +396,31 @@ const numberCfg = { min: 0.1, step: 0.1 };
 }
 .btn-clear-spatial {
   width: 100%;
-  padding: 9px 14px;
-  background: color-mix(in srgb, var(--accent-danger) 6%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent-danger) 25%, transparent);
-  border-radius: var(--radius-md);
+  padding: 8px 14px;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: 12px;
   font-family: inherit;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 .btn-clear-spatial:hover {
   color: var(--accent-danger);
   border-color: var(--accent-danger);
-  background: color-mix(in srgb, var(--accent-danger) 10%, transparent);
+}
+
+/* ─── انیمیشن سوییچ تب‌ها ─── */
+.sq-slide-enter-active,
+.sq-slide-leave-active {
+  transition: opacity 0.2s var(--ease-out), transform 0.2s var(--ease-out);
+}
+.sq-slide-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.sq-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 </style>

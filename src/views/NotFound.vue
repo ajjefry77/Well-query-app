@@ -51,7 +51,7 @@ function goBack() {
   justify-content: center;
   padding: 24px 16px;
   background:
-    radial-gradient(600px 300px at 50% -80px, color-mix(in srgb, var(--accent-depth) 14%, transparent), transparent),
+    radial-gradient(600px 300px at 50% -80px, color-mix(in srgb, var(--brand) 14%, transparent), transparent),
     var(--bg-deep);
 }
 .nf__card {
@@ -76,9 +76,9 @@ function goBack() {
 .nf__badge {
   font-size: 11px;
   font-weight: 700;
-  color: var(--accent-depth);
-  background: color-mix(in srgb, var(--accent-depth) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent-depth) 30%, transparent);
+  color: var(--brand);
+  background: var(--brand-soft);
+  border: 1px solid color-mix(in srgb, var(--brand) 30%, transparent);
   padding: 4px 14px;
   border-radius: var(--radius-full);
 }
@@ -107,7 +107,7 @@ function goBack() {
 .nf__path {
   display: inline-block;
   font-size: 11.5px;
-  background: var(--bg-input);
+  background: var(--bg-panel-raised);
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   padding: 1px 8px;
@@ -123,25 +123,23 @@ function goBack() {
   font-size: 13px;
   font-weight: 700;
   padding: 10px 22px;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-strong);
   background: var(--bg-input);
   color: var(--text-primary);
   cursor: pointer;
   text-decoration: none;
-  transition: transform 0.12s, border-color 0.15s, background 0.15s;
 }
-.nf__btn:hover { border-color: var(--accent-depth); transform: translateY(-1px); }
-.nf__btn:active { transform: scale(0.97); }
+.nf__btn:hover { border-color: var(--brand); color: var(--brand); }
 .nf__btn--primary {
-  background: var(--accent-depth);
-  border-color: transparent;
+  background: var(--brand);
+  border-color: var(--brand-strong);
   color: #fff;
 }
-.nf__btn--primary:hover { background: var(--accent-depth-bright); border-color: transparent; }
+.nf__btn--primary:hover { background: var(--brand-strong); color: #fff; }
 .nf__links { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 12px; }
 .nf__links a { color: var(--text-muted); text-decoration: none; }
-.nf__links a:hover { color: var(--accent-depth); text-decoration: underline; }
+.nf__links a:hover { color: var(--brand); text-decoration: underline; }
 .nf__sep { color: var(--border-strong); }
 @media (max-width: 520px) {
   .nf__card { padding: 28px 20px 22px; }

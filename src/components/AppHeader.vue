@@ -25,10 +25,15 @@
       </button>
 
       <div class="app-header__brand">
-        <div class="brand-mark">🗺</div>
-        <div>
+        <div class="brand-mark" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z" />
+            <path d="M9 4v14M15 6v14" />
+          </svg>
+        </div>
+        <div class="brand-text">
           <h1>واکاوی لایه‌های مکانی</h1>
-          <p>پرسش و استعلام از داده‌های توصیفی و مکانی ژئوباکس</p>
+          <p>سامانه استعلام توصیفی و مکانی ژئوباکس</p>
         </div>
       </div>
     </div>
@@ -151,12 +156,12 @@ const crsOptions = [
   z-index: 900;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 10px 20px;
-  background: color-mix(in srgb, var(--bg-panel) 88%, transparent);
-  backdrop-filter: blur(14px) saturate(1.4);
+  gap: 12px;
+  min-height: var(--header-h);
+  padding: 8px 16px;
+  background: var(--bg-panel);
   border-bottom: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-xs);
   flex-shrink: 0;
   flex-wrap: wrap;
 }
@@ -182,25 +187,24 @@ const crsOptions = [
   gap: 10px;
 }
 .brand-mark {
-  width: 38px;
-  height: 38px;
-  border-radius: var(--radius-md);
-  background: linear-gradient(155deg, var(--accent-depth), #235c50);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--brand);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 17px;
   flex-shrink: 0;
-  box-shadow: var(--shadow-sm);
   color: #fff;
 }
-.app-header__brand h1 {
+.brand-text h1 {
   margin: 0;
-  font-size: 14.5px;
-  font-weight: 800;
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
-.app-header__brand p {
-  margin: 1px 0 0;
+.brand-text p {
+  margin: 0;
   font-size: 11px;
   color: var(--text-muted);
 }
@@ -209,23 +213,23 @@ const crsOptions = [
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 12px;
-  background: var(--bg-input);
+  padding: 6px 12px;
+  background: var(--bg-panel-raised);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  font-size: 12.5px;
-  min-width: 160px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  min-width: 150px;
   max-width: 240px;
 }
 .layer-summary-label { color: var(--text-muted); font-size: 11px; }
-.layer-summary-empty { color: var(--text-muted); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.layer-summary-count { color: var(--accent-depth); font-weight: 700; }
+.layer-summary-empty { color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.layer-summary-count { color: var(--brand); font-weight: 700; font-family: var(--font-mono); font-size: 12px; }
 .layer-error { font-size: 11px; color: var(--accent-danger); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
 .retry-btn {
-  background: transparent; border: 1px solid currentColor; color: inherit;
-  font-size: 10px; font-family: inherit; padding: 2px 8px; border-radius: 20px; cursor: pointer; flex-shrink: 0;
+  background: var(--bg-panel); border: 1px solid var(--accent-danger); color: var(--accent-danger);
+  font-size: 11px; font-weight: 600; font-family: inherit; padding: 2px 10px; border-radius: var(--radius-xs); cursor: pointer; flex-shrink: 0;
 }
-.retry-btn:hover { background: color-mix(in srgb, var(--accent-danger) 12%, transparent); }
+.retry-btn:hover { background: var(--accent-danger); color: #fff; }
 
 .app-header__map-switch {
   margin-inline-start: auto;
@@ -243,32 +247,29 @@ const crsOptions = [
 }
 
 .theme-toggle {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-input);
+  background: transparent;
   border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all var(--dur-fast) var(--ease-out);
+  transition: border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
 }
 .theme-toggle:hover {
-  border-color: var(--accent-depth);
-  color: var(--accent-depth);
-  background: color-mix(in srgb, var(--accent-depth) 8%, var(--bg-input));
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  background: var(--bg-panel-raised);
 }
 .theme-toggle:active {
-  transform: scale(0.9) rotate(-12deg);
+  transform: scale(0.96);
 }
 .theme-toggle__icon {
   display: inline-flex;
-}
-.theme-toggle--dark {
-  color: var(--accent-amber);
 }
 
 /* ---------- ریسپانسیو هدر ---------- */
@@ -309,39 +310,34 @@ const crsOptions = [
   }
   .app-header__collapse {
     display: inline-flex;
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
     align-items: center;
     justify-content: center;
-    background: var(--bg-input);
+    background: transparent;
     border: 1px solid var(--border-subtle);
     color: var(--text-secondary);
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-xs);
     flex-shrink: 0;
     cursor: pointer;
-    transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.15s;
   }
   .app-header__collapse:hover {
-    color: var(--accent-depth);
-    border-color: var(--accent-depth);
-    background: color-mix(in srgb, var(--accent-depth) 8%, var(--bg-input));
-  }
-  .app-header__collapse:active {
-    transform: scale(0.92);
+    color: var(--text-primary);
+    border-color: var(--border-strong);
   }
 
   .app-header__brand {
     flex: 1 1 auto;
     min-width: 0;
   }
-  .app-header__brand h1 { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .brand-mark { width: 32px; height: 32px; font-size: 14px; }
+  .brand-text h1 { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .brand-mark { width: 30px; height: 30px; }
 
-  /* بدنه قابل جمع‌شدن: انیمیشن grid-rows + محو */
+  /* بدنه قابل جمع‌شدن */
   .app-header__body {
     display: grid;
     grid-template-rows: 1fr;
-    transition: grid-template-rows 0.38s var(--ease-out);
+    transition: grid-template-rows var(--dur-base) var(--ease-out);
   }
   .app-header__body.is-collapsed {
     grid-template-rows: 0fr;
@@ -353,13 +349,6 @@ const crsOptions = [
     align-items: center;
     min-height: 0;
     overflow: hidden;
-    opacity: 1;
-    transform: translateY(0);
-    transition: opacity 0.22s var(--ease-out), transform 0.22s var(--ease-out);
-  }
-  .app-header__body.is-collapsed .app-header__body-inner {
-    opacity: 0;
-    transform: translateY(-6px);
   }
 
   .header-layer-summary {

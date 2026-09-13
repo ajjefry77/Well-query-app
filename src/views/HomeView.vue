@@ -119,6 +119,7 @@
 
     <!-- مدال انتخاب لایه -->
     <LayerModal
+      v-if="showLayerModal"
       :open="showLayerModal"
       :layers="vectorLayers"
       :active-layers="activeLayers"
@@ -128,6 +129,7 @@
 
     <!-- مودال نتایج تمام‌صفحه -->
     <ResultsModal
+      v-if="showResultsModal"
       :open="showResultsModal"
       :rows="displayRows"
       :columns="displayColumns"
@@ -144,17 +146,18 @@
 <script setup>
 import { ref, computed, shallowRef, defineAsyncComponent, onMounted, onBeforeUnmount, watch } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
-import QueryPanel from '../components/QueryPanel.vue'
-import ResultsPanel from '../components/ResultsPanel.vue'
-import LayerModal from '../components/LayerModal.vue'
-import ResultsModal from '../components/ResultsModal.vue'
-import MobileSheet from '../components/MobileSheet.vue'
 import { useWellQuery } from '../composables/useWellQuery.js'
 import { useCoordinates } from '../composables/useCoordinates.js'
 import { useTheme } from '../composables/useTheme.js'
 import { layerColor } from '../composables/useLayerColors.js'
 import { useRoute, useRouter } from '../router/index.js'
 
+// بارگذاری تنبل: همه‌چیز به‌جز هدر، کد-split می‌شود تا First Paint روی سیستم ضعیف سریع باشد
+const QueryPanel = defineAsyncComponent(() => import('../components/QueryPanel.vue'))
+const ResultsPanel = defineAsyncComponent(() => import('../components/ResultsPanel.vue'))
+const LayerModal = defineAsyncComponent(() => import('../components/LayerModal.vue'))
+const ResultsModal = defineAsyncComponent(() => import('../components/ResultsModal.vue'))
+const MobileSheet = defineAsyncComponent(() => import('../components/MobileSheet.vue'))
 // بارگذاری تنبل: نقشه‌ها و نمودار چینه‌شناسی فقط هنگام نیاز لود می‌شوند
 const MapboxMap = defineAsyncComponent(() => import('../components/MapboxMap.vue'))
 const LeafletMap = defineAsyncComponent(() => import('../components/LeafletMap.vue'))
@@ -196,6 +199,7 @@ function viewFromUrl() {
 
 const queryKind        = ref(viewFromUrl())
 const spatialMode      = ref('radius')
+// پیش‌فرض: Mapbox (درخواست کاربر) — چانک سنگین آن جداست و First Paint بلاک نمی‌شود
 const mapProvider      = ref('mapbox')
 const mapRef           = shallowRef(null)
 const activeWellId     = ref(null)
@@ -324,7 +328,9 @@ function syncViewport(mq) {
 let mq = null
 let viewportHandler = null
 onMounted(() => {
-  loadVectorLayers()
+  // API را بعد از First Paint صدا بزن تا رندر اولیه بلاک نشود (حیاتی برای سیستم ضعیف)
+  const idle = window.requestIdleCallback ?? ((cb) => setTimeout(cb, 1))
+  idle(() => loadVectorLayers(), { timeout: 2000 })
   // در موبایل پنل‌ها همیشه باز بمانند (دکمه toggle حذف شده)
   mq = window.matchMedia('(max-width: 760px)')
   viewportHandler = syncViewport(mq)
@@ -411,8 +417,8 @@ function rowKey(r) {
   if (!r) return ''
   return r._layerUuid ? `${r._layerUuid}::${r.id}` : String(r.id ?? '')
 }
-// سقف ارسال به نقشه برای جلوگیری از فریز روی 100k سطر
-const MAX_HIGHLIGHT = 5000
+// سقف ارسال به نقشه برای جلوگیری از فریز روی 100k سطر (کمتر = سریع‌تر روی سیستم ضعیف)
+const MAX_HIGHLIGHT = 2000
 const highlightedIds = computed(() => combinedResults.value.slice(0, MAX_HIGHLIGHT).map(rowKey))
 
 // ── handlers ──
@@ -499,17 +505,21 @@ function handleClearData() {
   flex: 1;
   display: grid;
   grid-template-columns: auto 1fr auto;
-  gap: 14px;
-  padding: 16px;
+  gap: 12px;
+  padding: 12px;
   min-height: 0;
+  background: var(--bg-deep);
 }
 
 /* ---------- نقشه ---------- */
 .map-panel {
   min-height: 0;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
   position: relative;
   z-index: 0;
+  background: var(--bg-panel);
 }
 .map-loading-overlay {
   position: absolute;
@@ -518,20 +528,18 @@ function handleClearData() {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  background: color-mix(in srgb, var(--bg-panel) 55%, transparent);
-  backdrop-filter: blur(3px);
-  border-radius: var(--radius-lg);
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.72);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
 }
 
-/* ---------- دکمه FAB نتایج ---------- */
+/* ---------- دکمه نتایج ---------- */
 .results-fab {
   position: absolute;
-  top: 20px;
-  inset-inline-end: 20px;
+  top: 12px;
+  inset-inline-end: 12px;
   z-index: 500;
   display: flex;
   align-items: center;
@@ -540,31 +548,29 @@ function handleClearData() {
   border: 1px solid var(--border-strong);
   color: var(--text-primary);
   font-family: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  padding: 10px 10px;
-  border-radius: 10px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
   cursor: pointer;
-  transition: background 0.15s, box-shadow 0.15s, border-color 0.15s;
   white-space: nowrap;
 }
 .results-fab:hover {
-  background: var(--bg-panel-raised);
-  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  border-color: var(--brand);
 }
-.results-fab--active { border-color: var(--accent-depth); }
-.results-fab__icon { font-size: 16px; line-height: 1; }
+.results-fab--active { border-color: var(--brand); }
 .results-fab__count {
-  background: var(--accent-depth);
+  background: var(--brand);
   color: #fff;
   font-size: 11px;
   font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 20px;
+  padding: 0 8px;
+  border-radius: var(--radius-xs);
   font-family: var(--font-mono);
   min-width: 24px;
   text-align: center;
+  line-height: 20px;
 }
 
 /* ---------- صفحه چینه‌شناسی ---------- */

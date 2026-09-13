@@ -15,14 +15,24 @@ export default defineConfig({
     },
   },
   build: {
-    chunkSizeWarningLimit: 900,
+    target: 'es2020',
+    minify: 'esbuild',
+    cssMinify: true,
+    sourcemap: false,
+    reportCompressedSize: false,
+    chunkSizeWarningLimit: 500,
+    assetsInlineLimit: 4096,
+    cssCodeSplit: true,
+    modulePreload: { polyfill: false },
     rollupOptions: {
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
             if (id.includes('mapbox-gl') || id.includes('@mapbox/mapbox-gl-draw')) return 'vendor-mapbox'
             if (id.includes('leaflet')) return 'vendor-leaflet'
-            if (id.includes('jszip') || id.includes('shp-write') || id.includes('dxf-writer')) return 'vendor-export'
+            if (id.includes('@turf')) return 'vendor-turf'
+            if (id.includes('jszip') || id.includes('shp-write') || id.includes('dxf-write')) return 'vendor-export'
+            if (id.includes('vue')) return 'vendor-vue'
           }
         },
       },

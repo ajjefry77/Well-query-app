@@ -17,7 +17,6 @@
       </div>
 
       <div v-else-if="layersError" class="strat-cfg-state strat-cfg-state--error">
-        <span>⚠️</span>
         <p>{{ layersError }}</p>
         <button class="picker-btn" @click="loadLayers">تلاش مجدد</button>
       </div>
@@ -40,7 +39,6 @@
         </div>
 
         <div v-else-if="fieldsError" class="strat-cfg-state strat-cfg-state--error">
-          <span>⚠️</span>
           <p>{{ fieldsError }}</p>
         </div>
 
@@ -184,36 +182,41 @@ function confirm() {
 <style scoped>
 .strat-cfg-backdrop {
   position: fixed; inset: 0;
-  background: color-mix(in srgb, var(--bg-deep) 55%, rgba(0,0,0,0.55));
+  background: rgba(15, 25, 33, 0.5);
   display: flex; align-items: center; justify-content: center;
   z-index: 10000;
-  backdrop-filter: blur(6px);
 }
 
 .strat-cfg-modal {
   width: 420px;
   max-width: calc(100vw - 32px);
   background: var(--bg-panel);
-  border-radius: var(--radius-lg);
-  padding: 18px 20px 16px;
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
   box-shadow: var(--shadow-lg);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border-subtle);
 }
 
 .strat-cfg-modal .modal-header {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 .strat-cfg-modal .modal-header h3 {
-  font-size: 15px; font-weight: 800; color: var(--text-primary); margin: 0;
+  font-size: 13.5px; font-weight: 700; color: var(--text-primary); margin: 0;
 }
 
 .strat-cfg-desc {
-  font-size: 12px; color: var(--text-muted); margin: 0 0 14px; line-height: 1.7;
+  font-size: 12px; color: var(--text-secondary); margin: 10px 0 14px; line-height: 1.7;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
 }
 
-.strat-cfg-field { margin-bottom: 12px; display: flex; flex-direction: column; gap: 5px; }
-.strat-cfg-field label { font-size: 12px; font-weight: 700; color: var(--text-secondary); }
+.strat-cfg-field { margin-bottom: 10px; display: flex; flex-direction: column; gap: 5px; }
+.strat-cfg-field label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); }
 
 .strat-cfg-state {
   display: flex; flex-direction: column; align-items: center; gap: 8px;
@@ -222,8 +225,10 @@ function confirm() {
 .strat-cfg-state--error { color: var(--accent-danger); }
 
 .strat-cfg-footer {
-  margin-top: 8px;
-  display: flex; justify-content: flex-end; align-items: center; gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex; justify-content: flex-end; align-items: center; gap: 8px;
 }
 
 .strat-cfg-spacer { flex: 1; }
@@ -235,7 +240,7 @@ function confirm() {
     max-width: 100%;
     max-height: 88vh;
     overflow-y: auto;
-    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
     padding-bottom: calc(16px + env(safe-area-inset-bottom));
   }
   .strat-cfg-footer { flex-wrap: wrap; gap: 8px; }
@@ -246,72 +251,69 @@ function confirm() {
 }
 
 .picker-btn {
-  background: var(--bg-input);
+  background: var(--bg-panel);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  padding: 7px 16px;
+  padding: 7px 14px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all .15s var(--ease-out);
 }
-.picker-btn:hover { background: var(--bg-hover); border-color: var(--accent-depth); color: var(--accent-depth); }
+.picker-btn:hover { border-color: var(--brand); color: var(--brand); }
 
 .strat-spinner {
   width: 22px; height: 22px;
-  border: 3px solid var(--border-strong);
-  border-top-color: var(--accent-depth);
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--brand);
   border-radius: 50%;
   animation: strat-spin .8s linear infinite;
 }
 @keyframes strat-spin { to { transform: rotate(360deg); } }
 
 .modal-close {
-  background: none; border: none; cursor: pointer;
-  font-size: 20px; line-height: 1; color: var(--text-muted);
-  padding: 2px 6px; border-radius: 6px;
+  background: transparent; border: 1px solid transparent; cursor: pointer;
+  font-size: 18px; line-height: 1; color: var(--text-muted);
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-xs);
 }
-.modal-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+.modal-close:hover { background: var(--bg-panel-raised); color: var(--text-primary); border-color: var(--border-subtle); }
 
 .btn-cancel {
-  background: var(--bg-input);
+  background: var(--bg-panel);
   color: var(--text-secondary);
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-full);
-  padding: 8px 18px;
-  font-size: 13px;
-  font-weight: 700;
+  border-radius: var(--radius-sm);
+  padding: 7px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
   cursor: pointer;
-  transition: all .15s var(--ease-out);
 }
-.btn-cancel:hover { background: var(--bg-hover); }
+.btn-cancel:hover { background: var(--bg-panel-raised); border-color: var(--border-strong); color: var(--text-primary); }
 
 .btn-back {
   background: transparent;
   color: var(--text-secondary);
-  border: 1.5px solid var(--border-strong);
-  border-radius: var(--radius-full);
-  padding: 8px 18px;
-  font-size: 13px;
-  font-weight: 700;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 7px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
   cursor: pointer;
-  transition: all .15s var(--ease-out);
 }
-.btn-back:hover { background: var(--bg-hover); border-color: var(--accent-depth); color: var(--accent-depth); }
+.btn-back:hover { border-color: var(--text-muted); color: var(--text-primary); }
 
 .btn-confirm {
-  background: var(--accent-depth);
+  background: var(--brand);
   color: #fff;
-  border: none;
-  border-radius: var(--radius-full);
-  padding: 8px 18px;
-  font-size: 13px;
+  border: 1px solid var(--brand-strong);
+  border-radius: var(--radius-sm);
+  padding: 7px 16px;
+  font-size: 12.5px;
   font-weight: 700;
   cursor: pointer;
-  transition: all .15s var(--ease-out);
-  box-shadow: var(--shadow-xs);
 }
-.btn-confirm:hover:not(:disabled) { background: var(--accent-depth-bright); box-shadow: var(--shadow-sm); }
-.btn-confirm:disabled { background: var(--border-strong); cursor: not-allowed; opacity: 0.6; }
+.btn-confirm:hover:not(:disabled) { background: var(--brand-strong); }
+.btn-confirm:disabled { background: var(--border-strong); border-color: var(--border-strong); cursor: not-allowed; opacity: 0.6; }
 </style>

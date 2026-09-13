@@ -68,9 +68,9 @@ defineEmits(['update:mobile-tab', 'grab-start', 'close'])
   }
   .mobile-sheet__grab::before {
     content: '';
-    width: 44px;
-    height: 5px;
-    border-radius: var(--radius-full);
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
     background: var(--border-strong);
   }
   .mobile-sheet__tabs {
@@ -78,7 +78,7 @@ defineEmits(['update:mobile-tab', 'grab-start', 'close'])
     display: flex;
     gap: 6px;
     align-items: flex-end;
-    padding: 0 12px 12px;
+    padding: 0 12px 10px;
   }
   .mobile-sheet__tab {
     flex: 1;
@@ -86,19 +86,18 @@ defineEmits(['update:mobile-tab', 'grab-start', 'close'])
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--bg-input);
+    background: var(--bg-panel-raised);
     border: 1px solid var(--border-subtle);
     color: var(--text-secondary);
-    font-size: 12.5px;
+    font-size: 12px;
     font-weight: 600;
     padding: 0 6px;
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
   }
   .mobile-sheet__tab--active {
-    background: var(--accent-depth);
-    border-color: var(--accent-depth);
+    background: var(--brand);
+    border-color: var(--brand-strong);
     color: #fff;
     font-weight: 700;
   }
@@ -109,20 +108,15 @@ defineEmits(['update:mobile-tab', 'grab-start', 'close'])
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--bg-input);
+    background: var(--bg-panel-raised);
     border: 1px solid var(--border-subtle);
     color: var(--text-secondary);
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
   }
   .mobile-sheet__close:hover {
-    color: var(--accent-depth);
-    border-color: var(--accent-depth);
-    background: color-mix(in srgb, var(--accent-depth) 8%, var(--bg-input));
-  }
-  .mobile-sheet__close:active {
-    transform: scale(0.92);
+    color: var(--text-primary);
+    border-color: var(--border-strong);
   }
 }
 </style>
