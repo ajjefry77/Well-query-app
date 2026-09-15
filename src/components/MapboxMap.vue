@@ -24,7 +24,8 @@
         ابزارها
       </button>
 
-      <div class="tool-panel" v-if="panelOpen">
+      <Transition name="tool-panel">
+        <div class="tool-panel" v-if="panelOpen">
         <!-- انتخاب رنگ -->
         <div class="tool-section-label">رنگ</div>
 
@@ -99,7 +100,8 @@
         <button class="tool-item danger" @click="clearAll">
           <span class="tool-icon">✕</span> پاک کردن
         </button>
-      </div>
+        </div>
+      </Transition>
     </div>
 
     <div class="status-bar">
@@ -1312,6 +1314,22 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 2px;
+  transform-origin: top right;
+}
+/* انیمیشن باز/بسته شدن پنل ابزارها */
+.tool-panel-enter-active {
+  transition: opacity 0.18s var(--ease-out), transform 0.26s var(--ease-smooth);
+}
+.tool-panel-leave-active {
+  transition: opacity 0.14s var(--ease-out), transform 0.14s var(--ease-out);
+}
+.tool-panel-enter-from {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.97);
+}
+.tool-panel-leave-to {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
 }
 .tool-section-label {
   font-size: 10px;

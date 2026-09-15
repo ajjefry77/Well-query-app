@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <Transition name="modal">
+    <Transition name="modal" appear>
       <div v-if="open" class="modal-backdrop" @click.self="$emit('close')">
         <div class="layer-modal">
           <div class="modal-header">
@@ -189,13 +189,7 @@ function applySelection() {
 }
 .btn-apply:hover { background: var(--brand-strong); }
 
-/* ---------- انیمیشن مودال ---------- */
-.modal-enter-active, .modal-leave-active { transition: opacity var(--dur-base) var(--ease-out); }
-.modal-enter-active .layer-modal { transition: transform var(--dur-base) var(--ease-out); }
-.modal-enter-from,
-.modal-leave-to { opacity: 0; }
-.modal-enter-from .layer-modal { transform: translateY(8px); }
-.modal-leave-to .layer-modal { transform: translateY(4px); }
+/* ---------- انیمیشن مودال (تعریف سراسری در tokens.css) ---------- */
 
 @media (max-width: 760px) {
   .modal-footer { flex-wrap: wrap; gap: 8px; }

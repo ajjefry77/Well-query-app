@@ -1,129 +1,120 @@
 <template>
   <div class="rt" :class="{ 'rt--single': !isMulti, 'rt--multi': isMulti }">
-    <!-- حالت چند لایه: هر لایه جداگانه -->
-    <template v-if="isMulti">
-      <div
-        v-for="group in layerGroups"
-        :key="group.uuid"
-        class="rt__layer-group"
+    <!-- تب‌های لایه‌ها (فقط در حالت چندلایه) -->
+    <div v-if="isMulti" class="rt__tabs" role="tablist" aria-label="لایه‌ها">
+      <button
+        v-for="g in layerGroups"
+        :key="g.uuid"
+        class="rt__tab"
+        :class="{ 'rt__tab--active': activeTab === g.uuid }"
+        role="tab"
+        :aria-selected="activeTab === g.uuid"
+        @click="selectTab(g.uuid)"
       >
-        <button class="rt__layer-header" @click="toggleGroup(group.uuid)" :aria-expanded="!collapsedGroups.has(group.uuid)">
-          <span class="rt__layer-dot" :style="{ background: group.color }"></span>
-          <span class="rt__layer-title">{{ group.name }}</span>
-          <span class="rt__layer-count mono">{{ group.rows.length.toLocaleString('fa-IR') }} عارضه</span>
-          <span class="rt__layer-chevron" aria-hidden="true">{{ collapsedGroups.has(group.uuid) ? '▼' : '▲' }}</span>
-        </button>
+        <span class="rt__tab-dot" :style="{ background: g.color }"></span>
+        <span class="rt__tab-label">{{ g.name }}</span>
+        <span class="rt__tab-count mono">{{ g.rows.length.toLocaleString('fa-IR') }}</span>
+      </button>
+    </div>
 
-        <div class="rt__table-wrap" v-show="!collapsedGroups.has(group.uuid)">
-          <table class="rt__table" v-if="group.rows.length" :style="tableStyle(group.columns)">
-            <thead>
-              <tr>
-                <th
-                  v-for="col in group.columns"
-                  :key="col.key"
-                  :style="cellStyle(col)"
-                  :title="col.label"
-                >
-                  <span class="rt__th-label">{{ col.label }}</span>
-                  <span
-                    class="rt__resizer"
-                    @pointerdown="onResizeStart($event, col)"
-                    @dblclick="onResizeReset(col)"
-                    @click.stop
-                    title="تغییر عرض ستون (دابل‌کلیک برای ریست)"
-                  ></span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="row in groupVisibleRows(group)"
-                :key="row._layerUuid + '::' + row.id"
-                class="rt__row"
-                :class="{ 'rt__row--active': isActive(row) }"
-                @click="$emit('select', row)"
-                @mouseenter="$emit('hover', row)"
+    <div class="rt__table-wrap rt__table-wrap--single" v-if="effectiveRows.length">
+      <div class="rt__scroll">
+        <table class="rt__table" :style="tableStyle(effectiveColumns)">
+          <thead>
+            <tr>
+              <th
+                v-for="col in effectiveColumns"
+                :key="col.key"
+                :style="cellStyle(col)"
+                :title="col.label"
               >
-                <td
-                  v-for="col in group.columns"
-                  :key="col.key"
-                  :class="{ mono: col.mono }"
-                  :style="cellStyle(col)"
-                  :title="cellTitle(row, col)"
-                >
-                  {{ formatCell(row, col) }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <div v-else class="rt__empty-layer">نتیجه‌ای یافت نشد</div>
-          <button
-            v-if="group.rows.length > visibleCount(group)"
-            class="rt__more-btn"
-            @click="showMore(group)"
-          >
-            نمایش {{ Math.min(PAGE_SIZE, group.rows.length - visibleCount(group)).toLocaleString('fa-IR') }} رکورد بیشتر ({{ visibleCount(group).toLocaleString('fa-IR') }} از {{ group.rows.length.toLocaleString('fa-IR') }})
+                <span class="rt__th-label">{{ col.label }}</span>
+                <span
+                  class="rt__resizer"
+                  @pointerdown="onResizeStart($event, col)"
+                  @dblclick="onResizeReset(col)"
+                  @click.stop
+                  title="تغییر عرض ستون (دابل‌کلیک برای ریست)"
+                ></span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="row in pagedRows"
+              :key="rowKeyOf(row)"
+              class="rt__row"
+              :class="{ 'rt__row--active': isActive(row) }"
+              @click="$emit('select', row)"
+              @mouseenter="$emit('hover', row)"
+            >
+              <td
+                v-for="col in effectiveColumns"
+                :key="col.key"
+                :class="{ mono: col.mono }"
+                :style="cellStyle(col)"
+                :title="cellTitle(row, col)"
+              >
+                {{ formatCell(row, col) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <!-- صفحه‌بندی پیشرفته -->
+      <div v-if="totalPages > 1 || pageSizeOptions.length > 1" class="rt__pager">
+        <div class="rt__pager-right">
+          <span class="rt__total-rows mono">{{ effectiveRows.length.toLocaleString('fa-IR') }} ردیف</span>
+          <div v-if="pageSizeOptions.length > 1" class="rt__page-size">
+            <label class="rt__page-size-label">ردیف در صفحه:</label>
+            <select class="rt__page-size-select" :value="pageSize" @change="onPageSizeChange">
+              <option v-for="s in pageSizeOptions" :key="s" :value="s">{{ s }}</option>
+            </select>
+          </div>
+        </div>
+        <div v-if="totalPages > 1" class="rt__pager-center">
+          <button class="rt__page-btn rt__page-btn--icon" :disabled="page <= 1" @click="firstPage" title="صفحه اول">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/><line x1="6" y1="4" x2="6" y2="20"/></svg>
+          </button>
+          <button class="rt__page-btn rt__page-btn--icon" :disabled="page <= 1" @click="prevPage" title="صفحه قبل">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+          <template v-for="p in pageNumbers" :key="'p'+p">
+            <span v-if="p === '...'" class="rt__page-ellipsis">...</span>
+            <button
+              v-else
+              class="rt__page-num"
+              :class="{ 'rt__page-num--active': p === page }"
+              @click="goToPage(p)"
+            >{{ p.toLocaleString('fa-IR') }}</button>
+          </template>
+          <button class="rt__page-btn rt__page-btn--icon" :disabled="page >= totalPages" @click="nextPage" title="صفحه بعد">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <button class="rt__page-btn rt__page-btn--icon" :disabled="page >= totalPages" @click="lastPage" title="صفحه آخر">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="4" x2="18" y2="20"/><polyline points="13 17 18 12 13 7"/></svg>
           </button>
         </div>
-      </div>
-    </template>
-
-    <!-- حالت تک‌لایه یا spatial -->
-    <template v-else>
-      <div class="rt__table-wrap rt__table-wrap--single" v-if="rows.length">
-        <div class="rt__scroll">
-          <table class="rt__table" :style="tableStyle(columns)">
-            <thead>
-              <tr>
-                <th
-                  v-for="col in columns"
-                  :key="col.key"
-                  :style="cellStyle(col)"
-                  :title="col.label"
-                >
-                  <span class="rt__th-label">{{ col.label }}</span>
-                  <span
-                    class="rt__resizer"
-                    @pointerdown="onResizeStart($event, col)"
-                    @dblclick="onResizeReset(col)"
-                    @click.stop
-                    title="تغییر عرض ستون (دابل‌کلیک برای ریست)"
-                  ></span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="row in pagedRows"
-                :key="row._layerUuid + '::' + row.id"
-                class="rt__row"
-                :class="{ 'rt__row--active': isActive(row) }"
-                @click="$emit('select', row)"
-                @mouseenter="$emit('hover', row)"
-              >
-                <td
-                  v-for="col in columns"
-                  :key="col.key"
-                  :class="{ mono: col.mono }"
-                  :style="cellStyle(col)"
-                  :title="cellTitle(row, col)"
-                >
-                  {{ formatCell(row, col) }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div v-if="totalPages > 1" class="rt__pager">
-          <button class="rt__page-btn" :disabled="page <= 1" @click="prevPage">قبلی</button>
+        <div v-if="totalPages > 1" class="rt__pager-left">
           <span class="rt__page-info mono">{{ page.toLocaleString('fa-IR') }} / {{ totalPages.toLocaleString('fa-IR') }}</span>
-          <button class="rt__page-btn" :disabled="page >= totalPages" @click="nextPage">بعدی</button>
+          <div class="rt__jump">
+            <label class="rt__jump-label">رفتن به:</label>
+            <input
+              class="rt__jump-input mono"
+              type="number"
+              :min="1"
+              :max="totalPages"
+              :value="page"
+              @keydown.enter="onJumpEnter"
+              @blur="onJumpBlur"
+            />
+          </div>
         </div>
       </div>
-      <div v-else class="rt__empty">
-        نتیجه‌ای با شرایط فعلی یافت نشد. شرط‌ها یا شعاع جستجو را تغییر دهید.
-      </div>
-    </template>
+    </div>
+    <div v-else class="rt__empty">
+      نتیجه‌ای با شرایط فعلی یافت نشد. شرط‌ها یا شعاع جستجو را تغییر دهید.
+    </div>
   </div>
 </template>
 
@@ -139,36 +130,11 @@ const props = defineProps({
 })
 defineEmits(['select', 'hover', 'export'])
 
-const PAGE_SIZE = 100
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200]
+const pageSize = ref(100)
+const pageSizeOptions = PAGE_SIZE_OPTIONS
 const page = ref(1)
-const expandedPerGroup = ref({})
-
-watch(() => props.rows, () => {
-  page.value = 1
-  expandedPerGroup.value = {}
-})
-
-const totalPages = computed(() =>
-  Math.max(1, Math.ceil(props.rows.length / PAGE_SIZE))
-)
-const pagedRows = computed(() =>
-  props.rows.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE)
-)
-function nextPage() { if (page.value < totalPages.value) page.value++ }
-function prevPage() { if (page.value > 1) page.value-- }
-
-function visibleCount(group) {
-  return expandedPerGroup.value[group.uuid] ?? PAGE_SIZE
-}
-function groupVisibleRows(group) {
-  return group.rows.slice(0, visibleCount(group))
-}
-function showMore(group) {
-  expandedPerGroup.value = {
-    ...expandedPerGroup.value,
-    [group.uuid]: visibleCount(group) + PAGE_SIZE,
-  }
-}
+const activeTab = ref('')
 
 const layerGroups = computed(() => {
   if (!props.layerMeta.length) return []
@@ -176,7 +142,7 @@ const layerGroups = computed(() => {
     const layerRows = props.rows.filter(r => r._layerUuid === meta.uuid)
     const layerCols = [
       { key: 'id', label: 'شناسه', mono: true },
-      ...(meta.fields ?? []).slice(0, 5).map(f => ({ key: f.key, label: f.label })),
+      ...(meta.fields ?? []).map(f => ({ key: f.key, label: f.label })),
     ]
     return {
       uuid:    meta.uuid,
@@ -189,11 +155,77 @@ const layerGroups = computed(() => {
 })
 const isMulti = computed(() => layerGroups.value.length > 1)
 
-const collapsedGroups = ref(new Set())
-function toggleGroup(uuid) {
-  const s = new Set(collapsedGroups.value)
-  s.has(uuid) ? s.delete(uuid) : s.add(uuid)
-  collapsedGroups.value = s
+const activeGroup = computed(() =>
+  layerGroups.value.find(g => g.uuid === activeTab.value) ?? layerGroups.value[0] ?? null
+)
+const effectiveRows = computed(() =>
+  isMulti.value ? (activeGroup.value?.rows ?? []) : props.rows
+)
+const effectiveColumns = computed(() =>
+  isMulti.value ? (activeGroup.value?.columns ?? []) : props.columns
+)
+
+function selectTab(uuid) {
+  activeTab.value = uuid
+  page.value = 1
+}
+
+watch(() => props.rows, () => {
+  page.value = 1
+  const first = layerGroups.value[0]
+  if (first) activeTab.value = first.uuid
+})
+watch(() => props.layerMeta, () => {
+  const first = layerGroups.value[0]
+  if (first) activeTab.value = first.uuid
+})
+watch(activeTab, () => {
+  page.value = 1
+})
+
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(effectiveRows.value.length / pageSize.value))
+)
+const pagedRows = computed(() =>
+  effectiveRows.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value)
+)
+function nextPage() { if (page.value < totalPages.value) page.value++ }
+function prevPage() { if (page.value > 1) page.value-- }
+function firstPage() { page.value = 1 }
+function lastPage() { page.value = totalPages.value }
+function goToPage(p) {
+  if (typeof p === 'number' && p >= 1 && p <= totalPages.value) page.value = p
+}
+
+const pageNumbers = computed(() => {
+  const tp = totalPages.value
+  const cp = page.value
+  if (tp <= 7) return Array.from({ length: tp }, (_, i) => i + 1)
+  const pages = []
+  pages.push(1)
+  if (cp > 3) pages.push('...')
+  const start = Math.max(2, cp - 1)
+  const end = Math.min(tp - 1, cp + 1)
+  for (let i = start; i <= end; i++) pages.push(i)
+  if (cp < tp - 2) pages.push('...')
+  pages.push(tp)
+  return pages
+})
+
+function onPageSizeChange(e) {
+  const val = Number(e.target.value)
+  if (!Number.isFinite(val) || val < 1) return
+  const oldFirst = (page.value - 1) * pageSize.value
+  pageSize.value = val
+  page.value = Math.max(1, Math.floor(oldFirst / val) + 1)
+}
+
+function onJumpEnter(e) {
+  goToPage(Number(e.target.value))
+  e.target.blur()
+}
+function onJumpBlur(e) {
+  e.target.value = page.value
 }
 
 /* ---------- عرض ستون‌ها (اکسل‌مانند) ---------- */
@@ -285,13 +317,13 @@ function cellTitle(row, col) {
   try { return String(formatCell(row, col)) } catch { return '' }
 }
 
+function rowKeyOf(row) {
+  return row._layerUuid ? `${row._layerUuid}::${row.id}` : String(row.id ?? '')
+}
 function isActive(row) {
   if (props.activeId == null || props.activeId === '') return false
-  if (String(rowKey(row)) === String(props.activeId)) return true
+  if (String(rowKeyOf(row)) === String(props.activeId)) return true
   return String(row.id) === String(props.activeId)
-}
-function rowKey(row) {
-  return row._layerUuid ? `${row._layerUuid}::${row.id}` : String(row.id ?? '')
 }
 </script>
 
@@ -304,46 +336,84 @@ function rowKey(row) {
   min-height: 0;
   min-width: 0;
 }
-/* تک‌جدوله: بدون اسکرول عمودی بیرونی — اسکرول داخلی */
-.rt--single { overflow: hidden; }
-/* چندلایه: اسکرول عمودی خود جدول، هدر هر لایه چسبان */
-.rt--multi { overflow-y: auto; overflow-x: hidden; }
+/* جدول: بدون اسکرول عمودی بیرونی — اسکرول داخلی، ستون اول چسبان */
+.rt--single,
+.rt--multi { overflow: hidden; }
 
-/* ---------- گروه لایه ---------- */
-.rt__layer-group {
+/* ---------- تب‌های لایه‌ها ---------- */
+.rt__tabs {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  background: var(--bg-panel-raised);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.rt__layer-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  font-family: inherit;
-  padding: 8px 12px;
-  background: var(--bg-panel-raised);
-  cursor: pointer;
-  user-select: none;
-  border: none;
-  border-bottom: 1px solid var(--border-subtle);
   position: sticky;
   top: 0;
-  z-index: 3;
+  z-index: 5;
 }
-.rt__layer-header:hover { background: var(--bg-hover); }
-.rt__layer-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
-.rt__layer-title { font-size: 12.5px; font-weight: 700; color: var(--text-primary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rt__layer-count { font-size: 11px; color: var(--text-secondary); direction: ltr; font-family: var(--font-mono); }
-.rt__layer-chevron { font-size: 10px; color: var(--text-muted); }
-.rt__empty-layer {
-  padding: 14px 16px;
-  font-size: 12px; color: var(--text-muted);
-  text-align: center; font-style: italic;
+.rt__tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 0.2s var(--ease-out),
+    color 0.2s var(--ease-out),
+    border-color 0.2s var(--ease-out);
+}
+.rt__tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.rt__tab--active {
+  background: var(--bg-panel);
+  border-color: var(--border-strong);
+  color: var(--brand);
+  font-weight: 700;
+  box-shadow: var(--shadow-xs);
+}
+.rt__tab--active::after {
+  content: '';
+  position: absolute;
+  inset-inline: 10px;
+  bottom: -8px;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--brand);
+  box-shadow: 0 1px 3px var(--ring-color);
+}
+.rt__tab-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; transition: transform 0.2s var(--ease-out); }
+.rt__tab--active .rt__tab-dot { transform: scale(1.15); }
+.rt__tab-label { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.rt__tab-count {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  direction: ltr;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  padding: 1px 7px;
+  line-height: 1.6;
+}
+.rt__tab--active .rt__tab-count {
+  color: var(--brand-strong);
+  background: var(--brand-soft);
+  border-color: transparent;
 }
 
 /* ---------- جدول + اسکرول چسبان ---------- */
@@ -361,6 +431,10 @@ function rowKey(row) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+.rt--multi .rt__table-wrap--single {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 .rt__scroll {
   flex: 1;
@@ -413,6 +487,26 @@ function rowKey(row) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ---------- ستون اول چسبان هنگام اسکرول افقی ---------- */
+.rt__table thead th:first-child,
+.rt__table tbody td:first-child {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 3;
+}
+.rt__table thead th:first-child {
+  z-index: 4;
+  background: var(--bg-panel-raised);
+  border-inline-end: 1px solid var(--border-strong);
+}
+.rt__table tbody td:first-child {
+  background: var(--bg-panel);
+  border-inline-end: 1px solid var(--border-subtle);
+}
+.rt__row:hover td:first-child { background: var(--bg-hover); }
+.rt__row--active td:first-child { background: var(--brand-soft); }
+
 /* دستگیره تغییر عرض — مثل اکسل */
 .rt__resizer {
   position: absolute;
@@ -422,7 +516,7 @@ function rowKey(row) {
   width: 12px;
   cursor: col-resize;
   touch-action: none;
-  z-index: 3;
+  z-index: 6;
 }
 .rt__resizer::after {
   content: '';
@@ -443,7 +537,7 @@ function rowKey(row) {
 }
 .rt__row:hover { background: var(--bg-hover); }
 .rt__row--active { background: var(--brand-soft); }
-.rt__row--active td:first-child { box-shadow: inset -3px 0 0 var(--brand); }
+.rt__row--active td:first-child { box-shadow: inset 3px 0 0 var(--brand); }
 
 .rt__empty {
   padding: 32px 16px;
@@ -458,14 +552,27 @@ function rowKey(row) {
 .rt__pager {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: 12px;
-  padding: 10px;
+  padding: 8px 12px;
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-panel);
   position: sticky;
   bottom: 0;
   z-index: 2;
+  flex-shrink: 0;
+}
+.rt__pager-right,
+.rt__pager-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.rt__pager-center {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   flex-shrink: 0;
 }
 .rt__page-btn {
@@ -474,29 +581,105 @@ function rowKey(row) {
   color: var(--text-secondary);
   font-size: 12px;
   font-family: inherit;
-  padding: 5px 14px;
+  padding: 5px 12px;
   border-radius: var(--radius-sm);
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition:
+    border-color 0.15s var(--ease-out),
+    color 0.15s var(--ease-out),
+    background-color 0.15s var(--ease-out);
 }
+.rt__page-btn--icon { padding: 5px 8px; }
 .rt__page-btn:hover:not(:disabled) {
   border-color: var(--brand);
   color: var(--brand);
+  background: var(--brand-soft);
 }
 .rt__page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.rt__page-info { font-size: 11.5px; color: var(--text-muted); }
-.rt__more-btn {
-  width: 100%;
-  border: none;
-  border-top: 1px solid var(--border-subtle);
-  color: var(--brand);
+.rt__page-ellipsis { color: var(--text-muted); font-size: 12px; padding: 0 2px; user-select: none; }
+.rt__page-num {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
   font-size: 12px;
-  font-weight: 600;
   font-family: inherit;
-  padding: 8px;
+  font-weight: 600;
   cursor: pointer;
-  position: sticky;
-  bottom: 0;
-  background: var(--bg-panel);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    border-color 0.15s var(--ease-out),
+    color 0.15s var(--ease-out),
+    background-color 0.15s var(--ease-out);
 }
-.rt__more-btn:hover { background: var(--bg-panel-raised); }
+.rt__page-num:hover:not(.rt__page-num--active) {
+  border-color: var(--border-strong);
+  color: var(--brand);
+  background: var(--bg-hover);
+}
+.rt__page-num--active {
+  background: var(--brand);
+  border-color: var(--brand-strong);
+  color: #fff;
+  box-shadow: var(--shadow-xs);
+  cursor: default;
+}
+.rt__total-rows {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.rt__page-size {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rt__page-size-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.rt__page-size-select {
+  height: 28px;
+  padding: 0 24px 0 8px;
+  font-size: 11.5px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-panel);
+}
+.rt__page-info { font-size: 11.5px; color: var(--text-muted); direction: ltr; white-space: nowrap; }
+.rt__jump {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rt__jump-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.rt__jump-input {
+  width: 58px;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  text-align: center;
+}
+.rt__jump-input:focus {
+  border-color: var(--brand);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring-color);
+}
+
+@media (max-width: 760px) {
+  .rt__tab-label { max-width: 120px; }
+  .rt__pager { flex-wrap: wrap; justify-content: center; gap: 8px; padding: 8px; }
+  .rt__pager-right { width: 100%; justify-content: center; }
+  .rt__pager-left { order: 3; }
+}
 </style>

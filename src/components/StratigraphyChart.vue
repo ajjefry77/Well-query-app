@@ -2,14 +2,16 @@
   <div class="strat-wrap" dir="rtl">
 
     <!-- مدال انتخاب لایه/فیلدها -->
-    <StratLayerConfigModal
-      v-if="showConfigModal"
-      :allow-close="hasConfig"
-      :initial="config"
-      @confirm="onConfigConfirm"
-      @cancel="showConfigModal = false"
-      @back="$emit('back')"
-    />
+    <Transition name="modal">
+      <StratLayerConfigModal
+        v-if="showConfigModal"
+        :allow-close="hasConfig"
+        :initial="config"
+        @confirm="onConfigConfirm"
+        @cancel="showConfigModal = false"
+        @back="$emit('back')"
+      />
+    </Transition>
 
     <!-- وقتی هنوز کانفیگ تنظیم نشده -->
     <div v-if="!hasConfig && !showConfigModal" class="strat-state">

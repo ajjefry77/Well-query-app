@@ -66,13 +66,13 @@
           @update:model-value="$emit('update:map-provider', $event)"
         />
 
-        <SegmentedControl
+        <!-- <SegmentedControl
           class="app-header__crs-switch"
           size="sm"
           :model-value="crs"
           :options="crsOptions"
           @update:model-value="$emit('update:crs', $event)"
-        />
+        /> -->
 
         <button
           class="theme-toggle"

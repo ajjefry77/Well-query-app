@@ -67,9 +67,8 @@
         {{ centerLatLng?.lng?.toFixed(5) }}
       </div>
       </div>
-    </Transition>
-    <Transition name="sq-slide" mode="out-in">
-      <div v-if="mode === 'point'" key="point" class="sq__panel">
+    <!-- حالت: فاصله از نقطه دلخواه -->
+    <div v-else key="point" class="sq__panel">
       <p class="sq__hint">
         روی نقشه کلیک کنید تا نقطه مرکزی مشخص شود، سپس شعاع جستجو را تنظیم
         نمایید
@@ -249,6 +248,10 @@ const numberCfg = { min: 0.1, step: 0.1 };
   border-radius: 5px;
   font-weight: 600;
   cursor: pointer;
+  transition:
+    background-color 0.28s var(--ease-smooth),
+    color 0.28s var(--ease-smooth),
+    box-shadow 0.28s var(--ease-smooth);
 }
 .sq__tab:hover:not(.sq__tab--active) {
   color: var(--text-primary);
@@ -411,16 +414,18 @@ const numberCfg = { min: 0.1, step: 0.1 };
 }
 
 /* ─── انیمیشن سوییچ تب‌ها ─── */
-.sq-slide-enter-active,
+.sq-slide-enter-active {
+  transition: opacity 0.22s var(--ease-out), transform 0.28s var(--ease-smooth);
+}
 .sq-slide-leave-active {
-  transition: opacity 0.2s var(--ease-out), transform 0.2s var(--ease-out);
+  transition: opacity 0.14s var(--ease-out), transform 0.14s var(--ease-out);
 }
 .sq-slide-enter-from {
   opacity: 0;
-  transform: translateY(6px);
+  transform: translateY(12px);
 }
 .sq-slide-leave-to {
   opacity: 0;
-  transform: translateY(-4px);
+  transform: translateY(-8px);
 }
 </style>

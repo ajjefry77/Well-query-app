@@ -392,14 +392,14 @@ const displayColumns = computed(() => {
     return [
       { key: '_layerName', label: 'لایه' },
       { key: 'id', label: 'شناسه', mono: true },
-      ...queryableFields.value.slice(0, 3).map(f => ({ key: f.key, label: f.label })),
-      { key: 'distanceKm', label: 'فاصله (km)', mono: true },
+      ...queryableFields.value.map(f => ({ key: f.key, label: f.label })),
+      { key: 'distanceKm', label: 'فاصله (km)', mono: false },
     ]
   }
   return [
     { key: '_layerName', label: 'لایه' },
     { key: 'id', label: 'شناسه', mono: true },
-    ...queryableFields.value.slice(0, 5).map(f => ({ key: f.key, label: f.label })),
+    ...queryableFields.value.map(f => ({ key: f.key, label: f.label })),
   ]
 })
 const displayRows = computed(() => combinedResults.value)
