@@ -329,7 +329,7 @@ export function useWellQuery() {
     })
   )
 
-  const hasSpatialFilter = computed(() => radiusCenter.value !== null)
+  const hasSpatialFilter = computed(() => committedRadiusCenter.value !== null)
 
   const combinedResults = computed(() => {
     const makeKey = r => `${r._layerUuid}::${r.id}`
@@ -347,13 +347,17 @@ export function useWellQuery() {
   const DEFAULT_RADIUS_KM = 3
   const radiusCenter  = ref(null)
   const radiusKm      = ref(DEFAULT_RADIUS_KM)
+  // مقادیر تأییدشده (فقط بعد از کلیک Apply اعمال می‌شوند)
+  const committedRadiusCenter = ref(null)
+  const committedRadiusKm = ref(DEFAULT_RADIUS_KM)
+  const spatialLoading = ref(false)
   // پاک‌سازی مقادیر قدیمی ذخیره‌شده (نسخه‌های قبلی) تا حتماً دیفالت اعمال شود
   try { LEGACY_RADIUS_KEYS.forEach(k => localStorage.removeItem(k)) } catch {}
 
   const radiusResults = computed(() => {
-    if (!radiusCenter.value) return []
-    const center = radiusCenter.value
-    const rKm = Number(radiusKm.value)
+    if (!committedRadiusCenter.value) return []
+    const center = committedRadiusCenter.value
+    const rKm = Number(committedRadiusKm.value)
     if (!Number.isFinite(rKm) || rKm <= 0) return []
     const centerKey = center._layerUuid ? `${center._layerUuid}::${center.id}` : null
     const candidates = allFeatures.value.filter(f => {
@@ -364,6 +368,15 @@ export function useWellQuery() {
     const clampedKm = Math.min(rKm, 20000)
     return findWithinRadius(candidates, center, clampedKm)
   })
+
+  // ── اعمال تغییرات مکانی (با لودینگ) ──
+  async function commitSpatialFilter() {
+    spatialLoading.value = true
+    await new Promise(r => setTimeout(r, 250))
+    committedRadiusCenter.value = radiusCenter.value ? { ...radiusCenter.value } : null
+    committedRadiusKm.value = radiusKm.value
+    spatialLoading.value = false
+  }
 
   // ── کوئری‌های ذخیره‌شده ──
   const rawSaved = lsGet(LS_KEYS.savedQueries, [])
@@ -427,6 +440,8 @@ export function useWellQuery() {
     layerConditions.value = {}
     radiusKm.value        = DEFAULT_RADIUS_KM
     radiusCenter.value    = null
+    committedRadiusCenter.value = null
+    committedRadiusKm.value = DEFAULT_RADIUS_KM
     rebuildAggregated()
   }
 
@@ -442,6 +457,8 @@ export function useWellQuery() {
     combinedResults, hasAnyFilter,
     getLayerConditions, addLayerCondition, removeLayerCondition, getLayerResultCount,
     radiusCenter, radiusKm,
+    committedRadiusCenter, committedRadiusKm,
+    spatialLoading, commitSpatialFilter,
     savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
     clearAllLocalData,
   }

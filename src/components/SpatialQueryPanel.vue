@@ -130,6 +130,15 @@
     >
       پاک کردن کوئری مکانی
     </button>
+
+    <button
+      v-if="(radiusCenter || customPoint)"
+      class="btn-apply-spatial"
+      :disabled="spatialLoading"
+      @click="$emit('apply-spatial')"
+    >
+      {{ spatialLoading ? 'در حال اعمال…' : 'اعمال تغییرات' }}
+    </button>
   </div>
 </template>
 
@@ -150,6 +159,7 @@ const props = defineProps({
   fields: { type: Array, default: () => [] },
   customPoint: { type: Object, default: null },
   isPicking: { type: Boolean, default: false },
+  spatialLoading: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
@@ -161,6 +171,7 @@ const emit = defineEmits([
   "pick-point",
   "clear-point",
   "clear-spatial",
+  "apply-spatial",
 ]);
 
 const layerOptions = computed(() =>
@@ -447,6 +458,27 @@ const numberCfg = { min: 0.1, step: 0.1 };
 .btn-clear-spatial:hover {
   color: var(--accent-danger);
   border-color: var(--accent-danger);
+}
+
+.btn-apply-spatial {
+  width: 100%;
+  padding: 9px 14px;
+  background: var(--brand);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  margin-top: 8px;
+}
+.btn-apply-spatial:hover:not(:disabled) {
+  opacity: 0.9;
+}
+.btn-apply-spatial:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* ─── انیمیشن سوییچ تب‌ها ─── */

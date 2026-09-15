@@ -41,6 +41,7 @@
         :spatial-group-fields="spatialGroupFields"
         :custom-point="customPoint"
         :is-picking-point="isPickingPoint"
+        :spatial-loading="spatialLoading"
         :saved-queries="savedQueries"
         @toggle="toggleQueryPanel"
         @update:active-query-layer="activeQueryLayer = $event"
@@ -53,6 +54,7 @@
         @pick-point="onPickPoint"
         @clear-point="onClearPoint"
         @clear-spatial="onClearSpatial"
+        @apply-spatial="onApplySpatial"
         @load-query="onLoadQuery"
         @delete-query="deleteSavedQuery"
         @clear-data="handleClearData"
@@ -67,8 +69,8 @@
            :wells-key="visibleWellsKey"
            :highlighted-ids="highlightedIds"
            :has-filter="hasAnyFilter"
-           :radius-center="showRadiusOnMap ? radiusCenter : null"
-           :radius-km="radiusKm"
+           :radius-center="showRadiusOnMap ? committedRadiusCenter : null"
+           :radius-km="committedRadiusKm"
             :selected-id="selectedWellId"
             :theme="theme"
             @select-well="onSelectFromMap"
@@ -77,8 +79,14 @@
 
         <!-- لودینگ افزودن لایه تا آماده‌شدن نقشه -->
         <div v-if="mapLoading" class="map-loading-overlay">
-          <span class="spinner"></span>
+          <div class="spinner-ring"></div>
           <span>در حال بارگذاری لایه‌ها…</span>
+        </div>
+
+        <!-- لودینگ اعمال تغییرات مکانی -->
+        <div v-if="spatialLoading" class="map-loading-overlay">
+          <div class="spinner-ring"></div>
+          <span>در حال اعمال تغییرات…</span>
         </div>
 
         <!-- دکمه نمایش نتایج -->
@@ -187,6 +195,8 @@ const {
   allWells, combinedResults, hasAnyFilter,
   getLayerConditions, addLayerCondition, removeLayerCondition, getLayerResultCount,
   radiusCenter, radiusKm,
+  committedRadiusCenter, committedRadiusKm,
+  spatialLoading, commitSpatialFilter,
   savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
   clearAllLocalData,
 } = useWellQuery()
@@ -421,7 +431,7 @@ const spatialGroupFields = computed(() =>
     .map(f => f.key)
 )
 const showRadiusOnMap = computed(() =>
-  queryKind.value === 'spatial' && radiusCenter.value !== null
+  queryKind.value === 'spatial' && committedRadiusCenter.value !== null
 )
 const mapLoading = computed(() => loadingFeatures.value || loadingFields.value)
 const displayColumns = computed(() => {
@@ -509,8 +519,13 @@ function onClearPoint() {
 function onClearSpatial() {
   customPoint.value = null
   radiusCenter.value = null
+  committedRadiusCenter.value = null
+  committedRadiusKm.value = 3
   isPickingPoint.value = false
   mapRef.value?.disablePointPicker()
+}
+async function onApplySpatial() {
+  await commitSpatialFilter()
 }
 // کلیک روی فضای خالی نقشه → حذف انتخاب (فقط در حالت توصیفی)
 function onMapEmptyClick() {
@@ -591,17 +606,29 @@ function handleClearData() {
   background: var(--bg-panel);
 }
 .map-loading-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 400;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  background: rgba(255, 255, 255, 0.72);
-  color: var(--text-secondary);
-  font-size: 12.5px;
-  font-weight: 600;
+   position: absolute;
+   inset: 0;
+   z-index: 400;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   gap: 10px;
+   background: rgba(255, 255, 255, 0.85);
+   color: var(--text-secondary);
+   font-size: 13px;
+   font-weight: 600;
+   backdrop-filter: blur(4px);
+}
+.spinner-ring {
+   width: 24px;
+   height: 24px;
+   border: 3px solid var(--border-subtle);
+   border-top-color: var(--brand);
+   border-radius: 50%;
+   animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+   to { transform: rotate(360deg); }
 }
 
 /* ---------- دکمه نتایج ---------- */
