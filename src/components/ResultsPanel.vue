@@ -38,10 +38,36 @@
             v-for="layer in layers"
             :key="layer.uuid"
             class="active-layer-item"
+            :class="{ 'active-layer-item--hidden': isLayerHidden(layer.uuid) }"
             @click="$emit('zoom-layer', layer.uuid)"
             title="برای زوم روی لایه کلیک کنید"
           >
             <div class="active-layer-info">
+              <button
+                class="layer-visibility-btn"
+                :class="{ 'is-off': isLayerHidden(layer.uuid) }"
+                @click.stop="$emit('toggle-layer-visibility', layer.uuid)"
+                :title="isLayerHidden(layer.uuid) ? 'نمایش لایه' : 'پنهان کردن لایه'"
+                :aria-pressed="!isLayerHidden(layer.uuid)"
+                aria-label="تغییر وضعیت نمایش لایه"
+              >
+                <svg
+                  v-if="!isLayerHidden(layer.uuid)"
+                  width="16" height="16" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                >
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+                <svg
+                  v-else
+                  width="16" height="16" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                >
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                  <line x1="1" y1="1" x2="23" y2="23"/>
+                </svg>
+              </button>
               <span class="active-layer-dot" :style="{ background: detailByUuid[layer.uuid]?.color ?? '#2a9d8f' }"></span>
               <span class="active-layer-name">{{ layer.display_name || layer.name }}</span>
             </div>
@@ -102,11 +128,16 @@ const props = defineProps({
   loadingLayers: { type: Boolean, default: false },
   summaries: { type: Array, default: () => [] },
   showSummary: { type: Boolean, default: false },
+  hiddenLayers: { type: Array, default: () => [] },
 })
-defineEmits(['toggle', 'open-modal', 'remove-layer', 'zoom-layer'])
+defineEmits(['toggle', 'open-modal', 'remove-layer', 'zoom-layer', 'toggle-layer-visibility'])
 
 const OP_SYMBOLS = { '=':'=', '!=':'≠', '>':'>', '>=':'≥', '<':'<', '<=':'≤', contains:'شامل' }
 function opSymbol(op) { return OP_SYMBOLS[op] ?? op }
+
+function isLayerHidden(uuid) {
+  return (props.hiddenLayers || []).includes(String(uuid))
+}
 
 const detailByUuid = computed(() => {
   const map = {}
@@ -204,6 +235,49 @@ const detailByUuid = computed(() => {
 }
 .active-layer-item:hover { border-color: var(--border-strong); background: var(--bg-hover); }
 .active-layer-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.layer-visibility-btn {
+  width: 24px; height: 24px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+  transition:
+    color 0.15s var(--ease-out),
+    background-color 0.15s var(--ease-out),
+    border-color 0.15s var(--ease-out);
+}
+.layer-visibility-btn:hover:not(.is-off) {
+  color: var(--brand);
+  background: var(--bg-panel);
+  border-color: var(--border-subtle);
+}
+.layer-visibility-btn.is-off {
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+.layer-visibility-btn.is-off:hover {
+  color: var(--brand-strong);
+  background: var(--bg-panel);
+  border-color: var(--border-subtle);
+  opacity: 1;
+}
+.active-layer-item--hidden {
+  opacity: 0.72;
+}
+.active-layer-item--hidden .active-layer-dot {
+  filter: grayscale(0.85);
+}
+.active-layer-item--hidden .active-layer-name {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+.active-layer-item--hidden:hover {
+  opacity: 0.9;
+}
 .active-layer-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 .active-layer-name {
   font-size: 12px; color: var(--text-primary);

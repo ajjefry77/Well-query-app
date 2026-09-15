@@ -99,10 +99,12 @@
         :loading-layers="loadingLayers"
         :summaries="layerQuerySummaries"
         :show-summary="queryKind === 'attribute' && hasActiveConditions"
+        :hidden-layers="hiddenLayerUuids"
         @toggle="toggleResultsPanel"
         @open-modal="openLayerModal"
         @remove-layer="onRemoveLayer"
         @zoom-layer="onZoomToLayer"
+        @toggle-layer-visibility="toggleLayerVisibility"
       />
 
       <!-- موبایل: نوار grab + تب‌های پنل پایین -->
@@ -174,6 +176,7 @@ const {
   loadingLayers, loadingFields, loadingFeatures, apiError,
   loadVectorLayers,
   removeLayer, setActiveLayers,
+  isLayerVisible, toggleLayerVisibility,
   allWells, combinedResults, hasAnyFilter,
   getLayerConditions, addLayerCondition, removeLayerCondition, getLayerResultCount,
   radiusCenter, radiusKm,
@@ -370,11 +373,21 @@ const layerDetails = computed(() => {
 })
 
 const layerQuerySummaries = computed(() =>
-  activeLayers.value.map(layer => layerDetails.value[layer.uuid])
+  activeLayers.value
+    .filter(layer => isLayerVisible(layer.uuid))
+    .map(layer => layerDetails.value[layer.uuid])
 )
 
 const hasActiveConditions = computed(() =>
-  activeLayers.value.some(layer => layerDetails.value[layer.uuid]?.activeConds.length > 0)
+  activeLayers.value.some(layer =>
+    isLayerVisible(layer.uuid) && layerDetails.value[layer.uuid]?.activeConds.length > 0
+  )
+)
+
+const hiddenLayerUuids = computed(() =>
+  activeLayers.value
+    .filter(layer => !isLayerVisible(layer.uuid))
+    .map(layer => String(layer.uuid))
 )
 
 // ── computed های نمایشی ──
@@ -405,12 +418,14 @@ const displayColumns = computed(() => {
 const displayRows = computed(() => combinedResults.value)
 const displayLayerMeta = computed(() => {
   if (queryKind.value !== 'attribute') return []
-  return activeLayers.value.map(layer => ({
-    uuid:   layer.uuid,
-    name:   layer.display_name || layer.name,
-    color:  layerColor(layer.uuid),
-    fields: layerFields(layer.uuid),
-  }))
+  return activeLayers.value
+    .filter(layer => isLayerVisible(layer.uuid))
+    .map(layer => ({
+      uuid:   layer.uuid,
+      name:   layer.display_name || layer.name,
+      color:  layerColor(layer.uuid),
+      fields: layerFields(layer.uuid),
+    }))
 })
 // کلید یکتا برای هر عارضه (شناسه‌ها ممکن است بین لایه‌ها تکراری باشند)
 function rowKey(r) {

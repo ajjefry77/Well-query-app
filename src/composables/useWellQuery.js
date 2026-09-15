@@ -79,6 +79,20 @@ export function useWellQuery() {
   const activeLayers   = ref([])
   const selectedLayer  = computed(() => activeLayers.value[0] ?? null)
 
+  // لایه‌هایی که کاربر با آیکون چشم پنهان کرده است (خارج از نقشه و نتایج، ولی همچنان در لیست)
+  const hiddenLayers = ref(new Set())
+  function isLayerVisible(uuid) {
+    return !hiddenLayers.value.has(String(uuid))
+  }
+  function toggleLayerVisibility(uuid) {
+    const key = String(uuid)
+    const hidden = new Set(hiddenLayers.value)
+    if (hidden.has(key)) hidden.delete(key)
+    else hidden.add(key)
+    hiddenLayers.value = hidden
+    rebuildAggregated()
+  }
+
   const layerFieldsMap   = ref({})
   const layerFeaturesMap = ref({})
 
@@ -141,6 +155,7 @@ export function useWellQuery() {
   function rebuildAggregated() {
     const combined = []
     for (const layer of activeLayers.value) {
+      if (!isLayerVisible(layer.uuid)) continue
       const rows = layerFeaturesMap.value[layer.uuid] ?? []
       combined.push(...rows)
     }
@@ -148,6 +163,7 @@ export function useWellQuery() {
 
     const fieldMap = {}
     for (const layer of activeLayers.value) {
+      if (!isLayerVisible(layer.uuid)) continue
       const fields = layerFieldsMap.value[layer.uuid] ?? []
       for (const f of fields) {
         if (!fieldMap[f.key]) fieldMap[f.key] = f
@@ -188,6 +204,9 @@ export function useWellQuery() {
     activeLayers.value = activeLayers.value.filter(l => l.uuid !== uuid)
     delete layerFeaturesMap.value[uuid]
     delete layerFieldsMap.value[uuid]
+    const hidden = new Set(hiddenLayers.value)
+    hidden.delete(String(uuid))
+    hiddenLayers.value = hidden
     rebuildAggregated()
     delete layerConditions.value[uuid]
   }
@@ -226,6 +245,9 @@ export function useWellQuery() {
     }
     const okLayers = layers.filter(l => !failed.has(l.uuid))
     activeLayers.value = okLayers
+    const stillActive = new Set(okLayers.map(l => String(l.uuid)))
+    const pruned = new Set([...hiddenLayers.value].filter(u => stillActive.has(u)))
+    hiddenLayers.value = pruned
     rebuildAggregated()
 
     for (const l of okLayers) ensureLayerConditions(l.uuid)
@@ -277,6 +299,7 @@ export function useWellQuery() {
   }
 
   function getLayerResultCount(uuid) {
+    if (!isLayerVisible(uuid)) return 0
     const rows = layerFeaturesMap.value[uuid] ?? []
     const conds = layerConditions.value[uuid] ?? []
     const active = conds.filter(c => c.value !== '' && c.value !== null && c.value !== undefined)
@@ -288,6 +311,7 @@ export function useWellQuery() {
     if (!activeLayers.value.length) return allFeatures.value
     const results = []
     for (const layer of activeLayers.value) {
+      if (!isLayerVisible(layer.uuid)) continue
       const rows  = layerFeaturesMap.value[layer.uuid] ?? []
       const conds = layerConditions.value[layer.uuid] ?? []
       const active = conds.filter(c => c.value !== '' && c.value !== null && c.value !== undefined)
@@ -395,6 +419,7 @@ export function useWellQuery() {
     // ریست state بدون reload
     savedQueries.value    = []
     activeLayers.value    = []
+    hiddenLayers.value    = new Set()
     layerFeaturesMap.value = {}
     layerFieldsMap.value = {}
     layerConditions.value = {}
@@ -410,6 +435,7 @@ export function useWellQuery() {
     loadingLayers, loadingFields, loadingFeatures, apiError,
     loadVectorLayers,
     addLayer, removeLayer, setActiveLayers,
+    isLayerVisible, toggleLayerVisibility,
     allWells: allFeatures,
     combinedResults, hasAnyFilter,
     getLayerConditions, addLayerCondition, removeLayerCondition, getLayerResultCount,
