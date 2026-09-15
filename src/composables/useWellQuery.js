@@ -152,6 +152,8 @@ export function useWellQuery() {
   }
 
   // ── بازسازی aggregated ──
+// لایه‌های غیرفعال (پنهان با چشم): از نقشه، نتایج و جستجوها حذف می‌شوند؛
+// تب آن‌ها هم از جدول نتایج کنار می‌رود. داده‌ها در حافظه محفوظ می‌ماند تا با فعال‌سازی برگردد.
   function rebuildAggregated() {
     const combined = []
     for (const layer of activeLayers.value) {

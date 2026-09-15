@@ -48,7 +48,7 @@
         @remove-condition="removeLayerCondition"
         @save-query="saveCurrentQuery"
         @update:spatial-mode="spatialMode = $event"
-        @update:radius-center="radiusCenter = $event"
+        @update:radius-center="onUpdateRadiusCenter"
         @update:radius-km="radiusKm = $event"
         @pick-point="onPickPoint"
         @clear-point="onClearPoint"
@@ -61,17 +61,19 @@
       <!-- نقشه + دکمه FAB نتایج -->
       <section class="map-panel">
         <component
-          :is="mapProvider === 'mapbox' ? MapboxMap : LeafletMap"
-          ref="mapRef"
-          :wells="allWells"
-          :highlighted-ids="highlightedIds"
-          :has-filter="hasAnyFilter"
-          :radius-center="showRadiusOnMap ? radiusCenter : null"
-          :radius-km="radiusKm"
-          :selected-id="selectedWellId"
-          :theme="theme"
-          @select-well="onSelectFromMap"
-        />
+           :is="mapProvider === 'mapbox' ? MapboxMap : LeafletMap"
+           ref="mapRef"
+           :wells="visibleWells"
+           :wells-key="visibleWellsKey"
+           :highlighted-ids="highlightedIds"
+           :has-filter="hasAnyFilter"
+           :radius-center="showRadiusOnMap ? radiusCenter : null"
+           :radius-km="radiusKm"
+            :selected-id="selectedWellId"
+            :theme="theme"
+            @select-well="onSelectFromMap"
+            @map-empty-click="onMapEmptyClick"
+          />
 
         <!-- لودینگ افزودن لایه تا آماده‌شدن نقشه -->
         <div v-if="mapLoading" class="map-loading-overlay">
@@ -98,13 +100,18 @@
         :layers="activeLayers"
         :loading-layers="loadingLayers"
         :summaries="layerQuerySummaries"
-        :show-summary="queryKind === 'attribute' && hasActiveConditions"
+        :show-summary="hasActiveConditions || hasSpatialFilter"
         :hidden-layers="hiddenLayerUuids"
+        :spatial-active="hasSpatialFilter"
+        :spatial-label="spatialSummaryLabel"
+        :spatial-radius="spatialSummaryRadius"
         @toggle="toggleResultsPanel"
         @open-modal="openLayerModal"
         @remove-layer="onRemoveLayer"
         @zoom-layer="onZoomToLayer"
         @toggle-layer-visibility="toggleLayerVisibility"
+        @remove-condition="removeLayerCondition"
+        @clear-spatial="onClearSpatial"
       />
 
       <!-- موبایل: نوار grab + تب‌های پنل پایین -->
@@ -201,7 +208,7 @@ function viewFromUrl() {
 }
 
 const queryKind        = ref(viewFromUrl())
-const spatialMode      = ref('radius')
+const spatialMode      = ref('map')
 // پیش‌فرض: Mapbox (درخواست کاربر) — چانک سنگین آن جداست و First Paint بلاک نمی‌شود
 const mapProvider      = ref('mapbox')
 const mapRef           = shallowRef(null)
@@ -384,6 +391,23 @@ const hasActiveConditions = computed(() =>
   )
 )
 
+// ── کوئری مکانی فعال + خلاصه آن برای پنل «شرط‌های فعال» ──
+const hasSpatialFilter = computed(() => radiusCenter.value !== null)
+const spatialSummaryRadius = computed(() =>
+  Number.isFinite(+radiusKm.value) ? Math.round(+radiusKm.value * 10) / 10 : 0
+)
+const spatialSummaryLabel = computed(() => {
+  const c = radiusCenter.value
+  if (!c) return ''
+  if (c.id != null) {
+    const layerName = c._layerName ?? activeLayers.value.find(l => String(l.uuid) === String(c._layerUuid))?.display_name ?? ''
+    return layerName ? `عارضه #${c.id} (${layerName})` : `عارضه #${c.id}`
+  }
+  if (Number.isFinite(+c.lat) && Number.isFinite(+c.lng))
+    return `نقطه دلخواه (${(+c.lat).toFixed(4)}، ${(+c.lng).toFixed(4)})`
+  return 'مرکز نامشخص'
+})
+
 const hiddenLayerUuids = computed(() =>
   activeLayers.value
     .filter(layer => !isLayerVisible(layer.uuid))
@@ -397,7 +421,7 @@ const spatialGroupFields = computed(() =>
     .map(f => f.key)
 )
 const showRadiusOnMap = computed(() =>
-  queryKind.value === 'spatial' && (spatialMode.value === 'radius' || spatialMode.value === 'point')
+  queryKind.value === 'spatial' && radiusCenter.value !== null
 )
 const mapLoading = computed(() => loadingFeatures.value || loadingFields.value)
 const displayColumns = computed(() => {
@@ -416,9 +440,8 @@ const displayColumns = computed(() => {
   ]
 })
 const displayRows = computed(() => combinedResults.value)
-const displayLayerMeta = computed(() => {
-  if (queryKind.value !== 'attribute') return []
-  return activeLayers.value
+const displayLayerMeta = computed(() =>
+  activeLayers.value
     .filter(layer => isLayerVisible(layer.uuid))
     .map(layer => ({
       uuid:   layer.uuid,
@@ -426,7 +449,7 @@ const displayLayerMeta = computed(() => {
       color:  layerColor(layer.uuid),
       fields: layerFields(layer.uuid),
     }))
-})
+)
 // کلید یکتا برای هر عارضه (شناسه‌ها ممکن است بین لایه‌ها تکراری باشند)
 function rowKey(r) {
   if (!r) return ''
@@ -435,6 +458,16 @@ function rowKey(r) {
 // سقف ارسال به نقشه برای جلوگیری از فریز روی 100k سطر (کمتر = سریع‌تر روی سیستم ضعیف)
 const MAX_HIGHLIGHT = 2000
 const highlightedIds = computed(() => combinedResults.value.slice(0, MAX_HIGHLIGHT).map(rowKey))
+
+// لایه‌های مخفی (با آیکون چشم) از روی نقشه حذف می‌شوند؛ ولی داده‌های آن‌ها در نتایج/جدول باقی می‌ماند
+const visibleWells = computed(() =>
+  allWells.value.filter(w => isLayerVisible(w._layerUuid))
+)
+
+// کلید تغییرناپذیر لایه‌های visible — فقط وقتی تغییر می‌کند ریندر نقشه觸مین‌شود
+const visibleWellsKey = computed(() =>
+  visibleWells.value.map(w => w._layerUuid + ':' + w.id).sort().join('|')
+)
 
 // ── handlers ──
 function onRemoveLayer(uuid) {
@@ -454,11 +487,18 @@ async function onLoadQuery(q) {
 }
 function onPickPoint() {
   isPickingPoint.value = true
+  // حالت هوشمند: فضای خالی → نقطه دلخواه، عارضه → همان عارضه
+  spatialMode.value = 'map'
   mapRef.value?.enablePointPicker(point => {
     customPoint.value = point
     isPickingPoint.value = false
     radiusCenter.value = point
   })
+}
+// مرکز مکانی از لیست یا نقشه (غیر پیکر): انتخاب عارضه نقطه دلخواه قبلی را پاک می‌کند
+function onUpdateRadiusCenter(v) {
+  radiusCenter.value = v
+  if (v && v.id != null) customPoint.value = null
 }
 function onClearPoint() {
   customPoint.value = null
@@ -472,11 +512,25 @@ function onClearSpatial() {
   isPickingPoint.value = false
   mapRef.value?.disablePointPicker()
 }
+// کلیک روی فضای خالی نقشه → حذف انتخاب (فقط در حالت توصیفی)
+function onMapEmptyClick() {
+  if (queryKind.value !== 'attribute') return
+  activeWellId.value = null
+  selectedWellId.value = null
+}
 function onSelectFromMap(well) {
   activeWellId.value = rowKey(well)
   selectedWellId.value = rowKey(well)
-  if (queryKind.value === 'spatial' && spatialMode.value === 'radius') {
+  if (isPickingPoint.value) {
+    // در حالت انتخاب از نقشه: کلیک روی عارضه همان عارضه را مرکز می‌کند
     radiusCenter.value = well
+    customPoint.value = null
+    isPickingPoint.value = false
+    mapRef.value?.disablePointPicker()
+  } else if (queryKind.value === 'spatial') {
+    // راحتی: کلیک عادی روی عارضه در تب مکانی هم آن را مرکز می‌کند
+    radiusCenter.value = well
+    customPoint.value = null
   }
   mapRef.value?.zoomToFeature(rowKey(well))
 }

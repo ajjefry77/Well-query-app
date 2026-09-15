@@ -1,7 +1,7 @@
 <template>
-  <div class="rt" :class="{ 'rt--single': !isMulti, 'rt--multi': isMulti }">
-    <!-- تب‌های لایه‌ها (فقط در حالت چندلایه) -->
-    <div v-if="isMulti" class="rt__tabs" role="tablist" aria-label="لایه‌ها">
+  <div class="rt" :class="{ 'rt--single': !hasTabs, 'rt--multi': hasTabs }">
+    <!-- تب‌های لایه‌ها (برای هر لایه فعال یک تب) -->
+    <div v-if="hasTabs" class="rt__tabs" role="tablist" aria-label="لایه‌ها">
       <button
         v-for="g in layerGroups"
         :key="g.uuid"
@@ -140,19 +140,21 @@ const layerGroups = computed(() => {
   if (!props.layerMeta.length) return []
   return props.layerMeta.map((meta, idx) => {
     const layerRows = props.rows.filter(r => r._layerUuid === meta.uuid)
-    const layerCols = [
-      { key: 'id', label: 'شناسه', mono: true },
-      ...(meta.fields ?? []).map(f => ({ key: f.key, label: f.label })),
-    ]
+    const cols = [{ key: 'id', label: 'شناسه', mono: true }]
+    if (layerRows.some(r => 'distanceKm' in r)) {
+      cols.push({ key: 'distanceKm', label: 'فاصله (km)', mono: false })
+    }
+    cols.push(...(meta.fields ?? []).map(f => ({ key: f.key, label: f.label })))
     return {
       uuid:    meta.uuid,
       name:    meta.name,
       color:   meta.color ?? layerColor(meta.uuid, idx),
       rows:    layerRows,
-      columns: layerCols,
+      columns: cols,
     }
   })
 })
+const hasTabs = computed(() => layerGroups.value.length > 0)
 const isMulti = computed(() => layerGroups.value.length > 1)
 
 const activeGroup = computed(() =>

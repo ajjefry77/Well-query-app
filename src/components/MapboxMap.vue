@@ -179,6 +179,7 @@ function turfAreaLite(f) {
 
 const props = defineProps({
   wells: { type: Array, required: true },
+  wellsKey: { type: String, default: '' },
   highlightedIds: { type: Array, default: () => [] },
   hasFilter: { type: Boolean, default: false },
   radiusCenter: { type: Object, default: null },
@@ -186,7 +187,7 @@ const props = defineProps({
   selectedId: { type: [String, Number], default: null },
   theme: { type: String, default: "light" },
 });
-const emit = defineEmits(["select-well"]);
+const emit = defineEmits(["select-well", "map-empty-click"]);
 
 const mapEl = ref(null);
 const panelOpen = ref(false);
@@ -200,6 +201,50 @@ let draw = null;
 let markers = [];
 let labelMarkers = [];
 let wellsGeoJSON = null;
+
+// ─── حالت انتخاب هوشمند نقطه مرکزی ───
+// فضای خالی → نقطه دلخواه، کلیک روی عارضه → همان عارضه
+let picking = false;
+let pickerCb = null;
+
+// ─── RAF batching برای عملکرد بهتر ───
+let renderRaf = null;
+let highlightRaf = null;
+let pendingWells = false;
+let pendingHighlight = false;
+let firstRender = true;
+let lastWellsKey = '';
+
+function scheduleRender() {
+  const key = props.wellsKey;
+  if (key === lastWellsKey && !firstRender) return;
+  lastWellsKey = key;
+  pendingWells = true;
+  if (!renderRaf) {
+    renderRaf = requestAnimationFrame(() => {
+      renderRaf = null;
+      if (pendingWells) {
+        pendingWells = false;
+        const doFit = firstRender;
+        firstRender = false;
+        renderMarkers(doFit);
+      }
+    });
+  }
+}
+
+function scheduleHighlight() {
+  pendingHighlight = true;
+  if (!highlightRaf) {
+    highlightRaf = requestAnimationFrame(() => {
+      highlightRaf = null;
+      if (pendingHighlight) {
+        pendingHighlight = false;
+        updateHighlightData();
+      }
+    });
+  }
+}
 
 const LIGHT_STYLE = "mapbox://styles/aseman1005/ckgamsxfo131a1arvafwa8e5n";
 const DARK_STYLE = "mapbox://styles/mapbox/dark-v11";
@@ -669,6 +714,8 @@ function bindWellEventsOnce() {
     (layerId) => {
       map.on("click", layerId, (e) => {
         if (activeMode.value) return;
+        // در حالت انتخاب هوشمند، هندلر کلیک نقشه تصمیم می‌گیرد (جلوگیری از دابل‌فایر)
+        if (picking) return;
         const fp = e.features[0].properties;
         const fpKey = wellKey({ properties: fp, id: fp.id });
         const well = props.wells.find((w) => wellKey(w) === fpKey)
@@ -1002,6 +1049,10 @@ function renderMarkers(fit = true) {
           e.stopPropagation();
           return;
         }
+        // در حالت انتخاب هوشمند از پیکر نقشه استفاده می‌شود؛ جلوی دابل‌فایر گرفته شود
+        if (picking) {
+          e.stopPropagation();
+        }
         emit("select-well", w);
       });
       markers.push(
@@ -1067,6 +1118,19 @@ onMounted(async () => {
     fadeDuration: weak ? 0 : 300,
   });
   map.addControl(new mapboxgl.NavigationControl(), "bottom-left");
+  // کلیک روی فضای خالی → deselect عارضه (فقط وقتی به عارضه/شکل رسم‌شده نخورده)
+  map.on("click", (e) => {
+    if (picking) return;
+    try {
+      const layerIds = [
+        "wells-fill", "wells-line", "wells-polyline", "wells-point",
+        "drawn-polygon-fill", "drawn-polygon-stroke", "drawn-line", "drawn-point",
+      ].filter((id) => map.getLayer(id));
+      const feats = layerIds.length ? map.queryRenderedFeatures(e.point, { layers: layerIds }) : [];
+      if (feats && feats.length) return;
+    } catch {}
+    emit("map-empty-click");
+  });
   map.on("load", () => {
     initDrawnSource();
     map.on("mousemove", onMouseMove);
@@ -1080,14 +1144,13 @@ onBeforeUnmount(() => {
   if (map) map.remove();
 });
 
-watch(() => props.wells, () => renderMarkers(true));
+watch(() => props.wells, scheduleRender);
 
 // وقتی فقط highlight یا filter عوض شد، فقط data رو آپدیت کن (سریع‌تر از renderMarkers کامل)
 function updateHighlightData() {
   if (!map || !map.isStyleLoaded()) return;
   if (!wellsGeoJSON || !map.getSource("wells-src")) {
-    // اگه source نیست (مثلاً marker-based)، کامل render کن ولی بدون fit تا نقشه نپرد
-    renderMarkers(false);
+    scheduleRender();
     return;
   }
   const highlightSet = new Set((props.highlightedIds || []).map(String));
@@ -1107,13 +1170,11 @@ function updateHighlightData() {
   map.getSource("wells-src").setData(wellsGeoJSON);
 }
 
-watch(() => props.highlightedIds, updateHighlightData);
-watch(() => props.hasFilter, updateHighlightData);
-watch(() => props.selectedId, updateHighlightData);
+watch(() => props.highlightedIds, scheduleHighlight);
+watch(() => props.hasFilter, scheduleHighlight);
+watch(() => props.selectedId, scheduleHighlight);
 // عارضه مرجع (قرمز) با تغییر انتخاب به‌روز می‌شود
-watch(() => props.radiusCenter, () => {
-  updateHighlightData();
-});
+watch(() => props.radiusCenter, scheduleHighlight);
 
 // ─── تعویض تم نقشه (روشن ↔ تیره) ──────────────────────────
 function applyMapTheme(t) {
@@ -1206,18 +1267,37 @@ defineExpose({
   },
   enablePointPicker(callback) {
     if (!map) return;
+    // بدون مخفی‌کردن لایه‌ها: اول بررسی می‌شود کلیک روی عارضه بوده یا فضای خالی
+    picking = true;
+    pickerCb = callback;
     map.getCanvas().style.cursor = "crosshair";
-    const wl = ["wells-fill", "wells-line", "wells-polyline", "wells-point"];
-    wl.forEach((id) => {
-      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "none");
-    });
+    if (map._pickerHandler) {
+      map.off("click", map._pickerHandler);
+      map._pickerHandler = null;
+    }
     const handler = (e) => {
-      wl.forEach((id) => {
-        if (map.getLayer(id))
-          map.setLayoutProperty(id, "visibility", "visible");
-      });
+      if (!picking) return;
+      let well = null;
+      try {
+        const layerIds = ["wells-fill", "wells-line", "wells-polyline", "wells-point"]
+          .filter((id) => map.getLayer(id));
+        const feats = layerIds.length ? map.queryRenderedFeatures(e.point, { layers: layerIds }) : [];
+        if (feats && feats.length) {
+          const fp = feats[0].properties || {};
+          const fpKey = wellKey({ properties: fp, id: fp.id });
+          well = props.wells.find((w) => wellKey(w) === fpKey)
+            ?? props.wells.find((w) => String(w.id) === String(fp.id));
+        }
+      } catch {}
+      picking = false;
       map.getCanvas().style.cursor = "";
       map.off("click", handler);
+      map._pickerHandler = null;
+      if (well) {
+        pickerCb = null;
+        emit("select-well", well);
+        return;
+      }
       if (map._pickerMarker) map._pickerMarker.remove();
       const el = document.createElement("div");
       el.style.cssText =
@@ -1225,12 +1305,16 @@ defineExpose({
       map._pickerMarker = new mapboxgl.Marker(el)
         .setLngLat(e.lngLat)
         .addTo(map);
-      callback({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+      const cb = pickerCb;
+      pickerCb = null;
+      cb({ lat: e.lngLat.lat, lng: e.lngLat.lng });
     };
     map.on("click", handler);
     map._pickerHandler = handler;
   },
   disablePointPicker() {
+    picking = false;
+    pickerCb = null;
     if (!map) return;
     map.getCanvas().style.cursor = "";
     if (map._pickerHandler) {
@@ -1241,12 +1325,6 @@ defineExpose({
       map._pickerMarker.remove();
       map._pickerMarker = null;
     }
-    ["wells-fill", "wells-line", "wells-polyline", "wells-point"].forEach(
-      (id) => {
-        if (map.getLayer(id))
-          map.setLayoutProperty(id, "visibility", "visible");
-      },
-    );
   },
 });
 </script>

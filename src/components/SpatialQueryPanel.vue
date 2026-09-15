@@ -1,131 +1,127 @@
 <template>
   <div class="sq">
+    <!-- دراپ‌داون انتخاب لایه (مثل کوئری توصیفی) -->
+    <div class="layer-dropdown-wrap">
+      <label class="layer-dropdown-label">لایه فعال</label>
+      <div class="layer-dropdown-select-wrap">
+        <span class="layer-dropdown-dot" :style="{ background: activeLayerColor }"></span>
+        <AppSelect
+          class="layer-dropdown-select"
+          :model-value="activeLayer"
+          :options="layerOptions"
+          placeholder="انتخاب لایه…"
+          @update:model-value="$emit('update:active-layer', $event)"
+        />
+      </div>
+    </div>
+
+    <!-- حالت انتخاب مرکز: از روی نقشه یا از لیست عارضه‌ها -->
     <div class="sq__tabs">
       <button
         class="sq__tab"
-        :class="{ 'sq__tab--active': mode === 'radius' }"
-        @click="$emit('update:mode', 'radius')"
+        :class="{ 'sq__tab--active': mode === 'map' }"
+        @click="$emit('update:mode', 'map')"
       >
-        فاصله از عارضه
+        انتخاب از روی نقشه
       </button>
       <button
         class="sq__tab"
-        :class="{ 'sq__tab--active': mode === 'point' }"
-        @click="$emit('update:mode', 'point')"
+        :class="{ 'sq__tab--active': mode === 'list' }"
+        @click="$emit('update:mode', 'list')"
       >
-        فاصله از نقطه دلخواه
+        انتخاب از لیست عارضه‌ها
       </button>
     </div>
 
-    <!-- حالت: فاصله از عارضه -->
     <Transition name="sq-slide" mode="out-in">
-      <div v-if="mode === 'radius'" key="radius" class="sq__panel">
+      <!-- حالت: انتخاب از لیست -->
+      <div v-if="mode === 'list'" key="list" class="sq__panel">
         <p class="sq__hint">
-          یک عارضه را به‌عنوان مرکز انتخاب کنید و شعاع جستجو را تنظیم نمایید
+          یک عارضه از لایه فعال را به‌عنوان مرکز انتخاب کنید و شعاع جستجو را تنظیم نمایید
         </p>
 
-      <div class="field-group">
-        <label>عارضه مرجع</label>
-        <AppSelect
-          class="qb-select qb-select--full"
-          :model-value="radiusCenter?.id || ''"
-          :options="centerOptions"
-          placeholder="یک عارضه انتخاب کنید…"
-          @update:model-value="onCenterChange"
-        />
-      </div>
-
-      <div class="field-group">
-        <label>شعاع جستجو: <span class="mono accent">{{ displayRadius }} کیلومتر</span></label>
-        <div class="radius-control">
-          <input
-            type="range"
-            :min="sliderCfg.min"
-            :max="sliderCfg.max"
-            :step="sliderCfg.step"
-            :value="Math.min(displayRadius, sliderCfg.max)"
-            @input="onSliderRadius($event)"
-            class="slider"
+        <div class="field-group">
+          <label>عارضه مرجع</label>
+          <AppSelect
+            class="qb-select qb-select--full"
+            :model-value="radiusCenter?.id != null && !isCustomPoint ? String(radiusCenter.id) : ''"
+            :options="centerOptions"
+            placeholder="یک عارضه انتخاب کنید…"
+            @update:model-value="onCenterChange"
           />
-          <input
-            type="number"
-            :min="numberCfg.min"
-            :step="numberCfg.step"
-            :value="displayRadius"
-            @input="onManualRadius($event)"
-            class="radius-input"
-            aria-label="شعاع جستجو (کیلومتر)"
-          />
-          <span class="radius-unit">کیلومتر</span>
         </div>
-        <p class="sq__hint sq__hint--tiny">اسلایدر تا {{ sliderCfg.max }} کیلومتر است؛ برای مقادیر بزرگ‌تر عدد را دستی وارد کنید (بدون سقف).</p>
-      </div>
 
-      <div class="sq__info mono" v-if="radiusCenter">
-        <span class="sq__center-id">#{{ radiusCenter.id }}</span><template v-if="centerLabel"> — {{ centerLabel }}</template><br />
-        مرکز: {{ centerLatLng?.lat?.toFixed(5) }},
-        {{ centerLatLng?.lng?.toFixed(5) }}
-      </div>
-      </div>
-    <!-- حالت: فاصله از نقطه دلخواه -->
-    <div v-else key="point" class="sq__panel">
-      <p class="sq__hint">
-        روی نقشه کلیک کنید تا نقطه مرکزی مشخص شود، سپس شعاع جستجو را تنظیم
-        نمایید
-      </p>
-
-      <div class="field-group">
-        <label>نقطه مرکزی</label>
-        <button
-          class="btn-pick"
-          :class="{ 'btn-pick--active': isPicking }"
-          @click="$emit('pick-point')"
-        >
-          {{
-            isPicking
-              ? "در انتظار کلیک روی نقشه…"
-              : customPoint
-                ? "تغییر نقطه مرکزی"
-                : "انتخاب نقطه از نقشه"
-          }}
-        </button>
-
-        <div v-if="customPoint" class="point-info">
-          <span class="mono">
-            {{ customPoint.lat.toFixed(5) }},
-            {{ customPoint.lng.toFixed(5) }}
-          </span>
-          <button class="btn-clear-point" @click="$emit('clear-point')">حذف</button>
+        <div class="sq__info mono" v-if="radiusCenter && !isCustomPoint && radiusCenter.id != null">
+          <span class="sq__center-id">#{{ radiusCenter.id }}</span><template v-if="centerLabel"> — {{ centerLabel }}</template><br />
+          مرکز: {{ centerLatLng?.lat?.toFixed(5) }},
+          {{ centerLatLng?.lng?.toFixed(5) }}
         </div>
       </div>
+      <!-- حالت: انتخاب از روی نقشه -->
+      <div v-else key="map" class="sq__panel">
+        <p class="sq__hint">
+          روی نقشه کلیک کنید؛ اگر روی فضای خالی بزنید نقطه دلخواه و اگر روی یک عارضه بزنید همان عارضه به‌عنوان مرکز انتخاب می‌شود
+        </p>
 
-      <div class="field-group">
-        <label>شعاع جستجو: <span class="mono accent">{{ displayRadius }} کیلومتر</span></label>
-        <div class="radius-control">
-          <input
-            type="range"
-            :min="sliderCfg.min"
-            :max="sliderCfg.max"
-            :step="sliderCfg.step"
-            :value="Math.min(displayRadius, sliderCfg.max)"
-            @input="onSliderRadius($event)"
-            class="slider"
-          />
-          <input
-            type="number"
-            :min="numberCfg.min"
-            :step="numberCfg.step"
-            :value="displayRadius"
-            @input="onManualRadius($event)"
-            class="radius-input"
-            aria-label="شعاع جستجو (کیلومتر)"
-          />
-          <span class="radius-unit">کیلومتر</span>
+        <div class="field-group">
+          <label>نقطه مرکزی</label>
+          <button
+            class="btn-pick"
+            :class="{ 'btn-pick--active': isPicking }"
+            @click="$emit('pick-point')"
+          >
+            {{
+              isPicking
+                ? "در انتظار کلیک روی نقشه…"
+                : hasCenter
+                  ? "تغییر نقطه مرکزی"
+                  : "انتخاب نقطه از نقشه"
+            }}
+          </button>
+
+          <div v-if="customPoint" class="point-info">
+            <span class="mono">
+              {{ customPoint.lat.toFixed(5) }},
+              {{ customPoint.lng.toFixed(5) }}
+            </span>
+            <button class="btn-clear-point" @click="$emit('clear-point')">حذف</button>
+          </div>
+          <div v-else-if="radiusCenter && radiusCenter.id != null" class="point-info">
+            <span class="mono">
+              عارضه #{{ radiusCenter.id }}<template v-if="centerLabel"> — {{ centerLabel }}</template>
+            </span>
+            <button class="btn-clear-point" @click="$emit('clear-point')">حذف</button>
+          </div>
         </div>
-        <p class="sq__hint sq__hint--tiny">اسلایدر تا {{ sliderCfg.max }} کیلومتر است؛ برای مقادیر بزرگ‌تر عدد را دستی وارد کنید (بدون سقف).</p>
-      </div>
       </div>
     </Transition>
+
+    <!-- شعاع جستجو (مشترک) -->
+    <div class="field-group">
+      <label>شعاع جستجو: <span class="mono accent">{{ displayRadius }} کیلومتر</span></label>
+      <div class="radius-control">
+        <input
+          type="range"
+          :min="sliderCfg.min"
+          :max="sliderCfg.max"
+          :step="sliderCfg.step"
+          :value="Math.min(displayRadius, sliderCfg.max)"
+          @input="onSliderRadius($event)"
+          class="slider"
+        />
+        <input
+          type="number"
+          :min="numberCfg.min"
+          :step="numberCfg.step"
+          :value="displayRadius"
+          @input="onManualRadius($event)"
+          class="radius-input"
+          aria-label="شعاع جستجو (کیلومتر)"
+        />
+        <span class="radius-unit">کیلومتر</span>
+      </div>
+      <p class="sq__hint sq__hint--tiny">اسلایدر تا {{ sliderCfg.max }} کیلومتر است؛ برای مقادیر بزرگ‌تر عدد را دستی وارد کنید (بدون سقف).</p>
+    </div>
 
     <button
       v-if="radiusCenter || customPoint"
@@ -144,6 +140,9 @@ import AppSelect from "./AppSelect.vue";
 const props = defineProps({
   mode: { type: String, required: true },
   wells: { type: Array, required: true },
+  layers: { type: Array, default: () => [] },
+  activeLayer: { type: String, default: null },
+  activeLayerColor: { type: String, default: "#2a9d8f" },
   radiusCenter: { type: Object, default: null },
   radiusKm: { type: Number, required: true },
   // نگهداشته‌شده برای سازگاری با نسخه‌های قدیمی؛ دیگر استفاده نمی‌شود (فقط کیلومتر)
@@ -155,6 +154,7 @@ const props = defineProps({
 
 const emit = defineEmits([
   "update:mode",
+  "update:active-layer",
   "update:radius-center",
   "update:radius-km",
   "update:radius-unit",
@@ -163,13 +163,36 @@ const emit = defineEmits([
   "clear-spatial",
 ]);
 
+const layerOptions = computed(() =>
+  props.layers.map((layer) => ({
+    value: layer.uuid,
+    label: layer.display_name || layer.name,
+  })),
+);
+
+// عارضه‌های لایه فعال (فیلتر برای لیست) — اگر لایه‌ای انتخاب نشده همه
+const scopedWells = computed(() => {
+  if (!props.activeLayer) return props.wells;
+  return props.wells.filter((w) => String(w._layerUuid) === String(props.activeLayer));
+});
+
 const wellsWithCoords = computed(() =>
-  props.wells.filter((w) => Number.isFinite(+w.lat) && Number.isFinite(+w.lng)),
+  scopedWells.value.filter((w) => Number.isFinite(+w.lat) && Number.isFinite(+w.lng)),
 );
 
 const firstLabelField = computed(() =>
   props.fields.length ? props.fields[0] : null,
 );
+
+// نقطه دلخواه = مرکزی که شناسه عارضه ندارد ولی مختصات دارد
+const isCustomPoint = computed(() => {
+  const c = props.radiusCenter;
+  if (!c) return false;
+  if (c.id != null) return false;
+  return Number.isFinite(+c.lat) && Number.isFinite(+c.lng);
+});
+
+const hasCenter = computed(() => !!(props.radiusCenter || props.customPoint));
 
 const centerLatLng = computed(() => {
   const c = props.radiusCenter;
@@ -187,7 +210,7 @@ const centerLabel = computed(() => {
 
 const centerOptions = computed(() =>
   wellsWithCoords.value.map((w) => ({
-    value: w.id,
+    value: String(w.id),
     label: firstLabelField.value
       ? `#${w.id} — ${w[firstLabelField.value]}`
       : `#${w.id}`,
@@ -195,7 +218,7 @@ const centerOptions = computed(() =>
 );
 
 function onCenterChange(id) {
-  const well = props.wells.find((w) => String(w.id) === String(id));
+  const well = scopedWells.value.find((w) => String(w.id) === String(id));
   emit("update:radius-center", well || null);
 }
 
@@ -229,6 +252,19 @@ const numberCfg = { min: 0.1, step: 0.1 };
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+.layer-dropdown-wrap { display: flex; flex-direction: column; gap: 5px; }
+.layer-dropdown-label {
+  font-size: 11px; font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+.layer-dropdown-select-wrap {
+  display: flex; align-items: center; gap: 8px;
+}
+.layer-dropdown-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.layer-dropdown-select {
+  flex: 1; min-width: 0;
 }
 .sq__tabs {
   display: flex;

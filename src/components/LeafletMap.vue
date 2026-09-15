@@ -15,6 +15,7 @@ import { toGeoJSON } from "../composables/useGeoUtils.js";
 
 const props = defineProps({
   wells: { type: Array, required: true },
+  wellsKey: { type: String, default: '' },
   highlightedIds: { type: Array, default: () => [] },
   hasFilter: { type: Boolean, default: false },
   radiusCenter: { type: Object, default: null },
@@ -22,12 +23,66 @@ const props = defineProps({
   selectedId: { type: [String, Number], default: null },
   theme: { type: String, default: "light" },
 });
-const emit = defineEmits(["select-well"]);
+const emit = defineEmits(["select-well", "map-empty-click"]);
 
 const mapEl = ref(null);
 let map = null;
 let geoLayer = null;
 const featureRefs = new Map();
+
+// ─── ریندر با RAF batching برای جلوگیری از lag ───
+let renderRaf = null;
+let highlightRaf = null;
+let pendingWells = false;
+let pendingHighlight = false;
+
+let firstRender = true;
+let lastWellsKey = '';
+
+function scheduleRender() {
+  const key = props.wellsKey;
+  if (key === lastWellsKey && !firstRender) return;
+  lastWellsKey = key;
+  pendingWells = true;
+  if (!renderRaf) {
+    renderRaf = requestAnimationFrame(() => {
+      renderRaf = null;
+      if (pendingWells) {
+        pendingWells = false;
+        const doFit = firstRender;
+        firstRender = false;
+        renderFeatures(doFit);
+      }
+    });
+  }
+}
+
+function scheduleHighlight() {
+  pendingHighlight = true;
+  if (!highlightRaf) {
+    highlightRaf = requestAnimationFrame(() => {
+      highlightRaf = null;
+      if (pendingHighlight) {
+        pendingHighlight = false;
+        updateHighlightStyles();
+      }
+    });
+  }
+}
+
+// ─── حالت انتخاب هوشمند نقطه مرکزی ───
+// فضای خالی → نقطه دلخواه، کلیک روی عارضه → همان عارضه
+let picking = false;
+let pickerCb = null;
+let pickerMarker = null;
+let mapClickHandler = null;
+
+function pickFeature(e, well) {
+  // همیشه propagation را متوقف کن تا کلیک عارضه به نقشه نرسد و deselect نشود
+  try { L.DomEvent.stopPropagation(e); } catch {}
+  try { L.DomEvent.preventDefault(e); } catch {}
+  emit("select-well", well);
+}
 
 // ─── تعویض تم نقشه (روشن ↔ تیره) ──────────────────────────
 const DARK_TILE_KEY = "تیره";
@@ -221,7 +276,7 @@ function renderFeatures(fit = true) {
           </div>
         `);
 
-        layer.on("click", () => emit("select-well", well));
+        layer.on("click", (e) => pickFeature(e, well));
         const wkey = wellKey(well);
         featureRefs.set(wkey, layer);
         featureRefs.set(String(well.id), layer);
@@ -258,7 +313,7 @@ function renderFeatures(fit = true) {
         opacity: (isSel || isCenter || matched) ? 1 : (dimmed ? 0.35 : 1),
       });
       marker._wellId = key;
-      marker.on("click", () => emit("select-well", w));
+      marker.on("click", (e) => pickFeature(e, w));
       marker.addTo(geoLayer);
       featureRefs.set(key, marker);
       featureRefs.set(String(w.id), marker);
@@ -299,7 +354,7 @@ function addCoordMarkers(highlightSet, centerKey, selectedKey) {
         opacity: (isSel || isCenter || matched) ? 1 : (dimmed ? 0.35 : 1),
       });
       marker._wellId = key;
-      marker.on("click", () => emit("select-well", w));
+      marker.on("click", (e) => pickFeature(e, w));
       marker.addTo(geoLayer);
       featureRefs.set(key, marker);
       featureRefs.set(String(w.id), marker);
@@ -345,6 +400,12 @@ onMounted(() => {
     if (LIGHT_TILE_KEYS.includes(e.name)) lastLightTile = e.name;
   });
   syncTheme();
+
+  // کلیک روی فضای خالی نقشه → deselect عارضه (در حالت پیکر نقشی ندارد)
+  map.on("click", () => {
+    if (picking) return;
+    emit("map-empty-click");
+  });
 
   L.control.zoom({ position: "bottomleft" }).addTo(map);
 
@@ -405,7 +466,6 @@ function updateHighlightStyles() {
   const selectedKey = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null
 
   geoLayer.eachLayer(layer => {
-    // لایه GeoJSON یک گروه است؛ استایل باید روی فرزندها اعمال شود
     if (typeof layer.eachLayer === "function" && !layer.feature && layer._wellId === undefined) {
       layer.eachLayer(child => styleSingleLayer(child, highlightSet, centerKey, selectedKey));
     } else {
@@ -414,11 +474,11 @@ function updateHighlightStyles() {
   })
 }
 
-watch(() => props.wells, () => renderFeatures(true));
-watch(() => props.highlightedIds, updateHighlightStyles);
-watch(() => props.hasFilter, updateHighlightStyles);
-watch(() => props.radiusCenter, updateHighlightStyles);
-watch(() => props.selectedId, updateHighlightStyles);
+watch(() => props.wells, scheduleRender);
+watch(() => props.highlightedIds, scheduleHighlight);
+watch(() => props.hasFilter, scheduleHighlight);
+watch(() => props.radiusCenter, scheduleHighlight);
+watch(() => props.selectedId, scheduleHighlight);
 
 defineExpose({
   flyTo(lat, lng, zoom = 13) {
@@ -488,22 +548,21 @@ defineExpose({
   },
   enablePointPicker(callback) {
     if (!map) return;
+    // بدون اورلی مسدودکننده: کلیک روی عارضه به همان عارضه می‌رسد، فضای خالی به نقشه
+    picking = true;
+    pickerCb = callback;
     map.getContainer().style.cursor = "crosshair";
+    if (mapClickHandler) map.off("click", mapClickHandler);
 
-    const overlay = L.rectangle(map.getBounds().pad(10), {
-      color: "transparent",
-      fillColor: "transparent",
-      fillOpacity: 0,
-      interactive: true,
-      bubblingMouseEvents: false,
-    }).addTo(map);
-
-    overlay.once("click", (e) => {
+    mapClickHandler = (e) => {
+      if (!picking) return;
+      picking = false;
       map.getContainer().style.cursor = "";
-      overlay.remove();
+      map.off("click", mapClickHandler);
+      mapClickHandler = null;
 
-      if (map._pickerMarker) map.removeLayer(map._pickerMarker);
-      map._pickerMarker = L.circleMarker([e.latlng.lat, e.latlng.lng], {
+      if (pickerMarker) map.removeLayer(pickerMarker);
+      pickerMarker = L.circleMarker([e.latlng.lat, e.latlng.lng], {
         radius: 8,
         color: "#4a9b8e",
         fillColor: "#4a9b8e",
@@ -511,21 +570,25 @@ defineExpose({
         weight: 3,
       }).addTo(map);
 
-      callback({ lat: e.latlng.lat, lng: e.latlng.lng });
-    });
+      const cb = pickerCb;
+      pickerCb = null;
+      cb({ lat: e.latlng.lat, lng: e.latlng.lng });
+    };
 
-    map._pickerOverlay = overlay;
+    map.on("click", mapClickHandler);
   },
   disablePointPicker() {
+    picking = false;
+    pickerCb = null;
     if (!map) return;
     map.getContainer().style.cursor = "";
-    if (map._pickerOverlay) {
-      map._pickerOverlay.remove();
-      map._pickerOverlay = null;
+    if (mapClickHandler) {
+      map.off("click", mapClickHandler);
+      mapClickHandler = null;
     }
-    if (map._pickerMarker) {
-      map.removeLayer(map._pickerMarker);
-      map._pickerMarker = null;
+    if (pickerMarker) {
+      map.removeLayer(pickerMarker);
+      pickerMarker = null;
     }
   },
 });

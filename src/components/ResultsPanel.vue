@@ -82,7 +82,7 @@
         </ul>
       </div>
 
-      <!-- خلاصه شرط‌های فعال -->
+      <!-- خلاصه شرط‌های فعال (توصیفی + مکانی) -->
       <div
         class="query-summary-panel"
         v-if="showSummary"
@@ -110,8 +110,31 @@
               <span class="qs-cond-field">{{ item.fields.find(f => f.key === cond.field)?.label ?? cond.field }}</span>
               <span class="qs-cond-op">{{ opSymbol(cond.operator) }}</span>
               <span class="qs-cond-val">{{ cond.value }}</span>
+              <button
+                class="qs-cond-remove"
+                @click.stop="$emit('remove-condition', item.layerUuid ?? item.uuid, conditionRealIndex(item, cond, idx))"
+                title="حذف این شرط"
+              >×</button>
             </div>
           </template>
+        </div>
+
+        <!-- کوئری مکانی فعال -->
+        <div v-if="spatialActive" class="qs-layer-block qs-layer-block--spatial">
+          <div class="qs-layer-name">
+            <span class="qs-dot qs-dot--spatial"></span>
+            <span>کوئری مکانی</span>
+            <button
+              class="qs-cond-remove"
+              @click.stop="$emit('clear-spatial')"
+              title="حذف کوئری مکانی"
+            >×</button>
+          </div>
+          <div class="qs-cond-row">
+            <span class="qs-cond-field">{{ spatialLabel }}</span>
+            <span class="qs-cond-op">شعاع</span>
+            <span class="qs-cond-val">{{ spatialRadius }} km</span>
+          </div>
         </div>
       </div>
 
@@ -129,11 +152,21 @@ const props = defineProps({
   summaries: { type: Array, default: () => [] },
   showSummary: { type: Boolean, default: false },
   hiddenLayers: { type: Array, default: () => [] },
+  spatialActive: { type: Boolean, default: false },
+  spatialLabel: { type: String, default: '' },
+  spatialRadius: { type: [Number, String], default: 0 },
 })
-defineEmits(['toggle', 'open-modal', 'remove-layer', 'zoom-layer', 'toggle-layer-visibility'])
+defineEmits(['toggle', 'open-modal', 'remove-layer', 'zoom-layer', 'toggle-layer-visibility', 'remove-condition', 'clear-spatial'])
 
 const OP_SYMBOLS = { '=':'=', '!=':'≠', '>':'>', '>=':'≥', '<':'<', '<=':'≤', contains:'شامل' }
 function opSymbol(op) { return OP_SYMBOLS[op] ?? op }
+
+// ایندکس واقعی شرط در آرایه conditions (برای حذف دقیق)
+function conditionRealIndex(item, cond, fallback) {
+  const all = item.conditions ?? item.activeConds ?? []
+  const i = all.indexOf(cond)
+  return i >= 0 ? i : fallback
+}
 
 function isLayerHidden(uuid) {
   return (props.hiddenLayers || []).includes(String(uuid))
@@ -370,6 +403,30 @@ const detailByUuid = computed(() => {
   border-radius: var(--radius-xs);
   font-size: 11px;
   font-family: var(--font-mono);
+}
+.qs-cond-remove {
+  margin-right: auto;
+  width: 20px; height: 20px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: 14px; line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+}
+.qs-cond-remove:hover {
+  color: var(--accent-danger);
+  border-color: var(--border-subtle);
+  background: var(--bg-panel);
+}
+.qs-layer-block--spatial {
+  border-style: dashed;
+}
+.qs-dot--spatial {
+  background: var(--brand);
 }
 
 /* ---------- ریسپانسیو ---------- */
