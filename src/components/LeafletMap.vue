@@ -432,14 +432,27 @@ defineExpose({
     const layer = featureRefs.get(key)
       ?? [...featureRefs.entries()].find(([k]) => k === key || k.endsWith("::" + key))?.[1];
     if (!layer || !map) return;
+    const isPoint =
+      layer.feature?.geometry?.type === "Point" ||
+      typeof layer.getLatLng === "function";
+    if (isPoint) {
+      const latlng = typeof layer.getLatLng === "function"
+        ? layer.getLatLng()
+        : layer.feature.geometry.coordinates;
+      if (latlng) {
+        if (Number.isFinite(latlng.lat) && Number.isFinite(latlng.lng))
+          map.flyTo([latlng.lat, latlng.lng], 10, { duration: 0.8 });
+        else if (Array.isArray(latlng) && latlng.length >= 2)
+          map.flyTo([+latlng[1], +latlng[0]], 10, { duration: 0.8 });
+      }
+      return;
+    }
     if (typeof layer.getBounds === "function") {
       map.flyToBounds(layer.getBounds(), {
         padding: [40, 40],
-        maxZoom: 15,
+        maxZoom: 13,
         duration: 0.8,
       });
-    } else if (typeof layer.getLatLng === "function") {
-      map.flyTo(layer.getLatLng(), 13, { duration: 0.8 });
     }
   },
   zoomToLayer(uuid) {

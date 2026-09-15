@@ -1161,7 +1161,7 @@ defineExpose({
     if (well._geometry) {
       const g = well._geometry;
       if (g.type === "Point") {
-        map.flyTo({ center: g.coordinates, zoom: 13, duration: 800 });
+        map.flyTo({ center: g.coordinates, zoom: 10, duration: 800 });
         return;
       }
       const bounds = new mapboxgl.LngLatBounds();
@@ -1174,9 +1174,9 @@ defineExpose({
       else if (g.type === "MultiPolygon")
         g.coordinates.forEach((p) => p[0].forEach((c) => bounds.extend(c)));
       if (!bounds.isEmpty())
-        map.fitBounds(bounds, { padding: 60, maxZoom: 15, duration: 800 });
+        map.fitBounds(bounds, { padding: 60, maxZoom: 13, duration: 800 });
     } else if (well.lat && well.lng)
-      map.flyTo({ center: [well.lng, well.lat], zoom: 13, duration: 800 });
+      map.flyTo({ center: [well.lng, well.lat], zoom: 10, duration: 800 });
   },
   zoomToLayer(uuid) {
     if (!map) return;
