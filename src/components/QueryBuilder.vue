@@ -173,13 +173,17 @@ function opLabel(op) {
   return opLabels[op] || op
 }
 
-// وقتی فیلد عوض می‌شه، عملگر و مقدار رو ریست کن
+// وقتی فیلد عوض می‌شه، عملگر را تنظیم کن
 function onFieldChange(cond, value) {
   cond.field = value
   const meta = fieldMeta(cond.field)
-  cond.value = ''
-  if (meta?.type === 'number') cond.operator = '>'
-  else cond.operator = '='
+  cond.operator = meta?.type === 'number' ? '>' : '='
+  // مقدار فقط وقتی ریست می‌شود که نوع فیلد از قبل عدد نبود
+  const prevMeta = fieldMeta(cond._lastField)
+  if (prevMeta && prevMeta.type !== meta?.type) {
+    cond.value = ''
+  }
+  cond._lastField = cond.field
 }
 
 function handleSave() {

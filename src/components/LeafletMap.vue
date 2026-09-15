@@ -133,15 +133,19 @@ function wellKey(w) {
   const id = w.id ?? w.properties?.id;
   if (id == null || id === "") return null;
   const lu = w._layerUuid ?? w.properties?._layerUuid;
-  return lu ? `${lu}::${id}` : String(id);
+  // Use UUID prefix to absolutely prevent key collisions between layers
+  return lu ? `${String(lu)}::${String(id)}` : String(id);
 }
 function inHighlightSet(key, highlightSet) {
   if (!key) return false;
   if (highlightSet.has(key)) return true;
-  // سازگاری با حالت قدیمی (فقط id بدون لایه)
+  // Backward compatibility: standalone id match (deprecated)
   const i = key.indexOf("::");
-  if (i >= 0 && highlightSet.has(key.slice(i + 2))) return true;
-  return false;
+  if (i >= 0) {
+    const baseId = key.slice(i + 2);
+    return highlightSet.has(baseId) || highlightSet.has(key);
+  }
+  return highlightSet.has(key);
 }
 function hasCoord(w) {
   return Number.isFinite(+w.lat) && Number.isFinite(+w.lng);
@@ -163,7 +167,8 @@ function defaultStyle(feature, highlighted, matched = false) {
       opacity: 1,
     };
   }
-  if (selected) {
+  const isSelected = props.selectedId != null && props.selectedId !== '' && String(feature?.properties?.id) === String(props.selectedId)
+  if (isSelected) {
     return {
       color: "#f0a500",
       weight: 3.5,
@@ -265,16 +270,19 @@ function renderFeatures(fit = true) {
           .slice(0, 8)
           .map(
             ([k, v]) =>
-              `<tr><td class="wqa-popup__key">${k}</td><td class="wqa-popup__val">${v ?? "—"}</td></tr>`,
+              `<tr><td class="wqa-popup__key">${k}</td><td class="wqa-popup__val">${escapeHtml(v ?? "—")}</td></tr>`,
           )
           .join("");
 
-        layer.bindPopup(`
-          <div class="wqa-popup">
-            <div class="wqa-popup__title">عارضه #${well.id}</div>
-            <table class="wqa-popup__table">${rows}</table>
-          </div>
-        `);
+        function escapeHtml(text) {
+  if (text == null) return ''
+  return String(text)
+    .replace(/&/g, '&')
+    .replace(/</g, '<')
+    .replace(/>/g, '>')
+    .replace(/"/g, '"')
+    .replace(/'/g, '&#039;')
+}
 
         layer.on("click", (e) => pickFeature(e, well));
         const wkey = wellKey(well);
