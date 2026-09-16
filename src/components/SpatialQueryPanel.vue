@@ -78,20 +78,6 @@
                   : "انتخاب نقطه از نقشه"
             }}
           </button>
-
-          <div v-if="customPoint" class="point-info">
-            <span class="mono">
-              {{ customPoint.lat.toFixed(5) }},
-              {{ customPoint.lng.toFixed(5) }}
-            </span>
-            <button class="btn-clear-point" @click="$emit('clear-point')">حذف</button>
-          </div>
-          <div v-else-if="radiusCenter && radiusCenter.id != null" class="point-info">
-            <span class="mono">
-              عارضه #{{ radiusCenter.id }}<template v-if="centerLabel"> — {{ centerLabel }}</template>
-            </span>
-            <button class="btn-clear-point" @click="$emit('clear-point')">حذف</button>
-          </div>
         </div>
       </div>
     </Transition>
@@ -139,11 +125,36 @@
     >
       {{ spatialLoading ? 'در حال اعمال…' : 'اعمال تغییرات' }}
     </button>
+
+    <!-- مودال انتخاب فیلد نام -->
+    <Transition name="modal">
+      <div v-if="showNameFieldModal" class="modal-backdrop" @click.self="dismissNameFieldModal">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>انتخاب فیلد نام عارضه</h3>
+            <button class="modal-close" @click="dismissNameFieldModal">×</button>
+          </div>
+          <p class="modal-hint">هیچ فیلی با واژه "name" در ویژگی‌های لایه یافت نشد. لطفاً فیلد نام را از لیست زیر انتخاب کنید:</p>
+          <div class="modal-body">
+            <AppSelect
+              :model-value="selectedNameField"
+              :options="nameFieldOptions"
+              placeholder="فیلد نام را انتخاب کنید…"
+              @update:model-value="selectedNameField = $event"
+            />
+          </div>
+          <div class="modal-footer">
+            <button class="btn-cancel" @click="dismissNameFieldModal">انصراف</button>
+            <button class="btn-apply" :disabled="!selectedNameField" @click="confirmNameField">تأیید</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, ref, watch, nextTick } from "vue";
 import AppSelect from "./AppSelect.vue";
 
 const props = defineProps({
@@ -157,6 +168,8 @@ const props = defineProps({
   // نگهداشته‌شده برای سازگاری با نسخه‌های قدیمی؛ دیگر استفاده نمی‌شود (فقط کیلومتر)
   radiusUnit: { type: String, default: "km" },
   fields: { type: Array, default: () => [] },
+  // فیلدهای لایه فعال (برای جستجوی فیلد name)
+  layerFields: { type: Array, default: () => [] },
   customPoint: { type: Object, default: null },
   isPicking: { type: Boolean, default: false },
   spatialLoading: { type: Boolean, default: false },
@@ -174,6 +187,59 @@ const emit = defineEmits([
   "apply-spatial",
 ]);
 
+// مودال انتخاب دستی فیلد نام
+const showNameFieldModal = ref(false)
+const selectedNameField = ref('')
+
+// جستجوی فیلدی که key-ش شامل "name" باشد (بدون حساسیت به حروف بزرگ/کوچک)
+function findNameField() {
+  for (const f of props.layerFields) {
+    if (f.key && f.key.toLowerCase().includes('name')) {
+      return f.key
+    }
+  }
+  for (const key of props.fields) {
+    if (key && key.toLowerCase().includes('name')) {
+      return key
+    }
+  }
+  return null
+}
+
+const labelField = computed(() => {
+  return findNameField() || (selectedNameField.value || null)
+})
+
+// نمایش گزینه‌های فیلد برای مودال
+const nameFieldOptions = computed(() =>
+  props.layerFields.map((f) => ({
+    value: f.key,
+    label: `${f.label || f.key} (${f.key})`,
+  })),
+)
+
+// وقتی لایه فعال یا فیلدهایش تغییر کرد، بررسی کن آیا مودال نیاز دارد
+watch([() => props.activeLayer, () => props.layerFields], () => {
+  selectedNameField.value = ''
+  showNameFieldModal.value = false
+  nextTick(() => {
+    if (!findNameField() && props.layerFields.length > 0) {
+      showNameFieldModal.value = true
+    }
+  })
+})
+
+function confirmNameField() {
+  if (selectedNameField.value) {
+    showNameFieldModal.value = false
+  }
+}
+
+function dismissNameFieldModal() {
+  showNameFieldModal.value = false
+  selectedNameField.value = ''
+}
+
 const layerOptions = computed(() =>
   props.layers.map((layer) => ({
     value: layer.uuid,
@@ -189,10 +255,6 @@ const scopedWells = computed(() => {
 
 const wellsWithCoords = computed(() =>
   scopedWells.value.filter((w) => Number.isFinite(+w.lat) && Number.isFinite(+w.lng)),
-);
-
-const firstLabelField = computed(() =>
-  props.fields.length ? props.fields[0] : null,
 );
 
 // نقطه دلخواه = مرکزی که شناسه عارضه ندارد ولی مختصات دارد
@@ -215,15 +277,15 @@ const centerLatLng = computed(() => {
 
 const centerLabel = computed(() => {
   const c = props.radiusCenter;
-  if (!c || !firstLabelField.value) return '';
-  return c[firstLabelField.value] ?? '';
+  if (!c || !labelField.value) return '';
+  return c[labelField.value] ?? '';
 });
 
 const centerOptions = computed(() =>
   wellsWithCoords.value.map((w) => ({
     value: String(w.id),
-    label: firstLabelField.value
-      ? `#${w.id} — ${w[firstLabelField.value]}`
+    label: labelField.value
+      ? `#${w.id} — ${w[labelField.value]}`
       : `#${w.id}`,
   })),
 );
@@ -495,5 +557,73 @@ const numberCfg = { min: 0.1, step: 0.1 };
 .sq-slide-leave-to {
   opacity: 0;
   transform: translateY(-8px);
+}
+
+/* ─── مودال ─── */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(15, 25, 33, 0.5);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2000;
+}
+.modal-content {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  width: 420px; max-width: calc(100vw - 32px);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.modal-header h3 { margin: 0; font-size: 13.5px; font-weight: 700; }
+.modal-close {
+  background: transparent; border: 1px solid transparent; color: var(--text-muted);
+  font-size: 18px; cursor: pointer;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-xs);
+}
+.modal-close:hover { background: var(--bg-panel-raised); color: var(--text-primary); }
+.modal-hint {
+  margin: 12px 16px 0; font-size: 12px; color: var(--text-muted); line-height: 1.7;
+}
+.modal-body { padding: 12px 16px; }
+.modal-footer {
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-panel-raised);
+}
+.btn-cancel {
+  padding: 7px 16px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-panel); color: var(--text-primary);
+  font-size: 12.5px; font-family: inherit; cursor: pointer;
+}
+.btn-cancel:hover { background: var(--bg-hover); }
+.btn-apply {
+  padding: 7px 20px; border-radius: var(--radius-sm);
+  border: 1px solid var(--brand-strong); background: var(--brand); color: #fff;
+  font-size: 12.5px; font-family: inherit; font-weight: 700;
+  cursor: pointer;
+}
+.btn-apply:hover:not(:disabled) { background: var(--brand-strong); }
+.btn-apply:disabled { opacity: 0.5; cursor: not-allowed; }
+.modal-enter-active, .modal-leave-active {
+  transition: opacity 0.2s var(--ease-out);
+}
+.modal-enter-from, .modal-leave-to {
+  opacity: 0;
+}
+.modal-content-enter-active, .modal-content-leave-active {
+  transition: transform 0.25s var(--ease-out), opacity 0.2s var(--ease-out);
+}
+.modal-content-enter-from, .modal-content-leave-to {
+  transform: translateY(-12px);
+  opacity: 0;
 }
 </style>

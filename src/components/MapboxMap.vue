@@ -1301,7 +1301,10 @@ defineExpose({
       if (map._pickerMarker) map._pickerMarker.remove();
       const el = document.createElement("div");
       el.style.cssText =
-        "width:16px;height:16px;border-radius:50%;background:#4a9b8e;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);pointer-events:none;";
+        "width:28px;height:34px;overflow:visible;background:transparent;pointer-events:none;";
+      const markerEl = document.createElement("div");
+      markerEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="28" height="34"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#4a9b8e" stroke="#fff" stroke-width="2.5"/><circle cx="12" cy="9" r="3.5" fill="#fff"/></svg>`;
+      el.appendChild(markerEl);
       map._pickerMarker = new mapboxgl.Marker(el)
         .setLngLat(e.lngLat)
         .addTo(map);

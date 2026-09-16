@@ -570,12 +570,14 @@ defineExpose({
       mapClickHandler = null;
 
       if (pickerMarker) map.removeLayer(pickerMarker);
-      pickerMarker = L.circleMarker([e.latlng.lat, e.latlng.lng], {
-        radius: 8,
-        color: "#4a9b8e",
-        fillColor: "#4a9b8e",
-        fillOpacity: 0.9,
-        weight: 3,
+      pickerMarker = L.marker([e.latlng.lat, e.latlng.lng], {
+        icon: L.divIcon({
+          className: "",
+          html: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="28" height="34"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#4a9b8e" stroke="#fff" stroke-width="2.5"/><circle cx="12" cy="9" r="3.5" fill="#fff"/></svg>`,
+          iconSize: [28, 34],
+          iconAnchor: [14, 34],
+        }),
+        draggable: false,
       }).addTo(map);
 
       const cb = pickerCb;

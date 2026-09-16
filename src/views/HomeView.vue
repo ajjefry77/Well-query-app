@@ -503,12 +503,19 @@ function onPickPoint() {
     customPoint.value = point
     isPickingPoint.value = false
     radiusCenter.value = point
+    selectedWellId.value = null
+    activeWellId.value = null
   })
 }
 // مرکز مکانی از لیست یا نقشه (غیر پیکر): انتخاب عارضه نقطه دلخواه قبلی را پاک می‌کند
+// همچنین فوری عارضه را مشخص (highlight) می‌کند بدون نیاز به Apply
 function onUpdateRadiusCenter(v) {
   radiusCenter.value = v
-  if (v && v.id != null) customPoint.value = null
+  if (v && v.id != null) {
+    customPoint.value = null
+    activeWellId.value = rowKey(v)
+    selectedWellId.value = rowKey(v)
+  }
 }
 function onClearPoint() {
   customPoint.value = null
@@ -527,11 +534,14 @@ function onClearSpatial() {
 async function onApplySpatial() {
   await commitSpatialFilter()
 }
-// کلیک روی فضای خالی نقشه → حذف انتخاب (فقط در حالت توصیفی)
+// کلیک روی فضای خالی نقشه → پاک کردن انتخاب عارضه (در هر دو حالت)
 function onMapEmptyClick() {
-  if (queryKind.value !== 'attribute') return
   activeWellId.value = null
   selectedWellId.value = null
+  if (queryKind.value === 'spatial') {
+    radiusCenter.value = null
+    customPoint.value = null
+  }
 }
 function onSelectFromMap(well) {
   activeWellId.value = rowKey(well)

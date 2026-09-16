@@ -68,6 +68,7 @@
         :radius-center="radiusCenter"
         :radius-km="radiusKm"
         :fields="spatialGroupFields"
+        :layer-fields="layerDetails[activeQueryLayer]?.fields ?? []"
         :custom-point="customPoint"
         :is-picking="isPickingPoint"
         :spatial-loading="spatialLoading"
