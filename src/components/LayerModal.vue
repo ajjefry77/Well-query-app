@@ -70,7 +70,7 @@ watch(() => props.open, (val) => {
     tempSelected.value = props.activeLayers.map(l => l.uuid)
     layerSearch.value = ''
   }
-})
+}, { immediate: true })
 
 const filteredModalLayers = computed(() => {
   const q = layerSearch.value.toLowerCase().trim()
