@@ -68,37 +68,56 @@
                   <line x1="1" y1="1" x2="23" y2="23"/>
                 </svg>
               </button>
-              <span class="active-layer-sym" :style="{ color: details[layer.uuid]?.color ?? '#2a9d8f' }">
+              <span
+                class="active-layer-sym"
+                :style="{
+                  color: '#d4a017',
+                  background: hexToRgba('#d4a017', 0.16),
+                }"
+              >
                 <svg
                   v-if="(details[layer.uuid]?.geomKind ?? 'point') === 'polygon'"
-                  width="17" height="17" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" stroke-width="2" stroke-linejoin="round"
+                  width="16" height="16" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"
                   aria-label="لایه پلیگونی"
                 >
-                  <path d="M4 16 8 7l8-1 4 7-7 6z" fill="currentColor" fill-opacity="0.3" />
+                  <path d="M4 16 8 7l8-1 4 7-7 6z" fill="currentColor" fill-opacity="0.55" />
                 </svg>
                 <svg
                   v-else-if="(details[layer.uuid]?.geomKind ?? 'point') === 'line'"
-                  width="17" height="17" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"
+                  width="16" height="16" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"
                   aria-label="لایه خطی"
                 >
                   <path d="M3 18l6-8 5 4 7-9" />
                 </svg>
                 <svg
                   v-else
-                  width="17" height="17" viewBox="0 0 24 24" fill="none"
+                  width="16" height="16" viewBox="0 0 24 24" fill="none"
                   aria-label="لایه نقطه‌ای"
                 >
-                  <path d="M12 2.5c-3.9 0-7 3.1-7 7 0 5.2 7 12 7 12s7-6.8 7-12c0-3.9-3.1-7-7-7z" fill="currentColor" />
-                  <circle cx="12" cy="9.5" r="2.6" fill="#fff" />
+                  <path d="M12 2.5c-3.9 0-7 3.1-7 7 0 5.2 7 12 7 12s7-6.8 7-12c0-3.9-3.1-7-7-7z" fill="currentColor" stroke="currentColor" stroke-width="0.8" />
+                  <circle cx="12" cy="9.5" r="2.8" fill="#fff" />
                 </svg>
               </span>
               <span class="active-layer-name">{{ layer.display_name || layer.name }}</span>
             </div>
             <div class="active-layer-meta">
-              <span class="active-layer-count">{{ (details[layer.uuid]?.featureCount ?? 0).toLocaleString('fa-IR') }}</span>
               <button class="remove-layer-btn" @click.stop="$emit('remove-layer', layer.uuid)" title="حذف لایه">×</button>
+              <span class="active-layer-count">{{ (details[layer.uuid]?.featureCount ?? 0).toLocaleString('fa-IR') }}</span>
+              <button
+                class="layer-data-btn"
+                @click.stop="$emit('view-layer-data', layer.uuid)"
+                :title="`مشاهده اطلاعات تمام عارضه‌های ${layer.display_name || layer.name}`"
+                aria-label="مشاهده داده تمام عارضه‌ها"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M3 9h18" />
+                  <path d="M9 3v18" />
+                  <path d="M15 3v18" />
+                </svg>
+              </button>
             </div>
           </li>
           <li v-if="layers.length === 0" class="no-layer-item">
@@ -222,10 +241,19 @@ const props = defineProps({
   spatialRadius: { type: [Number, String], default: 0 },
   relationSummary: { type: Object, default: null },
 })
-defineEmits(['toggle', 'open-modal', 'remove-layer', 'zoom-layer', 'toggle-layer-visibility', 'remove-condition', 'clear-spatial', 'clear-relation', 'clear-all'])
+defineEmits(['toggle', 'open-modal', 'remove-layer', 'zoom-layer', 'toggle-layer-visibility', 'remove-condition', 'clear-spatial', 'clear-relation', 'clear-all', 'view-layer-data'])
 
 const OP_SYMBOLS = { '=':'=', '!=':'≠', '>':'>', '>=':'≥', '<':'<', '<=':'≤', contains:'شامل' }
 function opSymbol(op) { return OP_SYMBOLS[op] ?? op }
+
+// تبدیل رنگ hex به نسخه شفاف برای پس‌زمینه تزئینی آیکون لایه
+function hexToRgba(hex, alpha) {
+  const m = String(hex ?? '').match(/^#?([0-9a-f]{6})$/i)
+  if (!m) return 'transparent'
+  const n = parseInt(m[1], 16)
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
 
 // ایندکس واقعی شرط در آرایه شرط‌های تأییدشده (برای حذف دقیق)
 function conditionRealIndex(item, cond, fallback) {
@@ -300,7 +328,7 @@ const hasAttributeSummary = computed(() => summariesWithConds.value.length > 0)
 }
 
 /* ---------- لیست لایه‌ها ---------- */
-.results-layers { display: flex; flex-direction: column; gap: 8px; }
+.results-layers { display: flex; flex-direction: column; gap: 6px; }
 .layers-header { display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
 .layers-title { font-size: 12px; font-weight: 700; color: var(--text-primary); }
 .add-layer-btn {
@@ -309,7 +337,7 @@ const hasAttributeSummary = computed(() => summariesWithConds.value.length > 0)
   border: 1px solid var(--brand-strong);
   color: #fff;
   border-radius: var(--radius-sm);
-  padding: 5px 12px; font-size: 11.5px;
+  padding: 4px 10px; font-size: 11.5px;
   font-weight: 600;
   font-family: inherit; cursor: pointer;
 }
@@ -317,23 +345,25 @@ const hasAttributeSummary = computed(() => summariesWithConds.value.length > 0)
   background: var(--brand-strong);
 }
 .add-layer-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.layers-loading { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 12px; padding: 8px 0; }
+.layers-loading { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 12px; padding: 6px 0; }
 .active-layers-list {
   list-style: none; margin: 0; padding: 0;
-  display: flex; flex-direction: column; gap: 6px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 5px; overflow-y: auto;
 }
 .active-layer-item {
   display: flex; align-items: center;
   justify-content: space-between;
-  padding: 8px 10px;
-  background: var(--bg-panel-raised);
-  border: 1px solid var(--border-subtle);
-  border-inline-start: 3px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+  flex-direction: row-reverse;
+  padding: 2px 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
   cursor: pointer;
 }
-.active-layer-item:hover { border-color: var(--border-strong); background: var(--bg-hover); }
-.active-layer-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.active-layer-item:hover .active-layer-name {
+  color: var(--brand);
+}
+.active-layer-info { display: flex; align-items: center; gap: 6px; min-width: 0; flex-direction: row-reverse; }
 .layer-visibility-btn {
   width: 24px; height: 24px;
   background: transparent;
@@ -378,19 +408,37 @@ const hasAttributeSummary = computed(() => summariesWithConds.value.length > 0)
   opacity: 0.9;
 }
 .active-layer-sym {
-  width: 17px;
-  height: 17px;
+  width: 24px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  border-radius: 7px;
+  text-shadow: none;
 }
 .active-layer-name {
   font-size: 12px; color: var(--text-primary);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  text-align: left;
 }
-.active-layer-meta { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.active-layer-count { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
+.active-layer-meta { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.active-layer-count { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); min-width: 2ch; text-align: center; }
+.layer-data-btn {
+  width: 22px; height: 22px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0;
+}
+.layer-data-btn:hover {
+  color: var(--brand);
+  background: var(--bg-panel);
+  border-color: var(--border-subtle);
+}
 .remove-layer-btn {
   width: 22px; height: 22px;
   background: transparent;

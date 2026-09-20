@@ -130,6 +130,7 @@
         @clear-spatial="onClearSpatial"
         @clear-relation="onClearRelation"
         @clear-all="onClearAllQueries"
+        @view-layer-data="onOpenLayerData"
       />
 
       <!-- موبایل: نوار grab + تب‌های پنل پایین -->
@@ -166,6 +167,20 @@
       @select="onSelectFromTable"
       @hover="onHoverRow"
       @export="handleExport"
+    />
+
+    <!-- مودال داده تمام عارضه‌های یک لایه -->
+    <ResultsModal
+      v-if="showLayerDataModal"
+      :open="showLayerDataModal"
+      :rows="layerDataRows"
+      :columns="layerDataColumns"
+      :layer-meta="layerDataMeta"
+      :active-id="activeWellId"
+      @close="showLayerDataModal = false"
+      @select="onSelectFromTable"
+      @hover="onHoverRow"
+      @export="handleLayerDataExport"
     />
   </div>
 </template>
@@ -243,6 +258,8 @@ const isPickingPoint   = ref(false)
 const activeQueryLayer = ref(null)
 const queryPanelOpen   = ref(true)
 const showResultsModal = ref(false)
+const showLayerDataModal = ref(false)
+const layerDataUuid = ref(null)
 
 // تب → URL
 watch(queryKind, (v) => {
@@ -518,6 +535,44 @@ const displayLayerMeta = computed(() =>
 function rowKey(r) {
   if (!r) return ''
   return r._layerUuid ? `${r._layerUuid}::${r.id}` : String(r.id ?? '')
+}
+
+// ── مودال داده تمام عارضه‌های یک لایه ──
+function onOpenLayerData(uuid) {
+  layerDataUuid.value = uuid
+  showLayerDataModal.value = true
+}
+const layerDataRows = computed(() =>
+  layerDataUuid.value != null ? (_layerFeaturesMap.value?.[layerDataUuid.value] ?? []) : []
+)
+const layerDataColumns = computed(() => {
+  const f = layerDataFields.value
+  return [
+    { key: 'id', label: 'شناسه', mono: true },
+    ...f.map(field => ({ key: field.key, label: field.label })),
+  ]
+})
+const layerDataFields = computed(() => {
+  const uuid = layerDataUuid.value
+  if (uuid == null) return []
+  const f = layerFields(uuid)
+  return f.length ? f : (queryableFields.value ?? [])
+})
+const layerDataMeta = computed(() => {
+  const uuid = layerDataUuid.value
+  if (uuid == null) return []
+  const layer = activeLayers.value.find(l => String(l.uuid) === String(uuid))
+  if (!layer) return []
+  return [{
+    uuid,
+    name: layer.display_name || layer.name,
+    color: layerColor(uuid),
+    fields: layerDataFields.value,
+  }]
+})
+async function handleLayerDataExport(format) {
+  const { exportData } = await import('../composables/useExport.js')
+  exportData(format, layerDataRows.value, convertFeature, { crs: crs.value })
 }
 // سقف ارسال به نقشه برای جلوگیری از فریز روی 100k سطر (کمتر = سریع‌تر روی سیستم ضعیف)
 const MAX_HIGHLIGHT = 2000
