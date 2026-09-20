@@ -23,7 +23,7 @@
         v-show="!isMobile || (sheetOpen && mobileTab === 'query')"
         :open="queryPanelOpen"
         :query-kind="queryKind"
-        :layers="activeLayers"
+        :layers="visibleActiveLayers"
         :layer-details="layerDetails"
         :active-query-layer="activeQueryLayer"
         :loading-fields="loadingFields"
@@ -102,6 +102,7 @@
         :layers="activeLayers"
         :loading-layers="loadingLayers"
         :summaries="layerQuerySummaries"
+        :details="layerDetails"
         :show-summary="hasActiveConditions || hasSpatialFilter"
         :hidden-layers="hiddenLayerUuids"
         :spatial-active="hasSpatialFilter"
@@ -111,7 +112,7 @@
         @open-modal="openLayerModal"
         @remove-layer="onRemoveLayer"
         @zoom-layer="onZoomToLayer"
-        @toggle-layer-visibility="toggleLayerVisibility"
+        @toggle-layer-visibility="onToggleLayerVisibility"
         @remove-condition="onRemoveAppliedCondition"
         @clear-spatial="onClearSpatial"
         @clear-all="onClearAllQueries"
@@ -359,6 +360,31 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointercancel', onSheetGrabEnd)
 })
 
+// نوع هندسه لایه از روی عارضه‌های بارگذاری‌شده (برای سیمبل لیست لایه‌ها)
+function layerGeomKind(uuid) {
+  const kindOf = (t) => {
+    if (t === 'Point' || t === 'MultiPoint') return 'point'
+    if (t === 'LineString' || t === 'MultiLineString') return 'line'
+    if (t === 'Polygon' || t === 'MultiPolygon') return 'polygon'
+    return null
+  }
+  const rows = _layerFeaturesMap.value?.[uuid] ?? []
+  for (const r of rows) {
+    const g = r._geometry
+    if (!g) continue
+    if (g.type === 'GeometryCollection' && Array.isArray(g.geometries)) {
+      for (const sub of g.geometries) {
+        const k = kindOf(sub?.type)
+        if (k) return k
+      }
+      continue
+    }
+    const k = kindOf(g.type)
+    if (k) return k
+  }
+  return 'point'
+}
+
 // ── جزئیات هر لایه فعال ──
 // conditions: پیش‌نویس قابل ویرایش در کوئری‌ساز؛ activeConds: شرط‌های تأییدشده (خلاصه شرط‌ها)
 const layerDetails = computed(() => {
@@ -374,6 +400,7 @@ const layerDetails = computed(() => {
       name,
       layerName: name,
       color: layerColor(uuid),
+      geomKind: layerGeomKind(uuid),
       fields: layerFields(uuid),
       featureCount: layerFeatureCount(uuid),
       resultCount: getLayerResultCount(uuid),
@@ -433,14 +460,12 @@ const mapLoading = computed(() => loadingFeatures.value || loadingFields.value)
 const displayColumns = computed(() => {
   if (queryKind.value === 'spatial') {
     return [
-      { key: '_layerName', label: 'لایه' },
       { key: 'id', label: 'شناسه', mono: true },
       ...queryableFields.value.map(f => ({ key: f.key, label: f.label })),
       { key: 'distanceKm', label: 'فاصله (km)', mono: false },
     ]
   }
   return [
-    { key: '_layerName', label: 'لایه' },
     { key: 'id', label: 'شناسه', mono: true },
     ...queryableFields.value.map(f => ({ key: f.key, label: f.label })),
   ]
@@ -475,12 +500,24 @@ const visibleWellsKey = computed(() =>
   visibleWells.value.map(w => w._layerUuid + ':' + w.id).sort().join('|')
 )
 
+// لایه‌های قابل انتخاب در کوئری‌ها (مخفی‌ها با چشم حذف می‌شوند)
+const visibleActiveLayers = computed(() =>
+  activeLayers.value.filter(layer => isLayerVisible(layer.uuid))
+)
+
 // ── handlers ──
 function onRemoveLayer(uuid) {
   removeLayer(uuid)
   if (activeQueryLayer.value === uuid) {
     const remaining = activeLayers.value.filter(l => l.uuid !== uuid)
     activeQueryLayer.value = remaining[0]?.uuid ?? null
+  }
+}
+// مخفی/نمایان کردن لایه؛ اگر لایه انتخابی کوئری مخفی شد، به اولین لایه نمایان سوئیچ می‌شود
+function onToggleLayerVisibility(uuid) {
+  toggleLayerVisibility(uuid)
+  if (activeQueryLayer.value && !isLayerVisible(activeQueryLayer.value)) {
+    activeQueryLayer.value = visibleActiveLayers.value[0]?.uuid ?? null
   }
 }
 async function onLoadQuery(q) {

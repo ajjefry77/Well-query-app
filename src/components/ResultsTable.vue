@@ -237,7 +237,6 @@ const MAX_W = 800
 
 function defaultWidth(col) {
   if (col.key === 'id') return 110
-  if (col.key === '_layerName') return 150
   if (col.key === 'distanceKm') return 135
   return 170
 }

@@ -68,11 +68,36 @@
                   <line x1="1" y1="1" x2="23" y2="23"/>
                 </svg>
               </button>
-              <span class="active-layer-dot" :style="{ background: detailByUuid[layer.uuid]?.color ?? '#2a9d8f' }"></span>
+              <span class="active-layer-sym" :style="{ color: details[layer.uuid]?.color ?? '#2a9d8f' }">
+                <svg
+                  v-if="(details[layer.uuid]?.geomKind ?? 'point') === 'polygon'"
+                  width="17" height="17" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linejoin="round"
+                  aria-label="لایه پلیگونی"
+                >
+                  <path d="M4 16 8 7l8-1 4 7-7 6z" fill="currentColor" fill-opacity="0.3" />
+                </svg>
+                <svg
+                  v-else-if="(details[layer.uuid]?.geomKind ?? 'point') === 'line'"
+                  width="17" height="17" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"
+                  aria-label="لایه خطی"
+                >
+                  <path d="M3 18l6-8 5 4 7-9" />
+                </svg>
+                <svg
+                  v-else
+                  width="17" height="17" viewBox="0 0 24 24" fill="none"
+                  aria-label="لایه نقطه‌ای"
+                >
+                  <path d="M12 2.5c-3.9 0-7 3.1-7 7 0 5.2 7 12 7 12s7-6.8 7-12c0-3.9-3.1-7-7-7z" fill="currentColor" />
+                  <circle cx="12" cy="9.5" r="2.6" fill="#fff" />
+                </svg>
+              </span>
               <span class="active-layer-name">{{ layer.display_name || layer.name }}</span>
             </div>
             <div class="active-layer-meta">
-              <span class="active-layer-count">{{ detailByUuid[layer.uuid]?.featureCount ?? 0 }} عارضه</span>
+              <span class="active-layer-count">{{ (details[layer.uuid]?.featureCount ?? 0).toLocaleString('fa-IR') }}</span>
               <button class="remove-layer-btn" @click.stop="$emit('remove-layer', layer.uuid)" title="حذف لایه">×</button>
             </div>
           </li>
@@ -165,6 +190,8 @@ const props = defineProps({
   layers: { type: Array, default: () => [] },
   loadingLayers: { type: Boolean, default: false },
   summaries: { type: Array, default: () => [] },
+  // جزئیات کامل همه لایه‌ها (شامل مخفی‌ها) برای رندر لیست لایه‌ها
+  details: { type: Object, default: () => ({}) },
   showSummary: { type: Boolean, default: false },
   hiddenLayers: { type: Array, default: () => [] },
   spatialActive: { type: Boolean, default: false },
@@ -186,12 +213,6 @@ function conditionRealIndex(item, cond, fallback) {
 function isLayerHidden(uuid) {
   return (props.hiddenLayers || []).includes(String(uuid))
 }
-
-const detailByUuid = computed(() => {
-  const map = {}
-  for (const s of props.summaries) map[s.layerUuid ?? s.uuid] = s
-  return map
-})
 
 // فقط لایه‌هایی که شرط توصیفی تأییدشده دارند (برای بلوک «کوئری توصیفی»)
 const summariesWithConds = computed(() =>
@@ -322,7 +343,7 @@ const hasAttributeSummary = computed(() => summariesWithConds.value.length > 0)
 .active-layer-item--hidden {
   opacity: 0.72;
 }
-.active-layer-item--hidden .active-layer-dot {
+.active-layer-item--hidden .active-layer-sym {
   filter: grayscale(0.85);
 }
 .active-layer-item--hidden .active-layer-name {
@@ -332,7 +353,14 @@ const hasAttributeSummary = computed(() => summariesWithConds.value.length > 0)
 .active-layer-item--hidden:hover {
   opacity: 0.9;
 }
-.active-layer-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.active-layer-sym {
+  width: 17px;
+  height: 17px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
 .active-layer-name {
   font-size: 12px; color: var(--text-primary);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
