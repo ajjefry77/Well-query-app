@@ -41,16 +41,6 @@
     <!-- محتوای قابل جمع‌شدن -->
     <div class="app-header__body" :class="{ 'is-collapsed': collapsed }">
       <div class="app-header__body-inner">
-        <div class="header-layer-summary">
-          <span class="layer-summary-label">لایه‌های فعال:</span>
-          <span v-if="activeLayers.length === 0" class="layer-summary-empty">انتخاب نشده</span>
-          <span v-else class="layer-summary-count">{{ activeLayers.length.toLocaleString('fa-IR') }} لایه</span>
-          <span v-if="loadingLayers" class="spinner-inline" role="status" aria-label="در حال بارگذاری"></span>
-          <div v-if="apiError" class="layer-error" :title="apiError">{{ apiError }}
-            <button class="retry-btn" @click="$emit('retry')">تلاش مجدد</button>
-          </div>
-        </div>
-
         <SegmentedControl
           class="app-header__tabs"
           :model-value="queryKind"
@@ -120,16 +110,13 @@ import { ref } from 'vue'
 import SegmentedControl from './SegmentedControl.vue'
 
 const props = defineProps({
-  activeLayers: { type: Array, default: () => [] },
-  loadingLayers: { type: Boolean, default: false },
-  apiError: { type: String, default: '' },
   queryKind: { type: String, required: true },
   mapProvider: { type: String, required: true },
   crs: { type: String, required: true },
   theme: { type: String, required: true },
   isMobile: { type: Boolean, default: false },
 })
-defineEmits(['update:query-kind', 'update:map-provider', 'update:crs', 'toggle-theme', 'retry'])
+defineEmits(['update:query-kind', 'update:map-provider', 'update:crs', 'toggle-theme'])
 
 const collapsed = ref(false)
 
@@ -209,28 +196,6 @@ const crsOptions = [
   color: var(--text-muted);
 }
 
-.header-layer-summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  background: var(--bg-panel-raised);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  min-width: 150px;
-  max-width: 240px;
-}
-.layer-summary-label { color: var(--text-muted); font-size: 11px; }
-.layer-summary-empty { color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.layer-summary-count { color: var(--brand); font-weight: 700; font-family: var(--font-mono); font-size: 12px; }
-.layer-error { font-size: 11px; color: var(--accent-danger); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
-.retry-btn {
-  background: var(--bg-panel); border: 1px solid var(--accent-danger); color: var(--accent-danger);
-  font-size: 11px; font-weight: 600; font-family: inherit; padding: 2px 10px; border-radius: var(--radius-xs); cursor: pointer; flex-shrink: 0;
-}
-.retry-btn:hover { background: var(--accent-danger); color: #fff; }
-
 .app-header__map-switch {
   margin-inline-start: auto;
 }
@@ -278,8 +243,6 @@ const crsOptions = [
     gap: 10px;
   }
   .app-header__brand p { display: none; }
-  .layer-summary-empty,
-  .layer-summary-count { white-space: nowrap; }
 }
 
 @media (max-width: 1024px) {
@@ -351,14 +314,6 @@ const crsOptions = [
     overflow: hidden;
   }
 
-  .header-layer-summary {
-    min-width: 0;
-    max-width: 120px;
-    padding: 6px 10px;
-    font-size: 11px;
-  }
-  .layer-summary-label { display: none; }
-
   .theme-toggle { order: 2; }
   .app-header__crs-switch { order: 3; }
   .app-header__map-switch { order: 4; }
@@ -374,7 +329,6 @@ const crsOptions = [
 }
 
 @media (max-width: 460px) {
-  .header-layer-summary { display: none; }
   .theme-toggle { width: 32px; height: 32px; }
 }
 </style>

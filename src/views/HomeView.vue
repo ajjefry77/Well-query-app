@@ -2,9 +2,6 @@
   <div class="app">
     <AppHeader
       :is-mobile="isMobile"
-      :active-layers="activeLayers"
-      :loading-layers="loadingLayers"
-      :api-error="apiError"
       :query-kind="queryKind"
       :map-provider="mapProvider"
       :crs="crs"
@@ -13,7 +10,6 @@
       @update:map-provider="mapProvider = $event"
       @update:crs="crs = $event"
       @toggle-theme="toggleTheme"
-      @retry="loadVectorLayers"
     />
 
     <!-- صفحه چینه‌شناسی -->

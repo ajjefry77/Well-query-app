@@ -30,7 +30,7 @@
 
         <template v-else>
           <div class="layer-dropdown-wrap">
-            <label class="layer-dropdown-label">لایه فعال</label>
+            <label class="layer-dropdown-label">لایه انتخابی</label>
             <div class="layer-dropdown-select-wrap">
               <span class="layer-dropdown-dot" :style="{ background: activeLayerColor }"></span>
               <AppSelect

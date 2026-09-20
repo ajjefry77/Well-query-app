@@ -19,10 +19,10 @@
 
     <div class="results-panel__content" v-show="open">
 
-      <!-- لیست لایه‌های فعال -->
+      <!-- لیست لایه‌ها -->
       <div class="results-layers">
         <div class="layers-header">
-          <span class="layers-title">لایه‌های فعال</span>
+          <span class="layers-title">لایه‌ها</span>
           <button class="add-layer-btn" @click="$emit('open-modal')" :disabled="loadingLayers">
             <span>+</span> افزودن لایه
           </button>

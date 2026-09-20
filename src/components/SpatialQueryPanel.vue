@@ -2,7 +2,7 @@
   <div class="sq">
     <!-- دراپ‌داون انتخاب لایه (مثل کوئری توصیفی) -->
     <div class="layer-dropdown-wrap">
-      <label class="layer-dropdown-label">لایه فعال</label>
+      <label class="layer-dropdown-label">لایه انتخابی</label>
       <div class="layer-dropdown-select-wrap">
         <span class="layer-dropdown-dot" :style="{ background: activeLayerColor }"></span>
         <AppSelect
@@ -37,7 +37,7 @@
       <!-- حالت: انتخاب از لیست -->
       <div v-if="mode === 'list'" key="list" class="sq__panel">
         <p class="sq__hint">
-          یک عارضه از لایه فعال را به‌عنوان مرکز انتخاب کنید و شعاع جستجو را تنظیم نمایید
+          یک عارضه از لایه انتخابی را به‌عنوان مرکز انتخاب کنید و شعاع جستجو را تنظیم نمایید
         </p>
 
         <div class="field-group">

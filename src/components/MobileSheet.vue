@@ -11,7 +11,7 @@
         class="mobile-sheet__tab"
         :class="{ 'mobile-sheet__tab--active': mobileTab === 'layers' }"
         @click="$emit('update:mobile-tab', 'layers')"
-      >لایه‌های فعال</button>
+      >لایه‌ها</button>
       <button class="mobile-sheet__close" @click="$emit('close')" title="بستن پنل پایین">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="6 9 12 15 18 9" />
