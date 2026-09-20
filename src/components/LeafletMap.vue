@@ -21,6 +21,10 @@ const props = defineProps({
   radiusCenter: { type: Object, default: null },
   radiusKm: { type: Number, default: 0 },
   selectedId: { type: [String, Number], default: null },
+  previewIds: { type: Array, default: () => [] },
+  previewSourceIds: { type: Array, default: () => [] },
+  previewOkIds: { type: Array, default: () => [] },
+  previewFailIds: { type: Array, default: () => [] },
   theme: { type: String, default: "light" },
 });
 const emit = defineEmits(["select-well", "map-empty-click"]);
@@ -154,6 +158,18 @@ function hasCoord(w) {
 const GRAY = "#8a9490"
 const MATCH_FILL = "#22c55e"
 const MATCH_BORDER = "#14532d"
+// رنگ‌بندی پیش‌نمایش رابطه مکانی: مبدأ زرد، هدف سبز/قرمز
+const PREVIEW_SRC = "#eab308"
+const PREVIEW_OK_FILL = "#22c55e"
+const PREVIEW_OK_BORDER = "#14532d"
+const PREVIEW_FAIL_FILL = "#ef4444"
+const PREVIEW_FAIL_BORDER = "#7f1d1d"
+function inIdSet(key, plainId, set) {
+  if (!set || set.size === 0) return false;
+  if (key && (set.has(key) || (key.includes('::') && set.has(key.slice(key.indexOf('::') + 2))))) return true;
+  if (plainId != null && set.has(String(plainId))) return true;
+  return false;
+}
 
 function defaultStyle(feature, highlighted, matched = false) {
   const color = colorForId(feature?.properties?.id ?? "");
@@ -214,6 +230,18 @@ function renderFeatures(fit = true) {
   featureRefs.clear();
 
   const highlightSet = new Set((props.highlightedIds || []).map(String));
+  const psets = {
+    legacy: new Set((props.previewIds || []).map(String)),
+    src: new Set((props.previewSourceIds || []).map(String)),
+    ok: new Set((props.previewOkIds || []).map(String)),
+    fail: new Set((props.previewFailIds || []).map(String)),
+  };
+  const previewFlags = (key, plainId) => {
+    const isSrc = inIdSet(key, plainId, psets.src) || inIdSet(key, plainId, psets.legacy);
+    const isOk = inIdSet(key, plainId, psets.ok);
+    const isFail = inIdSet(key, plainId, psets.fail);
+    return { isSrc, isOk, isFail, isAny: isSrc || isOk || isFail };
+  };
   const centerKey = wellKey(props.radiusCenter);
   const selectedKey = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null;
   const hasGeometry = props.wells.some((w) => w._geometry);
@@ -226,7 +254,17 @@ function renderFeatures(fit = true) {
         const key = wellKey(feature);
         const highlighted = inHighlightSet(key, highlightSet);
         const isCenter = centerKey && key === centerKey;
-        const isSel = selectedKey && (key === selectedKey || String(feature.properties.id) === selectedKey);
+        const { isSrc, isOk, isFail, isAny } = previewFlags(key, feature.properties.id);
+        if (isFail) {
+          return { color: PREVIEW_FAIL_BORDER, weight: 3.5, fillColor: PREVIEW_FAIL_FILL, fillOpacity: 0.6, opacity: 1 };
+        }
+        if (isOk) {
+          return { color: PREVIEW_OK_BORDER, weight: 3.5, fillColor: PREVIEW_OK_FILL, fillOpacity: 0.65, opacity: 1 };
+        }
+        if (isSrc) {
+          return { color: "#1a1a1a", weight: 3.5, fillColor: PREVIEW_SRC, fillOpacity: 0.6, opacity: 1 };
+        }
+        const isSel = (selectedKey && (key === selectedKey || String(feature.properties.id) === selectedKey)) || isAny;
         if (isSel) {
           return {
             color: "#f0a500",
@@ -250,10 +288,14 @@ function renderFeatures(fit = true) {
       pointToLayer: (feature, latlng) => {
         const key = wellKey(feature);
         const highlighted = inHighlightSet(key, highlightSet);
-        const dimmed = props.hasFilter && !highlighted
+        const { isSrc, isOk, isFail, isAny } = previewFlags(key, feature.properties.id);
+        const dimmed = props.hasFilter && !highlighted && !isAny
         const matched = highlighted && props.hasFilter
         const isCenter = centerKey && key === centerKey;
-        const isSel = selectedKey && (key === selectedKey || String(feature.properties.id) === selectedKey);
+        const isSel = (selectedKey && (key === selectedKey || String(feature.properties.id) === selectedKey)) || isAny;
+        if (isFail) return L.marker(latlng, { icon: makePointIcon(PREVIEW_FAIL_FILL, true, false) });
+        if (isOk) return L.marker(latlng, { icon: makePointIcon(PREVIEW_OK_FILL, true, false) });
+        if (isSrc) return L.marker(latlng, { icon: makePointIcon(PREVIEW_SRC, true, false) });
         if (isSel) return L.marker(latlng, { icon: makePointIcon("#f0a500", true, false) });
         const color = isCenter ? "#e74c3c" : colorForId(feature.properties.id);
         return L.marker(latlng, { icon: makePointIcon(color, highlighted, dimmed, isCenter, matched) });
@@ -292,7 +334,7 @@ function renderFeatures(fit = true) {
     }).addTo(geoLayer);
 
     // عوارض بدون ژئومتری (فقط lat/lng) — در حالت ترکیبی هم نمایش داده شوند
-    addCoordMarkers(highlightSet, centerKey, selectedKey);
+    addCoordMarkers(highlightSet, centerKey, selectedKey, psets);
 
     if (fit) {
       try {
@@ -306,15 +348,18 @@ function renderFeatures(fit = true) {
       if (!hasCoord(w)) return;
       const key = wellKey(w);
       const highlighted = inHighlightSet(key, highlightSet);
-      const dimmed = props.hasFilter && !highlighted
+      const { isSrc, isOk, isFail, isAny } = previewFlags(key, w.id);
+      const dimmed = props.hasFilter && !highlighted && !isAny
       const matched = highlighted && props.hasFilter
       const isCenter = centerKey && key === centerKey
-      const isSel = selectedKey && (key === selectedKey || String(w.id) === selectedKey)
-      const baseColor = isSel ? "#f0a500" : (isCenter ? "#e74c3c" : colorForId(w.id));
-      const color = matched && !isSel && !isCenter ? MATCH_FILL : baseColor;
+      const isSel = (selectedKey && (key === selectedKey || String(w.id) === selectedKey)) || isAny
+      const previewColor = isFail ? PREVIEW_FAIL_FILL : isOk ? PREVIEW_OK_FILL : isSrc ? PREVIEW_SRC : null;
+      const previewBorder = isFail ? PREVIEW_FAIL_BORDER : isOk ? PREVIEW_OK_BORDER : "#1a1a1a";
+      const baseColor = previewColor ?? (isSel ? "#f0a500" : (isCenter ? "#e74c3c" : colorForId(w.id)));
+      const color = matched && !isSel && !isCenter && !isAny ? MATCH_FILL : baseColor;
       const marker = L.circleMarker([+w.lat, +w.lng], {
         radius: isSel ? 9 : (isCenter ? 10 : (matched ? 9 : (highlighted ? 8 : (dimmed ? 4 : 5)))),
-        color: dimmed && !isSel ? GRAY : (matched ? MATCH_BORDER : (isSel ? "#1a1a1a" : (isCenter ? "#fff" : (highlighted ? "#e9efe9" : color)))),
+        color: dimmed && !isSel ? GRAY : (matched && !isAny ? MATCH_BORDER : ((isSel || isAny) ? previewBorder : (isCenter ? "#fff" : (highlighted ? "#e9efe9" : color)))),
         weight: isSel || isCenter || matched ? 3 : 1.5,
         fillColor: dimmed && !isSel ? GRAY : color,
         fillOpacity: dimmed && !isSel ? 0.15 : ((isSel || isCenter || matched) ? 0.9 : (highlighted ? 0.8 : 0.5)),
@@ -341,21 +386,31 @@ function renderFeatures(fit = true) {
   }
 }
 
-function addCoordMarkers(highlightSet, centerKey, selectedKey) {
+function addCoordMarkers(highlightSet, centerKey, selectedKey, psets) {
+  const flagsOf = (key, plainId) => {
+    if (!psets) return { isSrc: false, isOk: false, isFail: false, isAny: false };
+    const isSrc = inIdSet(key, plainId, psets.src) || inIdSet(key, plainId, psets.legacy);
+    const isOk = inIdSet(key, plainId, psets.ok);
+    const isFail = inIdSet(key, plainId, psets.fail);
+    return { isSrc, isOk, isFail, isAny: isSrc || isOk || isFail };
+  };
   props.wells
     .filter((w) => !w._geometry && hasCoord(w))
     .forEach((w) => {
       const key = wellKey(w);
       const highlighted = inHighlightSet(key, highlightSet);
-      const dimmed = props.hasFilter && !highlighted
+      const { isSrc, isOk, isFail, isAny } = flagsOf(key, w.id);
+      const dimmed = props.hasFilter && !highlighted && !isAny
       const matched = highlighted && props.hasFilter
       const isCenter = centerKey && key === centerKey
-      const isSel = selectedKey && (key === selectedKey || String(w.id) === selectedKey)
-      const baseColor = isSel ? "#f0a500" : (isCenter ? "#e74c3c" : colorForId(w.id));
-      const color = matched && !isSel && !isCenter ? MATCH_FILL : baseColor;
+      const isSel = (selectedKey && (key === selectedKey || String(w.id) === selectedKey)) || isAny
+      const previewColor = isFail ? PREVIEW_FAIL_FILL : isOk ? PREVIEW_OK_FILL : isSrc ? PREVIEW_SRC : null;
+      const previewBorder = isFail ? PREVIEW_FAIL_BORDER : isOk ? PREVIEW_OK_BORDER : "#1a1a1a";
+      const baseColor = previewColor ?? (isSel ? "#f0a500" : (isCenter ? "#e74c3c" : colorForId(w.id)));
+      const color = matched && !isSel && !isCenter && !isAny ? MATCH_FILL : baseColor;
       const marker = L.circleMarker([+w.lat, +w.lng], {
         radius: isSel ? 9 : (isCenter ? 10 : (matched ? 9 : (highlighted ? 8 : (dimmed ? 4 : 5)))),
-        color: dimmed && !isSel ? GRAY : (matched ? MATCH_BORDER : (isSel ? "#1a1a1a" : (isCenter ? "#fff" : (highlighted ? "#e9efe9" : color)))),
+        color: dimmed && !isSel ? GRAY : (matched && !isAny ? MATCH_BORDER : ((isSel || isAny) ? previewBorder : (isCenter ? "#fff" : (highlighted ? "#e9efe9" : color)))),
         weight: isSel || isCenter || matched ? 3 : 1.5,
         fillColor: dimmed && !isSel ? GRAY : color,
         fillOpacity: dimmed && !isSel ? 0.15 : ((isSel || isCenter || matched) ? 0.9 : (highlighted ? 0.8 : 0.5)),
@@ -428,14 +483,36 @@ onBeforeUnmount(() => {
 
 watch(() => props.theme, syncTheme);
 
-function styleSingleLayer(layer, highlightSet, centerKey, selectedKey) {
+function styleSingleLayer(layer, highlightSet, centerKey, selectedKey, psets) {
   const key = layer.feature ? wellKey(layer.feature) : (layer._wellId || null);
   const plainId = layer.feature?.properties?.id ?? (layer._wellId && layer._wellId.includes('::') ? layer._wellId.slice(layer._wellId.indexOf('::') + 2) : layer._wellId);
   if (!key && !plainId) return;
   const hl = inHighlightSet(key, highlightSet);
   const isCenter = centerKey && key === centerKey;
-  const isSel = selectedKey && (key === selectedKey || String(plainId) === selectedKey);
-  if (isSel) {
+  const isSrc = psets && (inIdSet(key, plainId, psets.src) || inIdSet(key, plainId, psets.legacy));
+  const isOk = psets && inIdSet(key, plainId, psets.ok);
+  const isFail = psets && inIdSet(key, plainId, psets.fail);
+  const isAny = isSrc || isOk || isFail;
+  const isSel = (selectedKey && (key === selectedKey || String(plainId) === selectedKey)) || isAny;
+  if (isFail) {
+    if (layer.setStyle) {
+      layer.setStyle({ color: PREVIEW_FAIL_BORDER, weight: 3.5, fillColor: PREVIEW_FAIL_FILL, fillOpacity: 0.6, opacity: 1 });
+    } else if (layer.setIcon) {
+      layer.setIcon(makePointIcon(PREVIEW_FAIL_FILL, true, false));
+    }
+  } else if (isOk) {
+    if (layer.setStyle) {
+      layer.setStyle({ color: PREVIEW_OK_BORDER, weight: 3.5, fillColor: PREVIEW_OK_FILL, fillOpacity: 0.65, opacity: 1 });
+    } else if (layer.setIcon) {
+      layer.setIcon(makePointIcon(PREVIEW_OK_FILL, true, false));
+    }
+  } else if (isSrc) {
+    if (layer.setStyle) {
+      layer.setStyle({ color: "#1a1a1a", weight: 3.5, fillColor: PREVIEW_SRC, fillOpacity: 0.6, opacity: 1 });
+    } else if (layer.setIcon) {
+      layer.setIcon(makePointIcon(PREVIEW_SRC, true, false));
+    }
+  } else if (isSel) {
     if (layer.setStyle) {
       layer.setStyle({
         color: "#f0a500",
@@ -470,14 +547,20 @@ function styleSingleLayer(layer, highlightSet, centerKey, selectedKey) {
 function updateHighlightStyles() {
   if (!geoLayer) return
   const highlightSet = new Set((props.highlightedIds || []).map(String))
+  const psets = {
+    legacy: new Set((props.previewIds || []).map(String)),
+    src: new Set((props.previewSourceIds || []).map(String)),
+    ok: new Set((props.previewOkIds || []).map(String)),
+    fail: new Set((props.previewFailIds || []).map(String)),
+  }
   const centerKey = wellKey(props.radiusCenter);
   const selectedKey = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null
 
   geoLayer.eachLayer(layer => {
     if (typeof layer.eachLayer === "function" && !layer.feature && layer._wellId === undefined) {
-      layer.eachLayer(child => styleSingleLayer(child, highlightSet, centerKey, selectedKey));
+      layer.eachLayer(child => styleSingleLayer(child, highlightSet, centerKey, selectedKey, psets));
     } else {
-      styleSingleLayer(layer, highlightSet, centerKey, selectedKey);
+      styleSingleLayer(layer, highlightSet, centerKey, selectedKey, psets);
     }
   })
 }
@@ -487,6 +570,10 @@ watch(() => props.highlightedIds, scheduleHighlight);
 watch(() => props.hasFilter, scheduleHighlight);
 watch(() => props.radiusCenter, scheduleHighlight);
 watch(() => props.selectedId, scheduleHighlight);
+watch(() => props.previewIds, scheduleHighlight);
+watch(() => props.previewSourceIds, scheduleHighlight);
+watch(() => props.previewOkIds, scheduleHighlight);
+watch(() => props.previewFailIds, scheduleHighlight);
 
 // زوم ملایم روی مجموعه‌ای از سطرهای نتیجه (مبنای دکمه‌های «اجرا/اعمال»)
 function flyToRows(feats) {

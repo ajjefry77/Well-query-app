@@ -185,6 +185,12 @@ const props = defineProps({
   radiusCenter: { type: Object, default: null },
   radiusKm: { type: Number, default: 0 },
   selectedId: { type: [String, Number], default: null },
+  // هایلایت فوری عارضه‌های مبدأ/هدف رابطه مکانی (قبل از Apply)
+  previewIds: { type: Array, default: () => [] },
+  // تفکیک رنگی: مبدأ زرد، هدف سبز (رابطه برقرار) / قرمز (برقرار نیست)
+  previewSourceIds: { type: Array, default: () => [] },
+  previewOkIds: { type: Array, default: () => [] },
+  previewFailIds: { type: Array, default: () => [] },
   theme: { type: String, default: "light" },
 });
 const emit = defineEmits(["select-well", "map-empty-click"]);
@@ -663,6 +669,32 @@ function inHighlightSet(key, highlightSet) {
   if (i >= 0 && highlightSet.has(key.slice(i + 2))) return true;
   return false;
 }
+// رنگ‌بندی پیش‌نمایش رابطه مکانی: مبدأ زرد، هدف سبز/قرمز
+const PREVIEW_SRC_COLOR = "#eab308";
+const PREVIEW_OK_COLOR = "#22c55e";
+const PREVIEW_OK_BORDER = "#14532d";
+const PREVIEW_FAIL_COLOR = "#ef4444";
+const PREVIEW_FAIL_BORDER = "#7f1d1d";
+function inIdSet(key, plainId, set) {
+  if (!set || set.size === 0) return false;
+  if (key && (set.has(key) || (key.includes("::") && set.has(key.slice(key.indexOf("::") + 2))))) return true;
+  if (plainId != null && set.has(String(plainId))) return true;
+  return false;
+}
+function previewSets() {
+  return {
+    legacy: new Set((props.previewIds || []).map(String)),
+    src: new Set((props.previewSourceIds || []).map(String)),
+    ok: new Set((props.previewOkIds || []).map(String)),
+    fail: new Set((props.previewFailIds || []).map(String)),
+  };
+}
+function previewFlags(key, plainId, sets) {
+  const isSrc = inIdSet(key, plainId, sets.src) || inIdSet(key, plainId, sets.legacy);
+  const isOk = inIdSet(key, plainId, sets.ok);
+  const isFail = inIdSet(key, plainId, sets.fail);
+  return { isSrc, isOk, isFail, isAny: isSrc || isOk || isFail };
+}
 
 function buildGeoJSON(wells) {
   return {
@@ -762,6 +794,7 @@ function fitGeoJSON(geojson) {
 function renderMarkers(fit = true) {
   if (!map || !map.isStyleLoaded()) return;
   const highlightSet = new Set((props.highlightedIds || []).map(String));
+  const psets = previewSets();
   const centerKey = wellKey(props.radiusCenter);
   const selectedKey = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null;
   const hasGeometry = props.wells.some((w) => w._geometry);
@@ -774,14 +807,18 @@ function renderMarkers(fit = true) {
       const key = wellKey(f);
       const hl = inHighlightSet(key, highlightSet);
       const match = props.hasFilter && hl;
+      const { isSrc, isOk, isFail, isAny } = previewFlags(key, f.properties.id, psets);
       f.properties._color = WELL_COLOR;
       f.properties._highlighted = hl ? 1 : 0;
-      f.properties._dimmed = props.hasFilter && !hl ? 1 : 0;
+      f.properties._dimmed = props.hasFilter && !hl && !isAny ? 1 : 0;
       f.properties._match = match ? 1 : 0;
+      f.properties._psrc = isSrc && !isOk && !isFail ? 1 : 0;
+      f.properties._pok = isOk ? 1 : 0;
+      f.properties._pfail = isFail ? 1 : 0;
       f.properties._isCenter =
         centerKey && key === centerKey ? 1 : 0;
       f.properties._selected =
-        selectedKey && (key === selectedKey || String(f.properties.id) === selectedKey) ? 1 : 0;
+        (selectedKey && (key === selectedKey || String(f.properties.id) === selectedKey)) || isAny ? 1 : 0;
     });
     // استفاده مجدد از source/layer (بدون بازسازی و بدون fit اضافه)
     if (map.getSource("wells-src")) {
@@ -800,6 +837,12 @@ function renderMarkers(fit = true) {
       paint: {
         "fill-color": [
           "case",
+          ["==", ["get", "_pfail"], 1],
+          PREVIEW_FAIL_COLOR,
+          ["==", ["get", "_pok"], 1],
+          PREVIEW_OK_COLOR,
+          ["==", ["get", "_psrc"], 1],
+          PREVIEW_SRC_COLOR,
           ["==", ["get", "_selected"], 1],
           "#f0a500",
           ["==", ["get", "_isCenter"], 1],
@@ -812,6 +855,12 @@ function renderMarkers(fit = true) {
         ],
         "fill-opacity": [
           "case",
+          ["==", ["get", "_pfail"], 1],
+          0.6,
+          ["==", ["get", "_pok"], 1],
+          0.65,
+          ["==", ["get", "_psrc"], 1],
+          0.6,
           ["==", ["get", "_selected"], 1],
           0.6,
           ["==", ["get", "_isCenter"], 1],
@@ -838,6 +887,12 @@ function renderMarkers(fit = true) {
       paint: {
         "line-color": [
           "case",
+          ["==", ["get", "_pfail"], 1],
+          PREVIEW_FAIL_BORDER,
+          ["==", ["get", "_pok"], 1],
+          PREVIEW_OK_BORDER,
+          ["==", ["get", "_psrc"], 1],
+          PREVIEW_SRC_COLOR,
           ["==", ["get", "_selected"], 1],
           "#f0a500",
           ["==", ["get", "_isCenter"], 1],
@@ -850,6 +905,12 @@ function renderMarkers(fit = true) {
         ],
         "line-width": [
           "case",
+          ["==", ["get", "_pfail"], 1],
+          4,
+          ["==", ["get", "_pok"], 1],
+          4,
+          ["==", ["get", "_psrc"], 1],
+          4,
           ["==", ["get", "_selected"], 1],
           4,
           ["==", ["get", "_isCenter"], 1],
@@ -862,6 +923,12 @@ function renderMarkers(fit = true) {
         ],
         "line-opacity": [
           "case",
+          ["==", ["get", "_pfail"], 1],
+          1,
+          ["==", ["get", "_pok"], 1],
+          1,
+          ["==", ["get", "_psrc"], 1],
+          1,
           ["==", ["get", "_selected"], 1],
           1,
           ["==", ["get", "_highlighted"], 1],
@@ -885,6 +952,12 @@ function renderMarkers(fit = true) {
       paint: {
         "line-width": [
           "case",
+          ["==", ["get", "_pfail"], 1],
+          4,
+          ["==", ["get", "_pok"], 1],
+          4,
+          ["==", ["get", "_psrc"], 1],
+          4,
           ["==", ["get", "_selected"], 1],
           4,
           ["==", ["get", "_isCenter"], 1],
@@ -899,6 +972,12 @@ function renderMarkers(fit = true) {
         ],
         "line-color": [
           "case",
+          ["==", ["get", "_pfail"], 1],
+          PREVIEW_FAIL_COLOR,
+          ["==", ["get", "_pok"], 1],
+          PREVIEW_OK_COLOR,
+          ["==", ["get", "_psrc"], 1],
+          PREVIEW_SRC_COLOR,
           ["==", ["get", "_selected"], 1],
           "#f0a500",
           ["==", ["get", "_isCenter"], 1],
@@ -920,6 +999,12 @@ function renderMarkers(fit = true) {
       paint: {
         "circle-radius": [
           "case",
+          ["==", ["get", "_pfail"], 1],
+          12,
+          ["==", ["get", "_pok"], 1],
+          12,
+          ["==", ["get", "_psrc"], 1],
+          12,
           ["==", ["get", "_selected"], 1],
           12,
           ["==", ["get", "_isCenter"], 1],
@@ -934,6 +1019,12 @@ function renderMarkers(fit = true) {
         ],
         "circle-color": [
           "case",
+          ["==", ["get", "_pfail"], 1],
+          PREVIEW_FAIL_COLOR,
+          ["==", ["get", "_pok"], 1],
+          PREVIEW_OK_COLOR,
+          ["==", ["get", "_psrc"], 1],
+          PREVIEW_SRC_COLOR,
           ["==", ["get", "_selected"], 1],
           "#f0a500",
           ["==", ["get", "_isCenter"], 1],
@@ -946,6 +1037,12 @@ function renderMarkers(fit = true) {
         ],
         "circle-opacity": [
           "case",
+          ["==", ["get", "_pfail"], 1],
+          1,
+          ["==", ["get", "_pok"], 1],
+          1,
+          ["==", ["get", "_psrc"], 1],
+          1,
           ["==", ["get", "_selected"], 1],
           1,
           ["==", ["get", "_isCenter"], 1],
@@ -956,6 +1053,12 @@ function renderMarkers(fit = true) {
         ],
         "circle-stroke-width": [
           "case",
+          ["==", ["get", "_pfail"], 1],
+          3,
+          ["==", ["get", "_pok"], 1],
+          3,
+          ["==", ["get", "_psrc"], 1],
+          3,
           ["==", ["get", "_selected"], 1],
           3,
           ["==", ["get", "_isCenter"], 1],
@@ -964,6 +1067,12 @@ function renderMarkers(fit = true) {
         ],
         "circle-stroke-color": [
           "case",
+          ["==", ["get", "_pfail"], 1],
+          PREVIEW_FAIL_BORDER,
+          ["==", ["get", "_pok"], 1],
+          PREVIEW_OK_BORDER,
+          ["==", ["get", "_psrc"], 1],
+          "#1a1a1a",
           ["==", ["get", "_selected"], 1],
           "#1a1a1a",
           ["==", ["get", "_isCenter"], 1],
@@ -978,6 +1087,12 @@ function renderMarkers(fit = true) {
         ],
         "circle-stroke-opacity": [
           "case",
+          ["==", ["get", "_pfail"], 1],
+          1,
+          ["==", ["get", "_pok"], 1],
+          1,
+          ["==", ["get", "_psrc"], 1],
+          1,
           ["==", ["get", "_selected"], 1],
           1,
           ["==", ["get", "_isCenter"], 1],
@@ -999,29 +1114,40 @@ function renderMarkers(fit = true) {
       if (!Number.isFinite(+w.lat) || !Number.isFinite(+w.lng)) return;
       const key = wellKey(w);
       const isH = inHighlightSet(key, highlightSet);
-      const isDimmed = props.hasFilter && !isH;
+      const { isSrc, isOk, isFail, isAny } = previewFlags(key, w.id, psets);
+      const isDimmed = props.hasFilter && !isH && !isAny;
       const isMatch = props.hasFilter && isH;
       const isCenter = centerKey && key === centerKey;
-      const isSel = selectedKey && (key === selectedKey || String(w.id) === selectedKey);
-      const color = isSel
-        ? "#f0a500"
-        : isCenter
-          ? "#e74c3c"
-          : isMatch
-            ? "#22c55e"
-            : isH
-              ? "#4a9b8e"
-              : "#8a9490";
+      const isSel = (selectedKey && (key === selectedKey || String(w.id) === selectedKey)) || isAny;
+      const color = isFail
+        ? PREVIEW_FAIL_COLOR
+        : isOk
+          ? PREVIEW_OK_COLOR
+          : isSrc
+            ? PREVIEW_SRC_COLOR
+            : isSel
+              ? "#f0a500"
+              : isCenter
+                ? "#e74c3c"
+                : isMatch
+                  ? "#22c55e"
+                  : isH
+                    ? "#4a9b8e"
+                    : "#8a9490";
       const opacity = isSel || isCenter || isMatch ? "1" : isDimmed ? "0.25" : "1";
-      const border = isSel
-        ? "3px solid #1a1a1a"
-        : isCenter
-          ? "3px solid #fff"
-          : isMatch
-            ? "3px solid #14532d"
-            : isH
+      const border = isFail
+        ? `3px solid ${PREVIEW_FAIL_BORDER}`
+        : isOk
+          ? `3px solid ${PREVIEW_OK_BORDER}`
+          : isSel
+            ? "3px solid #1a1a1a"
+            : isCenter
               ? "3px solid #fff"
-              : "2px solid rgba(255,255,255,0.4)";
+              : isMatch
+                ? "3px solid #14532d"
+                : isH
+                  ? "3px solid #fff"
+                  : "2px solid rgba(255,255,255,0.4)";
       const size = isSel ? 22 : isCenter ? 22 : isMatch ? 20 : isH ? 18 : isDimmed ? 8 : 12;
       const el = document.createElement("div");
       el.style.cssText = `
@@ -1154,18 +1280,23 @@ function updateHighlightData() {
     return;
   }
   const highlightSet = new Set((props.highlightedIds || []).map(String));
+  const psets = previewSets();
   const centerKey = wellKey(props.radiusCenter);
   const selectedKey = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null;
   wellsGeoJSON.features.forEach((f) => {
     const key = wellKey(f);
     const hl = inHighlightSet(key, highlightSet);
+    const { isSrc, isOk, isFail, isAny } = previewFlags(key, f.properties.id, psets);
     f.properties._highlighted = hl ? 1 : 0;
-    f.properties._dimmed = props.hasFilter && !hl ? 1 : 0;
+    f.properties._dimmed = props.hasFilter && !hl && !isAny ? 1 : 0;
     f.properties._match = (props.hasFilter && hl) ? 1 : 0;
+    f.properties._psrc = isSrc && !isOk && !isFail ? 1 : 0;
+    f.properties._pok = isOk ? 1 : 0;
+    f.properties._pfail = isFail ? 1 : 0;
     f.properties._isCenter =
       centerKey && key === centerKey ? 1 : 0;
     f.properties._selected =
-      selectedKey && (key === selectedKey || String(f.properties.id) === selectedKey) ? 1 : 0;
+      ((selectedKey && (key === selectedKey || String(f.properties.id) === selectedKey)) || isAny) ? 1 : 0;
   });
   map.getSource("wells-src").setData(wellsGeoJSON);
 }
@@ -1173,6 +1304,15 @@ function updateHighlightData() {
 watch(() => props.highlightedIds, scheduleHighlight);
 watch(() => props.hasFilter, scheduleHighlight);
 watch(() => props.selectedId, scheduleHighlight);
+function schedulePreviewRefresh() {
+  // حالت نقطه‌ای (بدون wells-src) نیاز به رندر کامل مارکرها دارد
+  if (!wellsGeoJSON || !map?.getSource?.("wells-src")) scheduleRender();
+  else scheduleHighlight();
+}
+watch(() => props.previewIds, schedulePreviewRefresh);
+watch(() => props.previewSourceIds, schedulePreviewRefresh);
+watch(() => props.previewOkIds, schedulePreviewRefresh);
+watch(() => props.previewFailIds, schedulePreviewRefresh);
 // عارضه مرجع (قرمز) با تغییر انتخاب به‌روز می‌شود
 watch(() => props.radiusCenter, scheduleHighlight);
 

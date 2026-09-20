@@ -116,17 +116,51 @@ export function evaluateRelation(sourceGeom, targetGeom, operator) {
   }
 }
 
+// مقدار ویژه «کل لایه» در دراپ‌داون عارضه مبدأ/هدف
+export const ALL_FEATURES = '__ALL__'
+export function isAllFeatures(v) {
+  return v === ALL_FEATURES || v == null || v === ''
+}
+
 // همه سطرهای هدف که رابطه خواسته‌شده را با سطر مبدأ دارند (به‌جز خود مبدأ)
 export function findMatchingRows(sourceRow, targetRows, operator) {
-  const sourceFeature = rowToFeature(sourceRow)
-  if (!sourceFeature || !Array.isArray(targetRows)) return []
-  const sourceKey = sourceRow._layerUuid ? `${sourceRow._layerUuid}::${sourceRow.id}` : String(sourceRow.id ?? '')
-  const sourceGeom = sourceFeature.geometry
-  return targetRows.filter((row) => {
+  return findMatchingRowsMulti(sourceRow ? [sourceRow] : [], targetRows, operator)
+}
+
+// حالت چند مبدأ (مبدأ = کل لایه): اجتماع نتایج هر عارضه مبدأ
+// اگر هر دو تک‌عارضه باشند همان رفتار قبلی حفظ می‌شود
+export function findMatchingRowsMulti(sourceRows, targetRows, operator) {
+  if (!Array.isArray(sourceRows) || !Array.isArray(targetRows) || !sourceRows.length) return []
+  const sourceKeys = new Set(
+    sourceRows.map((r) => (r._layerUuid ? `${r._layerUuid}::${r.id}` : String(r.id ?? ''))),
+  )
+  const sourceGeoms = []
+  for (const r of sourceRows) {
+    const f = rowToFeature(r)
+    if (f?.geometry) sourceGeoms.push({ key: r._layerUuid ? `${r._layerUuid}::${r.id}` : String(r.id ?? ''), geom: f.geometry })
+  }
+  if (!sourceGeoms.length) return []
+  const seen = new Set()
+  const out = []
+  for (const row of targetRows) {
     const key = row._layerUuid ? `${row._layerUuid}::${row.id}` : String(row.id ?? '')
-    if (key && sourceKey && key === sourceKey) return false
     const targetFeature = rowToFeature(row)
-    if (!targetFeature) return false
-    return evaluateRelation(sourceGeom, targetFeature.geometry, operator)
-  })
+    if (!targetFeature) continue
+    for (const { key: sKey, geom: sGeom } of sourceGeoms) {
+      if (key && sKey && key === sKey && sourceKeys.size === 1) continue
+      // در حالت چندمبدأ، خود مبدأها هم می‌توانند در لایه هدف باشند؛ جفت یکسان حذف می‌شود
+      if (key && key === sKey) continue
+      let ok = false
+      try {
+        ok = evaluateRelation(sGeom, targetFeature.geometry, operator)
+      } catch { ok = false }
+      if (ok) {
+        if (key && seen.has(key)) break
+        if (key) seen.add(key)
+        out.push(row)
+        break
+      }
+    }
+  }
+  return out
 }

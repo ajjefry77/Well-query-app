@@ -40,8 +40,10 @@
         :relation-source-layer="relationSourceLayer"
         :relation-source-id="relationSourceId"
         :relation-target-layer="relationTargetLayer"
+        :relation-target-id="relationTargetId"
         :relation-operator="relationOperator"
         :relation-loading="spatialLoading"
+        :relation-live-match="relationLiveMatch"
         :saved-queries="savedQueries"
         @toggle="toggleQueryPanel"
         @update:active-query-layer="activeQueryLayer = $event"
@@ -57,9 +59,10 @@
         @clear-point="onClearPoint"
         @clear-spatial="onClearSpatial"
         @apply-spatial="onApplySpatial"
-        @update:relation-source-layer="relationSourceLayer = $event"
-        @update:relation-source-id="relationSourceId = $event"
-        @update:relation-target-layer="relationTargetLayer = $event"
+        @update:relation-source-layer="onUpdateRelationSourceLayer"
+        @update:relation-source-id="onUpdateRelationSourceId"
+        @update:relation-target-layer="onUpdateRelationTargetLayer"
+        @update:relation-target-id="onUpdateRelationTargetId"
         @update:relation-operator="relationOperator = $event"
         @apply-relation="onApplyRelation"
         @load-query="onLoadQuery"
@@ -78,6 +81,10 @@
            :radius-center="showRadiusOnMap ? committedRadiusCenter : null"
            :radius-km="committedRadiusKm"
             :selected-id="selectedWellId"
+            :preview-ids="relationPreviewIds"
+            :preview-source-ids="relationPreviewSourceIds"
+            :preview-ok-ids="relationPreviewOkIds"
+            :preview-fail-ids="relationPreviewFailIds"
             :theme="theme"
             @select-well="onSelectFromMap"
             @map-empty-click="onMapEmptyClick"
@@ -192,7 +199,7 @@ import { useWellQuery } from '../composables/useWellQuery.js'
 import { useCoordinates } from '../composables/useCoordinates.js'
 import { useTheme } from '../composables/useTheme.js'
 import { layerColor } from '../composables/useLayerColors.js'
-import { relationLabel } from '../composables/useSpatialRelations.js'
+import { relationLabel, ALL_FEATURES, evaluateRelation, rowToFeature } from '../composables/useSpatialRelations.js'
 import { useRoute, useRouter } from '../router/index.js'
 
 // بارگذاری تنبل: همه‌چیز به‌جز هدر، کد-split می‌شود تا First Paint روی سیستم ضعیف سریع باشد
@@ -223,7 +230,7 @@ const {
   radiusCenter, radiusKm,
   committedRadiusCenter, committedRadiusKm,
   spatialLoading, commitSpatialFilter,
-  relationSourceLayer, relationSourceId, relationTargetLayer, relationOperator,
+  relationSourceLayer, relationSourceId, relationTargetLayer, relationTargetId, relationOperator,
   relationCommitted, relationResults,
   commitRelationFilter, clearRelation,
   savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
@@ -483,13 +490,94 @@ const relationSummary = computed(() => {
   if (!c) return null
   const layerNameOf = (uuid) =>
     activeLayers.value.find(l => String(l.uuid) === String(uuid))?.display_name ?? ''
+  const srcPart = !c.sourceId || c.sourceId === ALL_FEATURES ? 'کل لایه' : `#${c.sourceId}`
+  const tgtPart = !c.targetId || c.targetId === ALL_FEATURES ? 'کل لایه' : `#${c.targetId}`
   return {
     opLabel: relationLabel(c.operator),
-    sourceText: `مبدأ: ${layerNameOf(c.sourceLayerUuid)} #${c.sourceId}`,
-    targetText: `هدف: ${layerNameOf(c.targetLayerUuid)}`,
+    sourceText: `مبدأ: ${layerNameOf(c.sourceLayerUuid)} ${srcPart}`,
+    targetText: `هدف: ${layerNameOf(c.targetLayerUuid)} ${tgtPart}`,
     count: relationResults.value.length,
   }
 })
+
+// ── پیش‌نمایش فوری عارضه‌های مبدأ/هدف رابطه مکانی روی نقشه ──
+// مبدأ همیشه زرد؛ هدف تکی به‌صورت زنده ارزیابی می‌شود: سبز = رابطه برقرار، قرمز = برقرار نیست
+function isSingleFeatureId(v) {
+  return v != null && v !== '' && v !== ALL_FEATURES
+}
+const relationSourceRow = computed(() => {
+  if (!relationSourceLayer.value || !isSingleFeatureId(relationSourceId.value)) return null
+  return allWells.value.find(w =>
+    String(w._layerUuid) === String(relationSourceLayer.value) &&
+    String(w.id) === String(relationSourceId.value)
+  ) ?? null
+})
+const relationTargetRow = computed(() => {
+  if (!relationTargetLayer.value || !isSingleFeatureId(relationTargetId.value)) return null
+  return allWells.value.find(w =>
+    String(w._layerUuid) === String(relationTargetLayer.value) &&
+    String(w.id) === String(relationTargetId.value)
+  ) ?? null
+})
+// نتیجه زنده رابطه بین دو عارضه تکی انتخاب‌شده (null = قابل ارزیابی نیست)
+const relationLiveMatch = computed(() => {
+  const src = relationSourceRow.value
+  const tgt = relationTargetRow.value
+  if (!src || !tgt) return null
+  const srcGeom = rowToFeature(src)?.geometry
+  const tgtGeom = rowToFeature(tgt)?.geometry
+  if (!srcGeom || !tgtGeom) return null
+  try {
+    return evaluateRelation(srcGeom, tgtGeom, relationOperator.value || 'within') === true
+  } catch { return false }
+})
+const relationPreviewIds = computed(() => {
+  const ids = []
+  if (relationSourceRow.value) ids.push(rowKey(relationSourceRow.value))
+  if (relationTargetRow.value) ids.push(rowKey(relationTargetRow.value))
+  return ids
+})
+// تفکیک رنگی: مبدأ زرد، هدف سبز (رابطه برقرار) یا قرمز (برقرار نیست)
+const relationPreviewSourceIds = computed(() =>
+  relationSourceRow.value ? [rowKey(relationSourceRow.value)] : []
+)
+const relationPreviewOkIds = computed(() =>
+  relationTargetRow.value && relationLiveMatch.value === true ? [rowKey(relationTargetRow.value)] : []
+)
+const relationPreviewFailIds = computed(() =>
+  relationTargetRow.value && relationLiveMatch.value === false ? [rowKey(relationTargetRow.value)] : []
+)
+function zoomToRelationPreview(layerUuid, featureId) {
+  if (!layerUuid || featureId == null || featureId === ALL_FEATURES || featureId === '') return
+  mapRef.value?.zoomToFeature?.(`${layerUuid}::${featureId}`)
+}
+function onUpdateRelationSourceLayer(v) {
+  relationSourceLayer.value = v
+  // اگر عارضه انتخابی متعلق به لایه جدید نیست، ریست شود (به‌جز حالت کل لایه)
+  if (relationSourceId.value != null && relationSourceId.value !== ALL_FEATURES && relationSourceId.value !== '') {
+    const ok = allWells.value.some(w =>
+      String(w._layerUuid) === String(v) && String(w.id) === String(relationSourceId.value)
+    )
+    if (!ok) relationSourceId.value = null
+  }
+}
+function onUpdateRelationSourceId(v) {
+  relationSourceId.value = v
+  zoomToRelationPreview(relationSourceLayer.value, v)
+}
+function onUpdateRelationTargetLayer(v) {
+  relationTargetLayer.value = v
+  if (relationTargetId.value != null && relationTargetId.value !== ALL_FEATURES && relationTargetId.value !== '') {
+    const ok = allWells.value.some(w =>
+      String(w._layerUuid) === String(v) && String(w.id) === String(relationTargetId.value)
+    )
+    if (!ok) relationTargetId.value = ALL_FEATURES
+  }
+}
+function onUpdateRelationTargetId(v) {
+  relationTargetId.value = v
+  zoomToRelationPreview(relationTargetLayer.value, v)
+}
 
 const hiddenLayerUuids = computed(() =>
   activeLayers.value
@@ -671,15 +759,7 @@ async function onApplyRelation() {
 function onClearRelation() {
   clearRelation()
 }
-// تغییر لایه مبدأ → اگر عارضه انتخابی متعلق به آن نیست، ریست شود
-watch(relationSourceLayer, () => {
-  if (relationSourceId.value == null) return
-  const ok = allWells.value.some(w =>
-    String(w._layerUuid) === String(relationSourceLayer.value) &&
-    String(w.id) === String(relationSourceId.value)
-  )
-  if (!ok) relationSourceId.value = null
-})
+// (منطق ریست عارضه مبدأ/هدف هنگام تعویض لایه در onUpdateRelation* انجام می‌شود)
 // اجرای کوئری توصیفی: تأیید پیش‌نویس‌ها و زوم روی نتایج
 function onApplyAttribute() {
   applyAttributeConditions()

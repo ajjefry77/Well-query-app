@@ -1,6 +1,6 @@
 import { ref, computed, watch } from 'vue'
 import { findWithinRadius } from './useGeoUtils.js'
-import { findMatchingRows } from './useSpatialRelations.js'
+import { findMatchingRowsMulti, isAllFeatures, ALL_FEATURES } from './useSpatialRelations.js'
 import {
   fetchVectorLayers,
   fetchLayerFields,
@@ -444,43 +444,55 @@ export function useWellQuery() {
 
   // ── رابطه مکانی (مبدأ/هدف + عملگر: within/contains/identical/...) ──
   // پیش‌نویس فرم و مقادیر تأییدشده (فقط بعد از «اعمال رابطه مکانی» اثر می‌کنند)
+  // relationSourceId / relationTargetId می‌تواند شناسه عارضه یا ALL_FEATURES («کل لایه») باشد
   const relationSourceLayer = ref(null)
   const relationSourceId    = ref(null)
   const relationTargetLayer = ref(null)
+  const relationTargetId    = ref(ALL_FEATURES)
   const relationOperator    = ref('within')
   const relationCommitted   = ref(null)
 
-  function findRelationSourceRow(snapshot) {
-    if (!snapshot) return null
-    return allFeatures.value.find(r =>
-      String(r._layerUuid) === String(snapshot.sourceLayerUuid) &&
-      String(r.id) === String(snapshot.sourceId)
-    ) ?? null
+  function findRelationRows(layerUuid, featureId) {
+    if (!layerUuid) return []
+    const inLayer = allFeatures.value.filter(r =>
+      String(r._layerUuid) === String(layerUuid)
+    )
+    if (isAllFeatures(featureId)) return inLayer
+    return inLayer.filter(r => String(r.id) === String(featureId))
   }
 
   const relationResults = computed(() => {
     const c = relationCommitted.value
     if (!c) return []
-    const sourceRow = findRelationSourceRow(c)
-    if (!sourceRow) return []
-    const targets = allFeatures.value.filter(r =>
+    const sourceRows = findRelationRows(c.sourceLayerUuid, c.sourceId)
+    if (!sourceRows.length) return []
+    let targets = allFeatures.value.filter(r =>
       String(r._layerUuid) === String(c.targetLayerUuid)
     )
-    return findMatchingRows(sourceRow, targets, c.operator)
+    // هدف تکی: فقط همان عارضه بررسی می‌شود؛ در غیر این صورت کل لایه هدف
+    if (!isAllFeatures(c.targetId)) {
+      targets = targets.filter(r => String(r.id) === String(c.targetId))
+    }
+    if (!targets.length) return []
+    return findMatchingRowsMulti(sourceRows, targets, c.operator)
   })
 
   const hasRadiusFilter   = computed(() => committedRadiusCenter.value !== null)
   const hasRelationFilter = computed(() => relationCommitted.value !== null)
 
   // اعمال رابطه مکانی (با لودینگ؛ محاسبات سنگین بعد از رندر لودینگ انجام می‌شود)
+  // مبدأ می‌تواند تک‌عارضه یا «کل لایه» باشد؛ هدف هم همین‌طور (خالی = کل لایه برای سازگاری)
   async function commitRelationFilter() {
-    if (!relationSourceLayer.value || relationSourceId.value == null || !relationTargetLayer.value) return false
+    if (!relationSourceLayer.value || !relationTargetLayer.value) return false
+    if (relationSourceId.value == null || relationSourceId.value === '') return false
+    const targetId = isAllFeatures(relationTargetId.value) ? ALL_FEATURES : relationTargetId.value
     spatialLoading.value = true
     await new Promise(r => setTimeout(r, 250))
     relationCommitted.value = {
       sourceLayerUuid: relationSourceLayer.value,
       sourceId: relationSourceId.value,
       targetLayerUuid: relationTargetLayer.value,
+      targetId,
       operator: relationOperator.value || 'within',
     }
     spatialLoading.value = false
@@ -491,6 +503,7 @@ export function useWellQuery() {
     relationSourceLayer.value = null
     relationSourceId.value    = null
     relationTargetLayer.value = null
+    relationTargetId.value    = ALL_FEATURES
     relationOperator.value    = 'within'
     relationCommitted.value   = null
   }
@@ -580,7 +593,7 @@ export function useWellQuery() {
     radiusCenter, radiusKm,
     committedRadiusCenter, committedRadiusKm,
     spatialLoading, commitSpatialFilter,
-    relationSourceLayer, relationSourceId, relationTargetLayer, relationOperator,
+    relationSourceLayer, relationSourceId, relationTargetLayer, relationTargetId, relationOperator,
     relationCommitted, relationResults, hasRelationFilter,
     commitRelationFilter, clearRelation,
     savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,

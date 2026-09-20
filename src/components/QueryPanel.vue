@@ -80,9 +80,12 @@
         :source-layer="relationSourceLayer"
         :source-id="relationSourceId"
         :target-layer="relationTargetLayer"
+        :target-id="relationTargetId"
         :operator="relationOperator"
         :source-fields="relationSourceLayer ? (layerDetails[relationSourceLayer]?.fields ?? []) : []"
+        :target-fields="relationTargetLayer ? (layerDetails[relationTargetLayer]?.fields ?? []) : []"
         :relation-loading="relationLoading"
+        :live-match="relationLiveMatch"
         @update:mode="$emit('update:spatial-mode', $event)"
         @update:tool="$emit('update:spatial-tool', $event)"
         @update:active-layer="$emit('update:active-query-layer', $event)"
@@ -95,6 +98,7 @@
         @update:source-layer="$emit('update:relation-source-layer', $event)"
         @update:source-id="$emit('update:relation-source-id', $event)"
         @update:target-layer="$emit('update:relation-target-layer', $event)"
+        @update:target-id="$emit('update:relation-target-id', $event)"
         @update:operator="$emit('update:relation-operator', $event)"
         @apply-relation="$emit('apply-relation')"
       />
@@ -139,8 +143,10 @@ const props = defineProps({
   relationSourceLayer: { type: String, default: null },
   relationSourceId: { type: [String, Number], default: null },
   relationTargetLayer: { type: String, default: null },
+  relationTargetId: { type: [String, Number], default: '__ALL__' },
   relationOperator: { type: String, default: 'within' },
   relationLoading: { type: Boolean, default: false },
+  relationLiveMatch: { type: Boolean, default: null },
 })
 defineEmits([
   'toggle',
@@ -160,6 +166,7 @@ defineEmits([
   'update:relation-source-layer',
   'update:relation-source-id',
   'update:relation-target-layer',
+  'update:relation-target-id',
   'update:relation-operator',
   'apply-relation',
   'load-query',

@@ -40,6 +40,7 @@
           placeholder="یک عارضه انتخاب کنید…"
           @update:model-value="$emit('update:source-id', $event)"
         />
+        <p v-if="isSourceAll" class="sq__hint sq__hint--tiny">همه عارضه‌های لایه مبدأ به‌عنوان مبدأ در نظر گرفته می‌شوند.</p>
       </div>
 
       <div class="layer-dropdown-wrap">
@@ -51,6 +52,19 @@
           placeholder="انتخاب لایه هدف…"
           @update:model-value="$emit('update:target-layer', $event)"
         />
+      </div>
+
+      <div class="field-group">
+        <label>عارضه هدف</label>
+        <AppSelect
+          class="qb-select qb-select--full"
+          :model-value="targetId != null ? String(targetId) : ''"
+          :options="targetFeatureOptions"
+          placeholder="یک عارضه انتخاب کنید…"
+          @update:model-value="$emit('update:target-id', $event)"
+        />
+        <p v-if="showLiveOk" class="sq__hint sq__hint--live sq__hint--live-ok">رابطه برقرار است — عارضه هدف سبز نمایش داده می‌شود.</p>
+        <p v-else-if="showLiveFail" class="sq__hint sq__hint--live sq__hint--live-fail">رابطه برقرار نیست — عارضه هدف قرمز نمایش داده می‌شود.</p>
       </div>
 
       <div class="field-group">
@@ -226,7 +240,7 @@
 <script setup>
 import { computed, ref, watch, nextTick } from "vue";
 import AppSelect from "./AppSelect.vue";
-import { RELATION_OPERATORS } from "../composables/useSpatialRelations.js";
+import { RELATION_OPERATORS, ALL_FEATURES } from "../composables/useSpatialRelations.js";
 
 const props = defineProps({
   mode: { type: String, required: true },
@@ -250,10 +264,15 @@ const props = defineProps({
   sourceLayer: { type: String, default: null },
   sourceId: { type: [String, Number], default: null },
   targetLayer: { type: String, default: null },
+  targetId: { type: [String, Number], default: ALL_FEATURES },
   operator: { type: String, default: "within" },
   // فیلدهای لایه مبدأ (برای برچسب عارضه‌ها)
   sourceFields: { type: Array, default: () => [] },
+  // فیلدهای لایه هدف (برای برچسب عارضه‌ها)
+  targetFields: { type: Array, default: () => [] },
   relationLoading: { type: Boolean, default: false },
+  // نتیجه زنده رابطه بین دو عارضه تکی (null = قابل ارزیابی نیست)
+  liveMatch: { type: Boolean, default: null },
 });
 
 const emit = defineEmits([
@@ -270,6 +289,7 @@ const emit = defineEmits([
   "update:source-layer",
   "update:source-id",
   "update:target-layer",
+  "update:target-id",
   "update:operator",
   "apply-relation",
 ]);
@@ -342,35 +362,71 @@ const operatorHint = computed(
   () => RELATION_OPERATORS.find((o) => o.value === props.operator)?.hint ?? "",
 );
 
-// عارضه‌های لایه مبدأ
+// عارضه‌های لایه مبدأ / هدف
 const sourceWells = computed(() => {
   if (!props.sourceLayer) return [];
   return props.wells.filter((w) => String(w._layerUuid) === String(props.sourceLayer));
 });
+const targetWells = computed(() => {
+  if (!props.targetLayer) return [];
+  return props.wells.filter((w) => String(w._layerUuid) === String(props.targetLayer));
+});
 
-// حدس فیلد نام در لایه مبدأ برای برچسب خوانا
-const sourceNameKey = computed(() => {
-  for (const f of props.sourceFields) {
+// حدس فیلد نام در لایه مبدأ/هدف برای برچسب خوانا
+function guessNameKey(fields) {
+  for (const f of fields ?? []) {
     if (f.key && f.key.toLowerCase().includes("name")) return f.key;
   }
   return null;
-});
+}
+const sourceNameKey = computed(() => guessNameKey(props.sourceFields));
+const targetNameKey = computed(() => guessNameKey(props.targetFields));
 
-const sourceFeatureOptions = computed(() =>
-  sourceWells.value.map((w) => ({
+function featureLabel(w, nameKey) {
+  return nameKey && w[nameKey] != null && w[nameKey] !== ""
+    ? `#${w.id} — ${w[nameKey]}`
+    : `#${w.id}`;
+}
+
+const ALL_OPTION = { value: ALL_FEATURES, label: "کل لایه — همه عارضه‌ها" };
+
+const sourceFeatureOptions = computed(() => [
+  { ...ALL_OPTION },
+  ...sourceWells.value.map((w) => ({
     value: String(w.id),
-    label: sourceNameKey.value && w[sourceNameKey.value] != null && w[sourceNameKey.value] !== ""
-      ? `#${w.id} — ${w[sourceNameKey.value]}`
-      : `#${w.id}`,
+    label: featureLabel(w, sourceNameKey.value),
   })),
-);
+]);
+const targetFeatureOptions = computed(() => [
+  { ...ALL_OPTION },
+  ...targetWells.value.map((w) => ({
+    value: String(w.id),
+    label: featureLabel(w, targetNameKey.value),
+  })),
+]);
 
-// اعمال فقط وقتی ممکن است که مبدأ/هدف کامل و عارضه مبدأ هندسه داشته باشد
+const isSourceAll = computed(() => props.sourceId === ALL_FEATURES);
+const isTargetAll = computed(() => !props.targetId || props.targetId === ALL_FEATURES);
+
+// اعمال فقط وقتی ممکن است که مبدأ/هدف کامل باشد و هندسه کافی وجود داشته باشد
 const canApplyRelation = computed(() => {
-  if (!props.sourceLayer || props.sourceId == null || !props.targetLayer) return false;
-  const src = sourceWells.value.find((w) => String(w.id) === String(props.sourceId));
-  if (!src) return false;
-  return !!(src._geometry || (Number.isFinite(+src.lat) && Number.isFinite(+src.lng)));
+  if (!props.sourceLayer || props.sourceId == null || props.sourceId === "" || !props.targetLayer) return false;
+  const hasGeom = (w) => !!(w._geometry || (Number.isFinite(+w.lat) && Number.isFinite(+w.lng)));
+  let sources = sourceWells.value;
+  if (!isSourceAll.value) {
+    const src = sources.find((w) => String(w.id) === String(props.sourceId));
+    if (!src) return false;
+    sources = [src];
+  }
+  if (!sources.length || !sources.some(hasGeom)) return false;
+  if (!isTargetAll.value) {
+    const tgt = targetWells.value.find((w) => String(w.id) === String(props.targetId));
+    if (!tgt) return false;
+    if (!hasGeom(tgt)) return false;
+  } else if (!targetWells.value.length) {
+    return false;
+  }
+  return true;
 });
 
 // عارضه‌های لایه فعال (فیلتر برای لیست) — اگر لایه‌ای انتخاب نشده همه
