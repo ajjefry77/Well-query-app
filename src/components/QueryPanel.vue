@@ -55,6 +55,10 @@
               @save="$emit('save-query', $event, layer.uuid)"
             />
           </template>
+
+          <button class="btn-apply-attribute" @click="$emit('apply-attribute')">
+            اجرای کوئری
+          </button>
         </template>
       </div>
 
@@ -125,6 +129,7 @@ defineEmits([
   'add-condition',
   'remove-condition',
   'save-query',
+  'apply-attribute',
   'update:spatial-mode',
   'update:radius-center',
   'update:radius-km',
@@ -223,6 +228,23 @@ const layerOptions = computed(() =>
 .per-layer-qb { display: flex; flex-direction: column; gap: 12px; }
 .qb-loading { display: flex; align-items: center; gap: 10px; padding: 16px 0; color: var(--text-muted); font-size: 12px; }
 .qb-no-layer { font-size: 12px; color: var(--text-muted); text-align: center; padding: 20px 0; font-style: italic; }
+
+.btn-apply-attribute {
+  width: 100%;
+  padding: 9px 14px;
+  background: var(--brand);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.btn-apply-attribute:hover {
+  opacity: 0.9;
+}
 
 .clear-data-btn {
   display: flex;

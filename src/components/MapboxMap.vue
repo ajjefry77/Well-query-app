@@ -1208,6 +1208,32 @@ function applyMapTheme(t) {
 }
 watch(() => props.theme, applyMapTheme);
 
+// زوم ملایم روی مجموعه‌ای از سطرهای نتیجه (مبنای دکمه‌های «اجرا/اعمال»)
+function fitRowsToBounds(feats) {
+  if (!map || !Array.isArray(feats) || !feats.length) return;
+  const bounds = new mapboxgl.LngLatBounds();
+  let has = false;
+  const extend = (c) => {
+    if (Array.isArray(c) && Number.isFinite(+c[0]) && Number.isFinite(+c[1])) {
+      try { bounds.extend([+c[0], +c[1]]); has = true; } catch {}
+    }
+  };
+  const walk = (coords) => {
+    if (!Array.isArray(coords)) return;
+    if (typeof coords[0] === "number") extend(coords);
+    else coords.forEach(walk);
+  };
+  feats.forEach((w) => {
+    if (w._geometry?.coordinates) {
+      try { walk(w._geometry.coordinates); } catch {}
+    } else if (Number.isFinite(+w.lat) && Number.isFinite(+w.lng)) {
+      try { bounds.extend([+w.lng, +w.lat]); has = true; } catch {}
+    }
+  });
+  if (has && !bounds.isEmpty())
+    map.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 800 });
+}
+
 // ─── expose ────────────────────────────────────────────────
 defineExpose({
   invalidateSize() {
@@ -1242,28 +1268,11 @@ defineExpose({
   zoomToLayer(uuid) {
     if (!map) return;
     const feats = props.wells.filter((w) => String(w._layerUuid) === String(uuid));
-    if (!feats.length) return;
-    const bounds = new mapboxgl.LngLatBounds();
-    let has = false;
-    const extend = (c) => {
-      if (Array.isArray(c) && Number.isFinite(+c[0]) && Number.isFinite(+c[1])) {
-        try { bounds.extend([+c[0], +c[1]]); has = true; } catch {}
-      }
-    };
-    const walk = (coords) => {
-      if (!Array.isArray(coords)) return;
-      if (typeof coords[0] === "number") extend(coords);
-      else coords.forEach(walk);
-    };
-    feats.forEach((w) => {
-      if (w._geometry?.coordinates) {
-        try { walk(w._geometry.coordinates); } catch {}
-      } else if (Number.isFinite(+w.lat) && Number.isFinite(+w.lng)) {
-        try { bounds.extend([+w.lng, +w.lat]); has = true; } catch {}
-      }
-    });
-    if (has && !bounds.isEmpty())
-      map.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 800 });
+    fitRowsToBounds(feats);
+  },
+  zoomToResults(rows) {
+    if (!map || !Array.isArray(rows) || !rows.length) return;
+    fitRowsToBounds(rows);
   },
   enablePointPicker(callback) {
     if (!map) return;

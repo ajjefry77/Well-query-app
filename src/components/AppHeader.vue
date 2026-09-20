@@ -32,8 +32,8 @@
           </svg>
         </div>
         <div class="brand-text">
-          <h1>واکاوی لایه‌های مکانی</h1>
-          <p>سامانه استعلام توصیفی و مکانی ژئوباکس</p>
+          <h1> سامانه واکاوی لایه‌های مکانی</h1>
+          <!-- <p>سامانه استعلام توصیفی و مکانی ژئوباکس</p> -->
         </div>
       </div>
     </div>
@@ -46,14 +46,6 @@
           :model-value="queryKind"
           :options="tabs"
           @update:model-value="$emit('update:query-kind', $event)"
-        />
-
-        <SegmentedControl
-          class="app-header__map-switch"
-          size="sm"
-          :model-value="mapProvider"
-          :options="mapOptions"
-          @update:model-value="$emit('update:map-provider', $event)"
         />
 
         <!-- <SegmentedControl
@@ -111,12 +103,11 @@ import SegmentedControl from './SegmentedControl.vue'
 
 const props = defineProps({
   queryKind: { type: String, required: true },
-  mapProvider: { type: String, required: true },
   crs: { type: String, required: true },
   theme: { type: String, required: true },
   isMobile: { type: Boolean, default: false },
 })
-defineEmits(['update:query-kind', 'update:map-provider', 'update:crs', 'toggle-theme'])
+defineEmits(['update:query-kind', 'update:crs', 'toggle-theme'])
 
 const collapsed = ref(false)
 
@@ -124,10 +115,6 @@ const tabs = [
   { value: 'attribute',    label: 'کوئری توصیفی' },
   { value: 'spatial',      label: 'کوئری مکانی' },
   { value: 'stratigraphy', label: 'چینه‌شناسی' },
-]
-const mapOptions = [
-  { value: 'leaflet', label: 'Leaflet' },
-  { value: 'mapbox',  label: 'Mapbox' },
 ]
 const crsOptions = [
   { value: 'wgs84', label: 'WGS84' },
@@ -196,7 +183,7 @@ const crsOptions = [
   color: var(--text-muted);
 }
 
-.app-header__map-switch {
+.theme-toggle {
   margin-inline-start: auto;
 }
 
@@ -316,8 +303,7 @@ const crsOptions = [
 
   .theme-toggle { order: 2; }
   .app-header__crs-switch { order: 3; }
-  .app-header__map-switch { order: 4; }
-  .app-header__tabs { order: 5; width: 100%; }
+  .app-header__tabs { order: 4; width: 100%; }
 }
 
 .app-header--collapsed {

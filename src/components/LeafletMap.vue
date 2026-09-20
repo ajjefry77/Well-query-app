@@ -488,6 +488,37 @@ watch(() => props.hasFilter, scheduleHighlight);
 watch(() => props.radiusCenter, scheduleHighlight);
 watch(() => props.selectedId, scheduleHighlight);
 
+// زوم ملایم روی مجموعه‌ای از سطرهای نتیجه (مبنای دکمه‌های «اجرا/اعمال»)
+function flyToRows(feats) {
+  if (!map || !Array.isArray(feats) || !feats.length) return;
+  const pts = [];
+  const walk = (coords) => {
+    if (!Array.isArray(coords)) return;
+    if (typeof coords[0] === "number") {
+      if (Number.isFinite(+coords[0]) && Number.isFinite(+coords[1]))
+        pts.push([+coords[1], +coords[0]]);
+    } else coords.forEach(walk);
+  };
+  feats.forEach((w) => {
+    if (w._geometry?.type === "GeometryCollection" && Array.isArray(w._geometry.geometries)) {
+      w._geometry.geometries.forEach((g) => walk(g?.coordinates));
+    } else if (w._geometry?.coordinates) {
+      walk(w._geometry.coordinates);
+    } else if (Number.isFinite(+w.lat) && Number.isFinite(+w.lng)) {
+      pts.push([+w.lat, +w.lng]);
+    }
+  });
+  if (pts.length) {
+    try {
+      map.flyToBounds(L.latLngBounds(pts), {
+        padding: [40, 40],
+        maxZoom: 14,
+        duration: 0.8,
+      });
+    } catch {}
+  }
+}
+
 defineExpose({
   flyTo(lat, lng, zoom = 13) {
     if (map) map.flyTo([lat, lng], zoom, { duration: 0.8 });
@@ -526,33 +557,11 @@ defineExpose({
   zoomToLayer(uuid) {
     if (!map) return;
     const feats = props.wells.filter((w) => String(w._layerUuid) === String(uuid));
-    if (!feats.length) return;
-    const pts = [];
-    const walk = (coords) => {
-      if (!Array.isArray(coords)) return;
-      if (typeof coords[0] === "number") {
-        if (Number.isFinite(+coords[0]) && Number.isFinite(+coords[1]))
-          pts.push([+coords[1], +coords[0]]);
-      } else coords.forEach(walk);
-    };
-    feats.forEach((w) => {
-      if (w._geometry?.type === "GeometryCollection" && Array.isArray(w._geometry.geometries)) {
-        w._geometry.geometries.forEach((g) => walk(g?.coordinates));
-      } else if (w._geometry?.coordinates) {
-        walk(w._geometry.coordinates);
-      } else if (Number.isFinite(+w.lat) && Number.isFinite(+w.lng)) {
-        pts.push([+w.lat, +w.lng]);
-      }
-    });
-    if (pts.length) {
-      try {
-        map.flyToBounds(L.latLngBounds(pts), {
-          padding: [40, 40],
-          maxZoom: 14,
-          duration: 0.8,
-        });
-      } catch {}
-    }
+    flyToRows(feats);
+  },
+  zoomToResults(rows) {
+    if (!map || !Array.isArray(rows) || !rows.length) return;
+    flyToRows(rows);
   },
   enablePointPicker(callback) {
     if (!map) return;

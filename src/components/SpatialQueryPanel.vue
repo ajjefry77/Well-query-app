@@ -110,14 +110,6 @@
     </div>
 
     <button
-      v-if="radiusCenter || customPoint"
-      class="btn-clear-spatial"
-      @click="$emit('clear-spatial')"
-    >
-      پاک کردن کوئری مکانی
-    </button>
-
-    <button
       v-if="(radiusCenter || customPoint)"
       class="btn-apply-spatial"
       :disabled="spatialLoading"
@@ -506,22 +498,6 @@ const numberCfg = { min: 0.1, step: 0.1 };
 .btn-clear-point:hover {
   color: var(--accent-danger);
 }
-.btn-clear-spatial {
-  width: 100%;
-  padding: 8px 14px;
-  background: transparent;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  color: var(--text-muted);
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-}
-.btn-clear-spatial:hover {
-  color: var(--accent-danger);
-  border-color: var(--accent-danger);
-}
-
 .btn-apply-spatial {
   width: 100%;
   padding: 9px 14px;

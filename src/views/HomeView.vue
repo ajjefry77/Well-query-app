@@ -3,11 +3,9 @@
     <AppHeader
       :is-mobile="isMobile"
       :query-kind="queryKind"
-      :map-provider="mapProvider"
       :crs="crs"
       :theme="theme"
       @update:query-kind="queryKind = $event"
-      @update:map-provider="mapProvider = $event"
       @update:crs="crs = $event"
       @toggle-theme="toggleTheme"
     />
@@ -44,6 +42,7 @@
         @add-condition="addLayerCondition"
         @remove-condition="removeLayerCondition"
         @save-query="saveCurrentQuery"
+        @apply-attribute="onApplyAttribute"
         @update:spatial-mode="spatialMode = $event"
         @update:radius-center="onUpdateRadiusCenter"
         @update:radius-km="radiusKm = $event"
@@ -58,8 +57,7 @@
 
       <!-- نقشه + دکمه FAB نتایج -->
       <section class="map-panel">
-        <component
-           :is="mapProvider === 'mapbox' ? MapboxMap : LeafletMap"
+        <MapboxMap
            ref="mapRef"
            :wells="visibleWells"
            :wells-key="visibleWellsKey"
@@ -114,8 +112,9 @@
         @remove-layer="onRemoveLayer"
         @zoom-layer="onZoomToLayer"
         @toggle-layer-visibility="toggleLayerVisibility"
-        @remove-condition="removeLayerCondition"
+        @remove-condition="onRemoveAppliedCondition"
         @clear-spatial="onClearSpatial"
+        @clear-all="onClearAllQueries"
       />
 
       <!-- موبایل: نوار grab + تب‌های پنل پایین -->
@@ -171,9 +170,8 @@ const ResultsPanel = defineAsyncComponent(() => import('../components/ResultsPan
 const LayerModal = defineAsyncComponent(() => import('../components/LayerModal.vue'))
 const ResultsModal = defineAsyncComponent(() => import('../components/ResultsModal.vue'))
 const MobileSheet = defineAsyncComponent(() => import('../components/MobileSheet.vue'))
-// بارگذاری تنبل: نقشه‌ها و نمودار چینه‌شناسی فقط هنگام نیاز لود می‌شوند
+// بارگذاری تنبل: نقشه و نمودار چینه‌شناسی فقط هنگام نیاز لود می‌شوند
 const MapboxMap = defineAsyncComponent(() => import('../components/MapboxMap.vue'))
-const LeafletMap = defineAsyncComponent(() => import('../components/LeafletMap.vue'))
 const StratigraphyChart = defineAsyncComponent(() => import('../components/StratigraphyChart.vue'))
 
 const { crs, convertFeature } = useCoordinates()
@@ -189,7 +187,8 @@ const {
   removeLayer, setActiveLayers,
   isLayerVisible, toggleLayerVisibility,
   allWells, combinedResults, hasAnyFilter,
-  getLayerConditions, addLayerCondition, removeLayerCondition, getLayerResultCount,
+  getLayerConditions, getAppliedConditions, addLayerCondition, removeLayerCondition,
+  applyAttributeConditions, removeAppliedCondition, clearAllConditions, getLayerResultCount,
   radiusCenter, radiusKm,
   committedRadiusCenter, committedRadiusKm,
   spatialLoading, commitSpatialFilter,
@@ -215,8 +214,6 @@ function viewFromUrl() {
 
 const queryKind        = ref(viewFromUrl())
 const spatialMode      = ref('map')
-// پیش‌فرض: Mapbox (درخواست کاربر) — چانک سنگین آن جداست و First Paint بلاک نمی‌شود
-const mapProvider      = ref('mapbox')
 const mapRef           = shallowRef(null)
 const activeWellId     = ref(null)
 const selectedWellId   = ref(null)
@@ -363,11 +360,13 @@ onBeforeUnmount(() => {
 })
 
 // ── جزئیات هر لایه فعال ──
+// conditions: پیش‌نویس قابل ویرایش در کوئری‌ساز؛ activeConds: شرط‌های تأییدشده (خلاصه شرط‌ها)
 const layerDetails = computed(() => {
   const map = {}
   for (const layer of activeLayers.value) {
     const uuid = layer.uuid
-    const allConds = getLayerConditions(uuid)
+    const draftConds = getLayerConditions(uuid)
+    const appliedConds = getAppliedConditions(uuid)
     const name = layer.display_name || layer.name
     map[uuid] = {
       uuid,
@@ -378,8 +377,9 @@ const layerDetails = computed(() => {
       fields: layerFields(uuid),
       featureCount: layerFeatureCount(uuid),
       resultCount: getLayerResultCount(uuid),
-      conditions: allConds,
-      activeConds: allConds.filter(c => c.value !== '' && c.value !== null && c.value !== undefined),
+      conditions: draftConds,
+      appliedConditions: appliedConds,
+      activeConds: appliedConds.filter(c => c.value !== '' && c.value !== null && c.value !== undefined),
     }
   }
   return map
@@ -489,6 +489,7 @@ async function onLoadQuery(q) {
   if (uuid) {
     activeQueryLayer.value = uuid
     queryPanelOpen.value = true
+    zoomToResults()
   }
 }
 function onPickPoint() {
@@ -527,8 +528,29 @@ function onClearSpatial() {
   isPickingPoint.value = false
   mapRef.value?.disablePointPicker()
 }
+// پاک کردن تمام کوئری‌های فعال (توصیفی همه لایه‌ها + مکانی)
+function onClearAllQueries() {
+  clearAllConditions()
+  onClearSpatial()
+}
 async function onApplySpatial() {
   await commitSpatialFilter()
+  zoomToResults()
+}
+// اجرای کوئری توصیفی: تأیید پیش‌نویس‌ها و زوم روی نتایج
+function onApplyAttribute() {
+  applyAttributeConditions()
+  zoomToResults()
+}
+// حذف یک شرط تأییدشده از خلاصه شرط‌ها
+function onRemoveAppliedCondition(uuid, index) {
+  removeAppliedCondition(uuid, index)
+}
+// زوم ملایم روی عارضه‌های نتیجه (در صورت خالی بودن، نما تغییر نمی‌کند)
+function zoomToResults() {
+  const rows = displayRows.value
+  if (!rows.length) return
+  mapRef.value?.zoomToResults?.(rows)
 }
 // کلیک روی فضای خالی نقشه → پاک کردن انتخاب عارضه (در هر دو حالت)
 function onMapEmptyClick() {

@@ -211,6 +211,7 @@ export function useWellQuery() {
     hiddenLayers.value = hidden
     rebuildAggregated()
     delete layerConditions.value[uuid]
+    delete appliedConditions.value[uuid]
   }
 
   // ── تنظیم دسته‌ای لایه‌ها ──
@@ -255,8 +256,11 @@ export function useWellQuery() {
     for (const l of okLayers) ensureLayerConditions(l.uuid)
   }
 
-  // ── کوئری توصیفی ──
+  // ── کوئری توصیفی (دو مرحله‌ای مثل کوئری مکانی) ──
+  // layerConditions: پیش‌نویسِ در حال ویرایش در کوئری‌ساز
+  // appliedConditions: شرط‌های تأییدشده با دکمه «اجرای کوئری» (مبنای نتایج و خلاصه شرط‌ها)
   const layerConditions = ref({})
+  const appliedConditions = ref({})
 
   function ensureLayerConditions(uuid) {
     if (!layerConditions.value[uuid]) {
@@ -273,6 +277,9 @@ export function useWellQuery() {
       } else {
         layerConditions.value[uuid] = []
       }
+    }
+    if (!appliedConditions.value[uuid]) {
+      appliedConditions.value[uuid] = JSON.parse(JSON.stringify(layerConditions.value[uuid] ?? []))
     }
   }
 
@@ -300,6 +307,44 @@ export function useWellQuery() {
     layerConditions.value[uuid].splice(index, 1)
   }
 
+  // شرط‌های تأییدشده یک لایه (مبنای نتایج و خلاصه شرط‌ها)
+  function getAppliedConditions(uuid) {
+    ensureLayerConditions(uuid)
+    return appliedConditions.value[uuid]
+  }
+
+  // تأیید پیش‌نویس همه لایه‌ها (دکمه «اجرای کوئری»)
+  function applyAttributeConditions() {
+    for (const layer of activeLayers.value) {
+      ensureLayerConditions(layer.uuid)
+      appliedConditions.value[layer.uuid] = JSON.parse(JSON.stringify(layerConditions.value[layer.uuid] ?? []))
+    }
+  }
+
+  // حذف یک شرط تأییدشده (دکمه × در خلاصه شرط‌ها)
+  function removeAppliedCondition(uuid, index) {
+    if (!appliedConditions.value[uuid]) return
+    appliedConditions.value[uuid].splice(index, 1)
+  }
+
+  // ── پاک کردن تمام شرط‌های توصیفی فعال (پیش‌نویس و تأییدشده) ──
+  function clearAllConditions() {
+    for (const layer of activeLayers.value) {
+      const uuid = layer.uuid
+      const fields = layerFieldsMap.value[uuid] ?? []
+      const fresh = fields.length ? [{
+        field: fields[0].key,
+        operator: fields[0].type === 'number' ? '>' : '=',
+        value: '',
+        logic: 'AND',
+        not: false,
+      }] : []
+      layerConditions.value[uuid] = JSON.parse(JSON.stringify(fresh))
+      appliedConditions.value[uuid] = JSON.parse(JSON.stringify(fresh))
+    }
+  }
+
+  // پیش‌نمایش زنده در کوئری‌ساز (مبنای شمارنده بالای فرم): بر اساس پیش‌نویس
   function getLayerResultCount(uuid) {
     if (!isLayerVisible(uuid)) return 0
     const rows = layerFeaturesMap.value[uuid] ?? []
@@ -309,13 +354,14 @@ export function useWellQuery() {
     return rows.filter(row => evaluateGroup(row, active)).length
   }
 
+  // نتایج نهایی: فقط بر اساس شرط‌های تأییدشده
   const attributeResults = computed(() => {
     if (!activeLayers.value.length) return allFeatures.value
     const results = []
     for (const layer of activeLayers.value) {
       if (!isLayerVisible(layer.uuid)) continue
       const rows  = layerFeaturesMap.value[layer.uuid] ?? []
-      const conds = layerConditions.value[layer.uuid] ?? []
+      const conds = appliedConditions.value[layer.uuid] ?? []
       const active = conds.filter(c => c.value !== '' && c.value !== null && c.value !== undefined)
       results.push(...(active.length ? rows.filter(row => evaluateGroup(row, active)) : rows))
     }
@@ -324,7 +370,7 @@ export function useWellQuery() {
 
   const hasAttributeFilter = computed(() =>
     activeLayers.value.some(layer => {
-      const conds = layerConditions.value[layer.uuid] ?? []
+      const conds = appliedConditions.value[layer.uuid] ?? []
       return conds.some(c => c.value !== '' && c.value !== null && c.value !== undefined)
     })
   )
@@ -417,6 +463,7 @@ export function useWellQuery() {
     }
 
     layerConditions.value[uuid] = JSON.parse(JSON.stringify(safeConds))
+    appliedConditions.value[uuid] = JSON.parse(JSON.stringify(safeConds))
     return uuid
   }
 
@@ -438,6 +485,7 @@ export function useWellQuery() {
     layerFeaturesMap.value = {}
     layerFieldsMap.value = {}
     layerConditions.value = {}
+    appliedConditions.value = {}
     radiusKm.value        = DEFAULT_RADIUS_KM
     radiusCenter.value    = null
     committedRadiusCenter.value = null
@@ -455,7 +503,8 @@ export function useWellQuery() {
     isLayerVisible, toggleLayerVisibility,
     allWells: allFeatures,
     combinedResults, hasAnyFilter,
-    getLayerConditions, addLayerCondition, removeLayerCondition, getLayerResultCount,
+    getLayerConditions, getAppliedConditions, addLayerCondition, removeLayerCondition,
+    applyAttributeConditions, removeAppliedCondition, clearAllConditions, getLayerResultCount,
     radiusCenter, radiusKm,
     committedRadiusCenter, committedRadiusKm,
     spatialLoading, commitSpatialFilter,

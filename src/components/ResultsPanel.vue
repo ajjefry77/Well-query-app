@@ -87,15 +87,30 @@
         class="query-summary-panel"
         v-if="showSummary"
       >
-        <div class="qs-panel-title">شرط‌های فعال</div>
+        <div class="qs-panel-header">
+          <div class="qs-panel-title">شرط‌های فعال</div>
+          <button
+            class="qs-clear-all"
+            @click.stop="$emit('clear-all')"
+            title="پاک کردن تمام کوئری‌های فعال"
+          >
+            پاک کردن همه
+          </button>
+        </div>
 
-        <div
-          v-for="item in summaries"
-          :key="item.layerUuid ?? item.uuid"
-          class="qs-layer-block"
-        >
-          <template v-if="item.activeConds.length > 0">
-            <div class="qs-layer-name">
+        <!-- کوئری توصیفی فعال -->
+        <div v-if="hasAttributeSummary" class="qs-layer-block qs-layer-block--attribute">
+          <div class="qs-layer-name">
+            <span class="qs-dot qs-dot--attribute"></span>
+            <span>کوئری توصیفی</span>
+          </div>
+
+          <div
+            v-for="item in summariesWithConds"
+            :key="item.layerUuid ?? item.uuid"
+            class="qs-sub-block"
+          >
+            <div class="qs-layer-name qs-layer-name--sub">
               <span class="qs-dot" :style="{ background: item.color }"></span>
               <span>{{ item.layerName ?? item.name }}</span>
               <span class="qs-count-badge">{{ item.activeConds.length }}</span>
@@ -116,7 +131,7 @@
                 title="حذف این شرط"
               >×</button>
             </div>
-          </template>
+          </div>
         </div>
 
         <!-- کوئری مکانی فعال -->
@@ -156,14 +171,14 @@ const props = defineProps({
   spatialLabel: { type: String, default: '' },
   spatialRadius: { type: [Number, String], default: 0 },
 })
-defineEmits(['toggle', 'open-modal', 'remove-layer', 'zoom-layer', 'toggle-layer-visibility', 'remove-condition', 'clear-spatial'])
+defineEmits(['toggle', 'open-modal', 'remove-layer', 'zoom-layer', 'toggle-layer-visibility', 'remove-condition', 'clear-spatial', 'clear-all'])
 
 const OP_SYMBOLS = { '=':'=', '!=':'≠', '>':'>', '>=':'≥', '<':'<', '<=':'≤', contains:'شامل' }
 function opSymbol(op) { return OP_SYMBOLS[op] ?? op }
 
-// ایندکس واقعی شرط در آرایه conditions (برای حذف دقیق)
+// ایندکس واقعی شرط در آرایه شرط‌های تأییدشده (برای حذف دقیق)
 function conditionRealIndex(item, cond, fallback) {
-  const all = item.conditions ?? item.activeConds ?? []
+  const all = item.appliedConditions ?? item.activeConds ?? []
   const i = all.indexOf(cond)
   return i >= 0 ? i : fallback
 }
@@ -177,6 +192,12 @@ const detailByUuid = computed(() => {
   for (const s of props.summaries) map[s.layerUuid ?? s.uuid] = s
   return map
 })
+
+// فقط لایه‌هایی که شرط توصیفی تأییدشده دارند (برای بلوک «کوئری توصیفی»)
+const summariesWithConds = computed(() =>
+  props.summaries.filter(s => (s.activeConds ?? []).length > 0)
+)
+const hasAttributeSummary = computed(() => summariesWithConds.value.length > 0)
 </script>
 
 <style scoped>
@@ -346,11 +367,33 @@ const detailByUuid = computed(() => {
   border-top: 1px solid var(--border-subtle);
   padding-top: 12px;
 }
+.qs-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
 .qs-panel-title {
   font-size: 11px;
   font-weight: 700;
   color: var(--text-muted);
   letter-spacing: 0.02em;
+}
+.qs-clear-all {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 3px 10px;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.qs-clear-all:hover {
+  color: var(--accent-danger);
+  border-color: var(--accent-danger);
 }
 .qs-layer-block {
   display: flex;
@@ -425,8 +468,29 @@ const detailByUuid = computed(() => {
 .qs-layer-block--spatial {
   border-style: dashed;
 }
+.qs-layer-block--attribute {
+  border-style: dashed;
+}
 .qs-dot--spatial {
   background: var(--brand);
+}
+.qs-dot--attribute {
+  background: #2a9d8f;
+}
+.qs-sub-block {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 6px;
+}
+.qs-sub-block:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+.qs-layer-name--sub {
+  font-size: 11.5px;
+  font-weight: 600;
 }
 
 /* ---------- ریسپانسیو ---------- */
