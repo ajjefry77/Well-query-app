@@ -159,21 +159,44 @@
           </div>
         </div>
 
-        <!-- کوئری مکانی فعال -->
+        <!-- جستجوی شعاعی فعال -->
         <div v-if="spatialActive" class="qs-layer-block qs-layer-block--spatial">
           <div class="qs-layer-name">
             <span class="qs-dot qs-dot--spatial"></span>
-            <span>کوئری مکانی</span>
+            <span>جستجوی شعاعی</span>
             <button
               class="qs-cond-remove"
               @click.stop="$emit('clear-spatial')"
-              title="حذف کوئری مکانی"
+              title="حذف جستجوی شعاعی"
             >×</button>
           </div>
           <div class="qs-cond-row">
             <span class="qs-cond-field">{{ spatialLabel }}</span>
             <span class="qs-cond-op">شعاع</span>
             <span class="qs-cond-val">{{ spatialRadius }} km</span>
+          </div>
+        </div>
+
+        <!-- رابطه مکانی فعال -->
+        <div v-if="relationSummary" class="qs-layer-block qs-layer-block--relation">
+          <div class="qs-layer-name">
+            <span class="qs-dot qs-dot--relation"></span>
+            <span>رابطه مکانی</span>
+            <span class="qs-count-badge">{{ (relationSummary.count ?? 0).toLocaleString('fa-IR') }}</span>
+            <button
+              class="qs-cond-remove"
+              @click.stop="$emit('clear-relation')"
+              title="حذف رابطه مکانی"
+            >×</button>
+          </div>
+          <div class="qs-cond-row">
+            <span class="qs-cond-field">{{ relationSummary.opLabel }}</span>
+          </div>
+          <div class="qs-cond-row">
+            <span class="qs-cond-field">{{ relationSummary.sourceText }}</span>
+          </div>
+          <div class="qs-cond-row">
+            <span class="qs-cond-field">{{ relationSummary.targetText }}</span>
           </div>
         </div>
       </div>
@@ -197,8 +220,9 @@ const props = defineProps({
   spatialActive: { type: Boolean, default: false },
   spatialLabel: { type: String, default: '' },
   spatialRadius: { type: [Number, String], default: 0 },
+  relationSummary: { type: Object, default: null },
 })
-defineEmits(['toggle', 'open-modal', 'remove-layer', 'zoom-layer', 'toggle-layer-visibility', 'remove-condition', 'clear-spatial', 'clear-all'])
+defineEmits(['toggle', 'open-modal', 'remove-layer', 'zoom-layer', 'toggle-layer-visibility', 'remove-condition', 'clear-spatial', 'clear-relation', 'clear-all'])
 
 const OP_SYMBOLS = { '=':'=', '!=':'≠', '>':'>', '>=':'≥', '<':'<', '<=':'≤', contains:'شامل' }
 function opSymbol(op) { return OP_SYMBOLS[op] ?? op }
@@ -496,11 +520,18 @@ const hasAttributeSummary = computed(() => summariesWithConds.value.length > 0)
 .qs-layer-block--spatial {
   border-style: dashed;
 }
+.qs-layer-block--relation {
+  border-style: dashed;
+  border-color: var(--brand);
+}
 .qs-layer-block--attribute {
   border-style: dashed;
 }
 .qs-dot--spatial {
   background: var(--brand);
+}
+.qs-dot--relation {
+  background: linear-gradient(135deg, #1d6fd1 50%, #d13b3b 50%);
 }
 .qs-dot--attribute {
   background: #2a9d8f;

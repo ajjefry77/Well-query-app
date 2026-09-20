@@ -29,6 +29,7 @@
         :loading-fields="loadingFields"
         :loading-features="loadingFeatures"
         :spatial-mode="spatialMode"
+        :spatial-tool="spatialTool"
         :wells="allWells"
         :radius-center="radiusCenter"
         :radius-km="radiusKm"
@@ -36,6 +37,11 @@
         :custom-point="customPoint"
         :is-picking-point="isPickingPoint"
         :spatial-loading="spatialLoading"
+        :relation-source-layer="relationSourceLayer"
+        :relation-source-id="relationSourceId"
+        :relation-target-layer="relationTargetLayer"
+        :relation-operator="relationOperator"
+        :relation-loading="spatialLoading"
         :saved-queries="savedQueries"
         @toggle="toggleQueryPanel"
         @update:active-query-layer="activeQueryLayer = $event"
@@ -44,12 +50,18 @@
         @save-query="saveCurrentQuery"
         @apply-attribute="onApplyAttribute"
         @update:spatial-mode="spatialMode = $event"
+        @update:spatial-tool="spatialTool = $event"
         @update:radius-center="onUpdateRadiusCenter"
         @update:radius-km="radiusKm = $event"
         @pick-point="onPickPoint"
         @clear-point="onClearPoint"
         @clear-spatial="onClearSpatial"
         @apply-spatial="onApplySpatial"
+        @update:relation-source-layer="relationSourceLayer = $event"
+        @update:relation-source-id="relationSourceId = $event"
+        @update:relation-target-layer="relationTargetLayer = $event"
+        @update:relation-operator="relationOperator = $event"
+        @apply-relation="onApplyRelation"
         @load-query="onLoadQuery"
         @delete-query="deleteSavedQuery"
         @clear-data="handleClearData"
@@ -105,9 +117,10 @@
         :details="layerDetails"
         :show-summary="hasActiveConditions || hasSpatialFilter"
         :hidden-layers="hiddenLayerUuids"
-        :spatial-active="hasSpatialFilter"
+        :spatial-active="radiusCenter !== null"
         :spatial-label="spatialSummaryLabel"
         :spatial-radius="spatialSummaryRadius"
+        :relation-summary="relationSummary"
         @toggle="toggleResultsPanel"
         @open-modal="openLayerModal"
         @remove-layer="onRemoveLayer"
@@ -115,6 +128,7 @@
         @toggle-layer-visibility="onToggleLayerVisibility"
         @remove-condition="onRemoveAppliedCondition"
         @clear-spatial="onClearSpatial"
+        @clear-relation="onClearRelation"
         @clear-all="onClearAllQueries"
       />
 
@@ -163,6 +177,7 @@ import { useWellQuery } from '../composables/useWellQuery.js'
 import { useCoordinates } from '../composables/useCoordinates.js'
 import { useTheme } from '../composables/useTheme.js'
 import { layerColor } from '../composables/useLayerColors.js'
+import { relationLabel } from '../composables/useSpatialRelations.js'
 import { useRoute, useRouter } from '../router/index.js'
 
 // بارگذاری تنبل: همه‌چیز به‌جز هدر، کد-split می‌شود تا First Paint روی سیستم ضعیف سریع باشد
@@ -193,6 +208,9 @@ const {
   radiusCenter, radiusKm,
   committedRadiusCenter, committedRadiusKm,
   spatialLoading, commitSpatialFilter,
+  relationSourceLayer, relationSourceId, relationTargetLayer, relationOperator,
+  relationCommitted, relationResults,
+  commitRelationFilter, clearRelation,
   savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
   clearAllLocalData,
 } = useWellQuery()
@@ -215,6 +233,7 @@ function viewFromUrl() {
 
 const queryKind        = ref(viewFromUrl())
 const spatialMode      = ref('map')
+const spatialTool      = ref('radius')
 const mapRef           = shallowRef(null)
 const activeWellId     = ref(null)
 const selectedWellId   = ref(null)
@@ -425,7 +444,7 @@ const hasActiveConditions = computed(() =>
 )
 
 // ── کوئری مکانی فعال + خلاصه آن برای پنل «شرط‌های فعال» ──
-const hasSpatialFilter = computed(() => radiusCenter.value !== null)
+const hasSpatialFilter = computed(() => radiusCenter.value !== null || relationCommitted.value !== null)
 const spatialSummaryRadius = computed(() =>
   Number.isFinite(+radiusKm.value) ? Math.round(+radiusKm.value * 10) / 10 : 0
 )
@@ -439,6 +458,20 @@ const spatialSummaryLabel = computed(() => {
   if (Number.isFinite(+c.lat) && Number.isFinite(+c.lng))
     return `نقطه دلخواه (${(+c.lat).toFixed(4)}، ${(+c.lng).toFixed(4)})`
   return 'مرکز نامشخص'
+})
+
+// ── خلاصه رابطه مکانی برای پنل «شرط‌های فعال» ──
+const relationSummary = computed(() => {
+  const c = relationCommitted.value
+  if (!c) return null
+  const layerNameOf = (uuid) =>
+    activeLayers.value.find(l => String(l.uuid) === String(uuid))?.display_name ?? ''
+  return {
+    opLabel: relationLabel(c.operator),
+    sourceText: `مبدأ: ${layerNameOf(c.sourceLayerUuid)} #${c.sourceId}`,
+    targetText: `هدف: ${layerNameOf(c.targetLayerUuid)}`,
+    count: relationResults.value.length,
+  }
 })
 
 const hiddenLayerUuids = computed(() =>
@@ -565,15 +598,33 @@ function onClearSpatial() {
   isPickingPoint.value = false
   mapRef.value?.disablePointPicker()
 }
-// پاک کردن تمام کوئری‌های فعال (توصیفی همه لایه‌ها + مکانی)
+// پاک کردن تمام کوئری‌های فعال (توصیفی همه لایه‌ها + مکانی شعاعی و رابطه‌ای)
 function onClearAllQueries() {
   clearAllConditions()
   onClearSpatial()
+  onClearRelation()
 }
 async function onApplySpatial() {
   await commitSpatialFilter()
   zoomToResults()
 }
+// اعمال رابطه مکانی و زوم روی نتایج
+async function onApplyRelation() {
+  const ok = await commitRelationFilter()
+  if (ok) zoomToResults()
+}
+function onClearRelation() {
+  clearRelation()
+}
+// تغییر لایه مبدأ → اگر عارضه انتخابی متعلق به آن نیست، ریست شود
+watch(relationSourceLayer, () => {
+  if (relationSourceId.value == null) return
+  const ok = allWells.value.some(w =>
+    String(w._layerUuid) === String(relationSourceLayer.value) &&
+    String(w.id) === String(relationSourceId.value)
+  )
+  if (!ok) relationSourceId.value = null
+})
 // اجرای کوئری توصیفی: تأیید پیش‌نویس‌ها و زوم روی نتایج
 function onApplyAttribute() {
   applyAttributeConditions()

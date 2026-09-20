@@ -1,5 +1,6 @@
 import { ref, computed, watch } from 'vue'
 import { findWithinRadius } from './useGeoUtils.js'
+import { findMatchingRows } from './useSpatialRelations.js'
 import {
   fetchVectorLayers,
   fetchLayerFields,
@@ -203,9 +204,14 @@ export function useWellQuery() {
   function removeLayer(uuid) {
     inFlight.get(uuid)?.abort()
     inFlight.delete(uuid)
-    activeLayers.value = activeLayers.value.filter(l => l.uuid !== uuid)
+    activeLayers.value = activeLayers.value.filter(l => String(l.uuid) !== String(uuid))
     delete layerFeaturesMap.value[uuid]
     delete layerFieldsMap.value[uuid]
+    // اگر لایه حذف‌شده مبدأ/هدف رابطه مکانی بود، رابطه پاک می‌شود
+    const rc = relationCommitted.value
+    if (rc && (String(rc.sourceLayerUuid) === String(uuid) || String(rc.targetLayerUuid) === String(uuid))) {
+      clearRelation()
+    }
     const hidden = new Set(hiddenLayers.value)
     hidden.delete(String(uuid))
     hiddenLayers.value = hidden
@@ -375,14 +381,26 @@ export function useWellQuery() {
     })
   )
 
-  const hasSpatialFilter = computed(() => committedRadiusCenter.value !== null)
+  const hasSpatialFilter = computed(() => hasRadiusFilter.value || hasRelationFilter.value)
+
+  // ترکیب فیلترهای مکانی (شعاعی و رابطه‌ای) با اشتراک
+  const spatialResults = computed(() => {
+    const hasR = hasRadiusFilter.value
+    const hasRel = hasRelationFilter.value
+    if (!hasR && !hasRel) return []
+    if (hasR && !hasRel) return radiusResults.value
+    if (!hasR && hasRel) return relationResults.value
+    const makeKey = r => `${r._layerUuid}::${r.id}`
+    const relKeys = new Set(relationResults.value.map(makeKey))
+    return radiusResults.value.filter(r => relKeys.has(makeKey(r)))
+  })
 
   const combinedResults = computed(() => {
     const makeKey = r => `${r._layerUuid}::${r.id}`
     if (!hasAttributeFilter.value && !hasSpatialFilter.value) return allFeatures.value
     if (!hasSpatialFilter.value) return attributeResults.value
-    if (!hasAttributeFilter.value) return radiusResults.value
-    const spatialKeys = new Set(radiusResults.value.map(makeKey))
+    if (!hasAttributeFilter.value) return spatialResults.value
+    const spatialKeys = new Set(spatialResults.value.map(makeKey))
     return attributeResults.value.filter(r => spatialKeys.has(makeKey(r)))
   })
 
@@ -422,6 +440,59 @@ export function useWellQuery() {
     committedRadiusCenter.value = radiusCenter.value ? { ...radiusCenter.value } : null
     committedRadiusKm.value = radiusKm.value
     spatialLoading.value = false
+  }
+
+  // ── رابطه مکانی (مبدأ/هدف + عملگر: within/contains/identical/...) ──
+  // پیش‌نویس فرم و مقادیر تأییدشده (فقط بعد از «اعمال رابطه مکانی» اثر می‌کنند)
+  const relationSourceLayer = ref(null)
+  const relationSourceId    = ref(null)
+  const relationTargetLayer = ref(null)
+  const relationOperator    = ref('within')
+  const relationCommitted   = ref(null)
+
+  function findRelationSourceRow(snapshot) {
+    if (!snapshot) return null
+    return allFeatures.value.find(r =>
+      String(r._layerUuid) === String(snapshot.sourceLayerUuid) &&
+      String(r.id) === String(snapshot.sourceId)
+    ) ?? null
+  }
+
+  const relationResults = computed(() => {
+    const c = relationCommitted.value
+    if (!c) return []
+    const sourceRow = findRelationSourceRow(c)
+    if (!sourceRow) return []
+    const targets = allFeatures.value.filter(r =>
+      String(r._layerUuid) === String(c.targetLayerUuid)
+    )
+    return findMatchingRows(sourceRow, targets, c.operator)
+  })
+
+  const hasRadiusFilter   = computed(() => committedRadiusCenter.value !== null)
+  const hasRelationFilter = computed(() => relationCommitted.value !== null)
+
+  // اعمال رابطه مکانی (با لودینگ؛ محاسبات سنگین بعد از رندر لودینگ انجام می‌شود)
+  async function commitRelationFilter() {
+    if (!relationSourceLayer.value || relationSourceId.value == null || !relationTargetLayer.value) return false
+    spatialLoading.value = true
+    await new Promise(r => setTimeout(r, 250))
+    relationCommitted.value = {
+      sourceLayerUuid: relationSourceLayer.value,
+      sourceId: relationSourceId.value,
+      targetLayerUuid: relationTargetLayer.value,
+      operator: relationOperator.value || 'within',
+    }
+    spatialLoading.value = false
+    return true
+  }
+
+  function clearRelation() {
+    relationSourceLayer.value = null
+    relationSourceId.value    = null
+    relationTargetLayer.value = null
+    relationOperator.value    = 'within'
+    relationCommitted.value   = null
   }
 
   // ── کوئری‌های ذخیره‌شده ──
@@ -490,6 +561,7 @@ export function useWellQuery() {
     radiusCenter.value    = null
     committedRadiusCenter.value = null
     committedRadiusKm.value = DEFAULT_RADIUS_KM
+    clearRelation()
     rebuildAggregated()
   }
 
@@ -508,6 +580,9 @@ export function useWellQuery() {
     radiusCenter, radiusKm,
     committedRadiusCenter, committedRadiusKm,
     spatialLoading, commitSpatialFilter,
+    relationSourceLayer, relationSourceId, relationTargetLayer, relationOperator,
+    relationCommitted, relationResults, hasRelationFilter,
+    commitRelationFilter, clearRelation,
     savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
     clearAllLocalData,
   }

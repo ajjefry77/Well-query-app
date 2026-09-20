@@ -1,5 +1,82 @@
 <template>
   <div class="sq">
+    <!-- ابزار کوئری مکانی: شعاعی یا رابطه مکانی -->
+    <div class="sq__tabs">
+      <button
+        class="sq__tab"
+        :class="{ 'sq__tab--active': tool === 'radius' }"
+        @click="$emit('update:tool', 'radius')"
+      >
+        جستجوی شعاعی
+      </button>
+      <button
+        class="sq__tab"
+        :class="{ 'sq__tab--active': tool === 'relation' }"
+        @click="$emit('update:tool', 'relation')"
+      >
+        رابطه مکانی
+      </button>
+    </div>
+
+    <!-- ─── رابطه مکانی (مبدأ/هدف + عملگر) ─── -->
+    <template v-if="tool === 'relation'">
+      <div class="layer-dropdown-wrap">
+        <label class="layer-dropdown-label">لایه مبدأ </label>
+        <AppSelect
+          class="layer-dropdown-select"
+          :model-value="sourceLayer"
+          :options="layerOptions"
+          placeholder="انتخاب لایه مبدأ…"
+          @update:model-value="$emit('update:source-layer', $event)"
+        />
+      </div>
+
+      <div class="field-group">
+        <label>عارضه مبدأ</label>
+        <AppSelect
+          class="qb-select qb-select--full"
+          :model-value="sourceId != null ? String(sourceId) : ''"
+          :options="sourceFeatureOptions"
+          placeholder="یک عارضه انتخاب کنید…"
+          @update:model-value="$emit('update:source-id', $event)"
+        />
+      </div>
+
+      <div class="layer-dropdown-wrap">
+        <label class="layer-dropdown-label">لایه هدف </label>
+        <AppSelect
+          class="layer-dropdown-select"
+          :model-value="targetLayer"
+          :options="layerOptions"
+          placeholder="انتخاب لایه هدف…"
+          @update:model-value="$emit('update:target-layer', $event)"
+        />
+      </div>
+
+      <div class="field-group">
+        <label>نوع رابطه</label>
+        <AppSelect
+          class="qb-select qb-select--full"
+          :model-value="operator"
+          :options="operatorOptions"
+          @update:model-value="$emit('update:operator', $event)"
+        />
+      </div>
+      <p class="sq__hint">{{ operatorHint }}</p>
+
+      <button
+        v-if="canApplyRelation"
+        class="btn-apply-spatial"
+        :disabled="relationLoading"
+        @click="$emit('apply-relation')"
+      >
+        {{ relationLoading ? 'در حال اعمال…' : 'اعمال رابطه مکانی' }}
+      </button>
+      <p v-else class="sq__hint sq__hint--tiny">ابتدا لایه مبدأ، عارضه مبدأ و لایه هدف را انتخاب کنید.</p>
+    </template>
+
+    <!-- ─── جستجوی شعاعی ─── -->
+    <template v-else>
     <!-- دراپ‌داون انتخاب لایه (مثل کوئری توصیفی) -->
     <div class="layer-dropdown-wrap">
       <label class="layer-dropdown-label">لایه انتخابی</label>
@@ -117,6 +194,7 @@
     >
       {{ spatialLoading ? 'در حال اعمال…' : 'اعمال تغییرات' }}
     </button>
+    </template>
 
     <!-- مودال انتخاب فیلد نام -->
     <Transition name="modal">
@@ -148,9 +226,12 @@
 <script setup>
 import { computed, ref, watch, nextTick } from "vue";
 import AppSelect from "./AppSelect.vue";
+import { RELATION_OPERATORS } from "../composables/useSpatialRelations.js";
 
 const props = defineProps({
   mode: { type: String, required: true },
+  // ابزار فعال کوئری مکانی: شعاعی یا رابطه مکانی
+  tool: { type: String, default: "radius" },
   wells: { type: Array, required: true },
   layers: { type: Array, default: () => [] },
   activeLayer: { type: String, default: null },
@@ -165,10 +246,19 @@ const props = defineProps({
   customPoint: { type: Object, default: null },
   isPicking: { type: Boolean, default: false },
   spatialLoading: { type: Boolean, default: false },
+  // ── رابطه مکانی ──
+  sourceLayer: { type: String, default: null },
+  sourceId: { type: [String, Number], default: null },
+  targetLayer: { type: String, default: null },
+  operator: { type: String, default: "within" },
+  // فیلدهای لایه مبدأ (برای برچسب عارضه‌ها)
+  sourceFields: { type: Array, default: () => [] },
+  relationLoading: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
   "update:mode",
+  "update:tool",
   "update:active-layer",
   "update:radius-center",
   "update:radius-km",
@@ -177,6 +267,11 @@ const emit = defineEmits([
   "clear-point",
   "clear-spatial",
   "apply-spatial",
+  "update:source-layer",
+  "update:source-id",
+  "update:target-layer",
+  "update:operator",
+  "apply-relation",
 ]);
 
 // مودال انتخاب دستی فیلد نام
@@ -238,6 +333,45 @@ const layerOptions = computed(() =>
     label: layer.display_name || layer.name,
   })),
 );
+
+// ─── رابطه مکانی ───
+const operatorOptions = computed(() =>
+  RELATION_OPERATORS.map((o) => ({ value: o.value, label: o.label })),
+);
+const operatorHint = computed(
+  () => RELATION_OPERATORS.find((o) => o.value === props.operator)?.hint ?? "",
+);
+
+// عارضه‌های لایه مبدأ
+const sourceWells = computed(() => {
+  if (!props.sourceLayer) return [];
+  return props.wells.filter((w) => String(w._layerUuid) === String(props.sourceLayer));
+});
+
+// حدس فیلد نام در لایه مبدأ برای برچسب خوانا
+const sourceNameKey = computed(() => {
+  for (const f of props.sourceFields) {
+    if (f.key && f.key.toLowerCase().includes("name")) return f.key;
+  }
+  return null;
+});
+
+const sourceFeatureOptions = computed(() =>
+  sourceWells.value.map((w) => ({
+    value: String(w.id),
+    label: sourceNameKey.value && w[sourceNameKey.value] != null && w[sourceNameKey.value] !== ""
+      ? `#${w.id} — ${w[sourceNameKey.value]}`
+      : `#${w.id}`,
+  })),
+);
+
+// اعمال فقط وقتی ممکن است که مبدأ/هدف کامل و عارضه مبدأ هندسه داشته باشد
+const canApplyRelation = computed(() => {
+  if (!props.sourceLayer || props.sourceId == null || !props.targetLayer) return false;
+  const src = sourceWells.value.find((w) => String(w.id) === String(props.sourceId));
+  if (!src) return false;
+  return !!(src._geometry || (Number.isFinite(+src.lat) && Number.isFinite(+src.lng)));
+});
 
 // عارضه‌های لایه فعال (فیلتر برای لیست) — اگر لایه‌ای انتخاب نشده همه
 const scopedWells = computed(() => {
@@ -377,6 +511,23 @@ const numberCfg = { min: 0.1, step: 0.1 };
 .sq__hint--tiny {
   font-size: 11px;
   opacity: 0.85;
+}
+.sq__legend {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0 7px;
+  border-radius: var(--radius-xs);
+  line-height: 18px;
+}
+.sq__legend--source {
+  color: #1d6fd1;
+  background: rgba(29, 111, 209, 0.12);
+  border: 1px solid rgba(29, 111, 209, 0.4);
+}
+.sq__legend--target {
+  color: #d13b3b;
+  background: rgba(209, 59, 59, 0.1);
+  border: 1px solid rgba(209, 59, 59, 0.4);
 }
 .sq__info {
   font-size: 11px;

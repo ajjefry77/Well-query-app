@@ -65,6 +65,7 @@
       <SpatialQueryPanel
         v-else-if="queryKind === 'spatial'"
         :mode="spatialMode"
+        :tool="spatialTool"
         :wells="wells"
         :layers="layers"
         :active-layer="activeQueryLayer"
@@ -76,7 +77,14 @@
         :custom-point="customPoint"
         :is-picking="isPickingPoint"
         :spatial-loading="spatialLoading"
+        :source-layer="relationSourceLayer"
+        :source-id="relationSourceId"
+        :target-layer="relationTargetLayer"
+        :operator="relationOperator"
+        :source-fields="relationSourceLayer ? (layerDetails[relationSourceLayer]?.fields ?? []) : []"
+        :relation-loading="relationLoading"
         @update:mode="$emit('update:spatial-mode', $event)"
+        @update:tool="$emit('update:spatial-tool', $event)"
         @update:active-layer="$emit('update:active-query-layer', $event)"
         @update:radius-center="$emit('update:radius-center', $event)"
         @update:radius-km="$emit('update:radius-km', $event)"
@@ -84,6 +92,11 @@
         @clear-point="$emit('clear-point')"
         @clear-spatial="$emit('clear-spatial')"
         @apply-spatial="$emit('apply-spatial')"
+        @update:source-layer="$emit('update:relation-source-layer', $event)"
+        @update:source-id="$emit('update:relation-source-id', $event)"
+        @update:target-layer="$emit('update:relation-target-layer', $event)"
+        @update:operator="$emit('update:relation-operator', $event)"
+        @apply-relation="$emit('apply-relation')"
       />
       <div class="side-divider"></div>
       <SavedQueries :queries="savedQueries" @load="$emit('load-query', $event)" @delete="$emit('delete-query', $event)" />
@@ -114,6 +127,7 @@ const props = defineProps({
   loadingFields: { type: Boolean, default: false },
   loadingFeatures: { type: Boolean, default: false },
   spatialMode: { type: String, required: true },
+  spatialTool: { type: String, default: 'radius' },
   wells: { type: Array, default: () => [] },
   radiusCenter: { type: Object, default: null },
   radiusKm: { type: Number, required: true },
@@ -122,6 +136,11 @@ const props = defineProps({
   isPickingPoint: { type: Boolean, default: false },
   spatialLoading: { type: Boolean, default: false },
   savedQueries: { type: Array, default: () => [] },
+  relationSourceLayer: { type: String, default: null },
+  relationSourceId: { type: [String, Number], default: null },
+  relationTargetLayer: { type: String, default: null },
+  relationOperator: { type: String, default: 'within' },
+  relationLoading: { type: Boolean, default: false },
 })
 defineEmits([
   'toggle',
@@ -131,12 +150,18 @@ defineEmits([
   'save-query',
   'apply-attribute',
   'update:spatial-mode',
+  'update:spatial-tool',
   'update:radius-center',
   'update:radius-km',
   'pick-point',
   'clear-point',
   'clear-spatial',
   'apply-spatial',
+  'update:relation-source-layer',
+  'update:relation-source-id',
+  'update:relation-target-layer',
+  'update:relation-operator',
+  'apply-relation',
   'load-query',
   'delete-query',
   'clear-data',
