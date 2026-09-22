@@ -214,7 +214,8 @@ input[type='range'] { accent-color: var(--brand); }
 /* ═════ پاپ‌آپ عوارض ═════ */
 .wqa-popup {
   font-family: var(--font-fa);
-  direction: rtl;
+  direction: ltr;
+  text-align: left;
   min-width: 200px;
   max-width: 280px;
 }
@@ -225,23 +226,27 @@ input[type='range'] { accent-color: var(--brand); }
   margin-bottom: 6px;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
 }
 .wqa-popup__table {
   font-size: 12px;
   line-height: 1.8;
   width: 100%;
   border-collapse: collapse;
+  direction: ltr;
 }
 .wqa-popup__key {
   color: var(--text-muted);
-  padding: 2px 0 2px 8px !important;
+  padding: 2px 8px 2px 0 !important;
   white-space: nowrap;
   vertical-align: top;
+  text-align: left;
 }
 .wqa-popup__val {
   color: var(--text-primary);
   vertical-align: top;
   overflow-wrap: anywhere;
+  text-align: left;
 }
 
 .map-shell .mapboxgl-popup-content {

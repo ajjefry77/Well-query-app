@@ -1,6 +1,6 @@
 import { ref, computed, watch } from 'vue'
 import { findWithinRadius } from './useGeoUtils.js'
-import { findMatchingRowsMulti, isAllFeatures, ALL_FEATURES } from './useSpatialRelations.js'
+import { findMatchingRowsMulti, findMatchingRowsMultiAsync } from './useSpatialRelations.js'
 import {
   fetchVectorLayers,
   fetchLayerFields,
@@ -92,6 +92,7 @@ export function useWellQuery() {
     else hidden.add(key)
     hiddenLayers.value = hidden
     rebuildAggregated()
+    maybeRecomputeRelation()
   }
 
   const layerFieldsMap   = ref({})
@@ -155,12 +156,19 @@ export function useWellQuery() {
   // ── بازسازی aggregated ──
 // لایه‌های غیرفعال (پنهان با چشم): از نقشه، نتایج و جستجوها حذف می‌شوند؛
 // تب آن‌ها هم از جدول نتایج کنار می‌رود. داده‌ها در حافظه محفوظ می‌ماند تا با فعال‌سازی برگردد.
+// نکته پرفورمنس: push(...rows) با آرایه‌های چندده‌هزاری استک را منفجر می‌کند؛ حلقه استفاده شد.
   function rebuildAggregated() {
-    const combined = []
+    let total = 0
+    for (const layer of activeLayers.value) {
+      if (!isLayerVisible(layer.uuid)) continue
+      total += (layerFeaturesMap.value[layer.uuid] ?? []).length
+    }
+    const combined = new Array(total)
+    let idx = 0
     for (const layer of activeLayers.value) {
       if (!isLayerVisible(layer.uuid)) continue
       const rows = layerFeaturesMap.value[layer.uuid] ?? []
-      combined.push(...rows)
+      for (let i = 0; i < rows.length; i++) combined[idx++] = rows[i]
     }
     allFeatures.value = combined
 
@@ -258,6 +266,7 @@ export function useWellQuery() {
     const pruned = new Set([...hiddenLayers.value].filter(u => stillActive.has(u)))
     hiddenLayers.value = pruned
     rebuildAggregated()
+    maybeRecomputeRelation()
 
     for (const l of okLayers) ensureLayerConditions(l.uuid)
   }
@@ -351,13 +360,22 @@ export function useWellQuery() {
   }
 
   // پیش‌نمایش زنده در کوئری‌ساز (مبنای شمارنده بالای فرم): بر اساس پیش‌نویس
+  // memoize شد: روی هر رندر/تایپِ نامرتبط، فیلتر چندده‌هزاری دوباره اجرا نمی‌شود
+  const _countCache = new Map()
   function getLayerResultCount(uuid) {
     if (!isLayerVisible(uuid)) return 0
     const rows = layerFeaturesMap.value[uuid] ?? []
     const conds = layerConditions.value[uuid] ?? []
     const active = conds.filter(c => c.value !== '' && c.value !== null && c.value !== undefined)
     if (!active.length) return rows.length
-    return rows.filter(row => evaluateGroup(row, active)).length
+    const sig = JSON.stringify(active.map(c => [c.field, c.operator, c.value, c.logic, !!c.not]))
+    const cached = _countCache.get(uuid)
+    if (cached && cached.sig === sig && cached.rowsLen === rows.length) return cached.count
+    const count = rows.filter(row => evaluateGroup(row, active)).length
+    _countCache.set(uuid, { sig, rowsLen: rows.length, count })
+    // جلوگیری از رشد بی‌نهایت کش
+    if (_countCache.size > 64) _countCache.delete(_countCache.keys().next().value)
+    return count
   }
 
   // نتایج نهایی: فقط بر اساس شرط‌های تأییدشده
@@ -442,70 +460,138 @@ export function useWellQuery() {
     spatialLoading.value = false
   }
 
-  // ── رابطه مکانی (مبدأ/هدف + عملگر: within/contains/identical/...) ──
+  // ── رابطه مکانی (کل لایه مبدأ با کل لایه هدف + عملگر) ──
   // پیش‌نویس فرم و مقادیر تأییدشده (فقط بعد از «اعمال رابطه مکانی» اثر می‌کنند)
-  // relationSourceId / relationTargetId می‌تواند شناسه عارضه یا ALL_FEATURES («کل لایه») باشد
   const relationSourceLayer = ref(null)
-  const relationSourceId    = ref(null)
   const relationTargetLayer = ref(null)
-  const relationTargetId    = ref(ALL_FEATURES)
   const relationOperator    = ref('within')
   const relationCommitted   = ref(null)
 
-  function findRelationRows(layerUuid, featureId) {
+  function findRelationRows(layerUuid) {
     if (!layerUuid) return []
-    const inLayer = allFeatures.value.filter(r =>
+    return allFeatures.value.filter(r =>
       String(r._layerUuid) === String(layerUuid)
     )
-    if (isAllFeatures(featureId)) return inLayer
-    return inLayer.filter(r => String(r.id) === String(featureId))
   }
 
-  const relationResults = computed(() => {
+  // نتایج رابطه مکانی — عمداً ref (نه computed) تا محاسبات سنگین O(S*T)
+  // روی نخ اصلی به‌صورت تکه‌تکه (chunked) اجرا شود و دیالوگ wait مرورگر نیاید.
+  // قبلاً computed همگام بود و روی لایه‌های بزرگ کل UI را فریز می‌کرد.
+  const relationResults = ref([])
+  const relationProgress = ref({ done: 0, total: 0 })
+  const relationError = ref(null)
+  let relationReqId = 0
+  let relationAbortCtrl = null
+  // زیر این سقف جفت، مسیر همگام سریع کافی است؛ بالاتر chunked آسنکرون
+  const SYNC_PAIR_LIMIT = 100000
+
+  async function computeRelationResults() {
     const c = relationCommitted.value
-    if (!c) return []
-    const sourceRows = findRelationRows(c.sourceLayerUuid, c.sourceId)
-    if (!sourceRows.length) return []
-    let targets = allFeatures.value.filter(r =>
+    const myId = ++relationReqId
+    relationAbortCtrl?.abort()
+    const ctrl = new AbortController()
+    relationAbortCtrl = ctrl
+    relationError.value = null
+    if (!c) {
+      relationResults.value = []
+      relationProgress.value = { done: 0, total: 0 }
+      return []
+    }
+    const sourceRows = findRelationRows(c.sourceLayerUuid)
+    if (!sourceRows.length) {
+      if (myId === relationReqId) {
+        relationResults.value = []
+        relationProgress.value = { done: 0, total: 0 }
+      }
+      return []
+    }
+    const targets = allFeatures.value.filter(r =>
       String(r._layerUuid) === String(c.targetLayerUuid)
     )
-    // هدف تکی: فقط همان عارضه بررسی می‌شود؛ در غیر این صورت کل لایه هدف
-    if (!isAllFeatures(c.targetId)) {
-      targets = targets.filter(r => String(r.id) === String(c.targetId))
+    if (!targets.length) {
+      if (myId === relationReqId) {
+        relationResults.value = []
+        relationProgress.value = { done: 0, total: 0 }
+      }
+      return []
     }
-    if (!targets.length) return []
-    return findMatchingRowsMulti(sourceRows, targets, c.operator)
-  })
+    const pairs = sourceRows.length * targets.length
+    try {
+      let out
+      if (pairs <= SYNC_PAIR_LIMIT) {
+        // فرصت یک فریم تا اسپینر لودینگ واقعاً رندر شود، بعد محاسبه سریع
+        await new Promise(r => setTimeout(r, 30))
+        if (ctrl.signal.aborted || myId !== relationReqId) return relationResults.value
+        out = findMatchingRowsMulti(sourceRows, targets, c.operator)
+      } else {
+        relationProgress.value = { done: 0, total: targets.length }
+        out = await findMatchingRowsMultiAsync(sourceRows, targets, c.operator, {
+          signal: ctrl.signal,
+          chunkTargets: 300,
+          onProgress: (done, total) => {
+            if (myId === relationReqId) relationProgress.value = { done, total }
+          },
+        })
+      }
+      if (myId === relationReqId && !ctrl.signal.aborted) {
+        relationResults.value = out
+        relationProgress.value = { done: targets.length, total: targets.length }
+      }
+      return myId === relationReqId ? out : relationResults.value
+    } catch (e) {
+      if (e?.name === 'AbortError') return relationResults.value
+      if (myId === relationReqId) {
+        relationError.value = e?.message ?? 'خطا در محاسبه رابطه مکانی'
+        relationResults.value = []
+      }
+      return []
+    }
+  }
+
+  // اگر رابطه‌ای تأییدشده فعال است و داده مبنا عوض شد (مخفی/حذف لایه)،
+  // نتایج را در پس‌زمینه بازمحاسبه کن تا شمارش‌ها درست بمانند
+  let _relRetimer = null
+  function maybeRecomputeRelation() {
+    if (!relationCommitted.value) return
+    clearTimeout(_relRetimer)
+    _relRetimer = setTimeout(() => { computeRelationResults() }, 60)
+  }
 
   const hasRadiusFilter   = computed(() => committedRadiusCenter.value !== null)
   const hasRelationFilter = computed(() => relationCommitted.value !== null)
 
-  // اعمال رابطه مکانی (با لودینگ؛ محاسبات سنگین بعد از رندر لودینگ انجام می‌شود)
-  // مبدأ می‌تواند تک‌عارضه یا «کل لایه» باشد؛ هدف هم همین‌طور (خالی = کل لایه برای سازگاری)
+  // اعمال رابطه مکانی (با لودینگ؛ محاسبات سنگین تکه‌تکه بعد از رندر لودینگ انجام می‌شود)
+  // همیشه کل لایه مبدأ با کل لایه هدف مقایسه می‌شود
   async function commitRelationFilter() {
     if (!relationSourceLayer.value || !relationTargetLayer.value) return false
-    if (relationSourceId.value == null || relationSourceId.value === '') return false
-    const targetId = isAllFeatures(relationTargetId.value) ? ALL_FEATURES : relationTargetId.value
     spatialLoading.value = true
-    await new Promise(r => setTimeout(r, 250))
+    relationProgress.value = { done: 0, total: 0 }
+    // اجازه بده اسپینر یک فریم رندر شود، بعد محاسبه سنگین شروع شود
+    await new Promise(r => setTimeout(r, 60))
     relationCommitted.value = {
       sourceLayerUuid: relationSourceLayer.value,
-      sourceId: relationSourceId.value,
       targetLayerUuid: relationTargetLayer.value,
-      targetId,
       operator: relationOperator.value || 'within',
     }
-    spatialLoading.value = false
+    relationResults.value = []
+    try {
+      await computeRelationResults()
+    } finally {
+      spatialLoading.value = false
+    }
     return true
   }
 
   function clearRelation() {
+    relationReqId++
+    relationAbortCtrl?.abort()
     relationSourceLayer.value = null
-    relationSourceId.value    = null
     relationTargetLayer.value = null
-    relationTargetId.value    = ALL_FEATURES
     relationOperator.value    = 'within'
     relationCommitted.value   = null
+    relationResults.value = []
+    relationProgress.value = { done: 0, total: 0 }
+    relationError.value = null
   }
 
   // ── کوئری‌های ذخیره‌شده ──
@@ -575,6 +661,7 @@ export function useWellQuery() {
     committedRadiusCenter.value = null
     committedRadiusKm.value = DEFAULT_RADIUS_KM
     clearRelation()
+    _countCache.clear()
     rebuildAggregated()
   }
 
@@ -593,8 +680,8 @@ export function useWellQuery() {
     radiusCenter, radiusKm,
     committedRadiusCenter, committedRadiusKm,
     spatialLoading, commitSpatialFilter,
-    relationSourceLayer, relationSourceId, relationTargetLayer, relationTargetId, relationOperator,
-    relationCommitted, relationResults, hasRelationFilter,
+    relationSourceLayer, relationTargetLayer, relationOperator,
+    relationCommitted, relationResults, relationProgress, relationError, hasRelationFilter,
     commitRelationFilter, clearRelation,
     savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
     clearAllLocalData,

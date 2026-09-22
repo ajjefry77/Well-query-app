@@ -191,6 +191,8 @@ const props = defineProps({
   previewSourceIds: { type: Array, default: () => [] },
   previewOkIds: { type: Array, default: () => [] },
   previewFailIds: { type: Array, default: () => [] },
+  // لایه مبدأ رابطه مکانی تأییدشده — بعد از Apply کمی پررنگ‌تر نمایش داده می‌شود
+  emphasizeLayer: { type: String, default: null },
   theme: { type: String, default: "light" },
 });
 const emit = defineEmits(["select-well", "map-empty-click"]);
@@ -695,18 +697,27 @@ function previewFlags(key, plainId, sets) {
   const isFail = inIdSet(key, plainId, sets.fail);
   return { isSrc, isOk, isFail, isAny: isSrc || isOk || isFail };
 }
+// آیا عارضه متعلق به لایه تأکیدی (مبدأ رابطه تأییدشده) است؟
+function isEmphasized(f) {
+  if (!props.emphasizeLayer) return false;
+  const lu = f?._layerUuid ?? f?.properties?._layerUuid;
+  return lu != null && String(lu) === String(props.emphasizeLayer);
+}
 
 function buildGeoJSON(wells) {
-  return {
-    type: "FeatureCollection",
-    features: wells
-      .filter((w) => w._geometry || (Number.isFinite(+w.lat) && Number.isFinite(+w.lng)))
-      .map((w) => ({
-        type: "Feature",
-        geometry: w._geometry ?? { type: "Point", coordinates: [+w.lng, +w.lat] },
-        properties: { ...w, _geometry: undefined },
-      })),
-  };
+  // بدون spread کردن _geometry داخل properties (قبلاً کل هندسه هم در props کپی
+  // می‌شد و حافظه/سریال‌سازی setData دو برابر سنگین بود)
+  const features = []
+  for (let i = 0; i < wells.length; i++) {
+    const w = wells[i]
+    const geom = w._geometry ?? (Number.isFinite(+w.lat) && Number.isFinite(+w.lng)
+      ? { type: "Point", coordinates: [+w.lng, +w.lat] }
+      : null)
+    if (!geom) continue
+    const { _geometry, ...props } = w
+    features.push({ type: "Feature", geometry: geom, properties: props })
+  }
+  return { type: "FeatureCollection", features }
 }
 
 function clearMarkers() {
@@ -772,8 +783,12 @@ function bindWellEventsOnce() {
 function fitGeoJSON(geojson) {
   try {
     const bounds = new mapboxgl.LngLatBounds();
-    geojson.features.forEach((f) => {
-      const g = f.geometry;
+    // روی مجموعه‌های بزرگ فقط نمونه برای bounds کافی است (fit دقیق لازم نیست)
+    const feats = geojson.features;
+    const step = feats.length > 2000 ? Math.ceil(feats.length / 2000) : 1;
+    for (let i = 0; i < feats.length; i += step) {
+      const g = feats[i].geometry;
+      if (!g) continue;
       if (g.type === "Point") bounds.extend(g.coordinates);
       else if (g.type === "MultiPoint")
         g.coordinates.forEach((c) => bounds.extend(c));
@@ -785,7 +800,7 @@ function fitGeoJSON(geojson) {
         g.coordinates[0].forEach((c) => bounds.extend(c));
       else if (g.type === "MultiPolygon")
         g.coordinates.forEach((p) => p[0].forEach((c) => bounds.extend(c)));
-    });
+    }
     if (!bounds.isEmpty())
       map.fitBounds(bounds, { padding: 48, maxZoom: 14, duration: 800 });
   } catch {}
@@ -808,9 +823,11 @@ function renderMarkers(fit = true) {
       const hl = inHighlightSet(key, highlightSet);
       const match = props.hasFilter && hl;
       const { isSrc, isOk, isFail, isAny } = previewFlags(key, f.properties.id, psets);
+      const isEmph = isEmphasized(f);
       f.properties._color = WELL_COLOR;
       f.properties._highlighted = hl ? 1 : 0;
-      f.properties._dimmed = props.hasFilter && !hl && !isAny ? 1 : 0;
+      f.properties._dimmed = props.hasFilter && !hl && !isAny && !isEmph ? 1 : 0;
+      f.properties._emph = isEmph ? 1 : 0;
       f.properties._match = match ? 1 : 0;
       f.properties._psrc = isSrc && !isOk && !isFail ? 1 : 0;
       f.properties._pok = isOk ? 1 : 0;
@@ -869,6 +886,8 @@ function renderMarkers(fit = true) {
           0.65,
           ["==", ["get", "_highlighted"], 1],
           0.55,
+          ["==", ["get", "_emph"], 1],
+          0.42, // لایه مبدأ تأییدشده → کمی پررنگ‌تر
           ["==", ["get", "_dimmed"], 1],
           0.06,
           0.2, // عادی بدون فیلتر
@@ -919,6 +938,8 @@ function renderMarkers(fit = true) {
           3.5,
           ["==", ["get", "_highlighted"], 1],
           3,
+          ["==", ["get", "_emph"], 1],
+          3, // لایه مبدأ تأییدشده → خط ضخیم‌تر
           1.5,
         ],
         "line-opacity": [
@@ -933,6 +954,8 @@ function renderMarkers(fit = true) {
           1,
           ["==", ["get", "_highlighted"], 1],
           1,
+          ["==", ["get", "_emph"], 1],
+          0.9,
           ["==", ["get", "_dimmed"], 1],
           0.15,
           0.5,
@@ -966,6 +989,8 @@ function renderMarkers(fit = true) {
           3.5,
           ["==", ["get", "_highlighted"], 1],
           3,
+          ["==", ["get", "_emph"], 1],
+          3, // لایه مبدأ تأییدشده → خط ضخیم‌تر
           ["==", ["get", "_dimmed"], 1],
           1,
           1.5,
@@ -1013,6 +1038,8 @@ function renderMarkers(fit = true) {
           11,
           ["==", ["get", "_highlighted"], 1],
           9,
+          ["==", ["get", "_emph"], 1],
+          8, // لایه مبدأ تأییدشده → نقطه کمی بزرگ‌تر
           ["==", ["get", "_dimmed"], 1],
           4,
           6,
@@ -1110,12 +1137,16 @@ function renderMarkers(fit = true) {
     clearWellLayers();
     clearMarkers();
     wellsGeoJSON = null;
-    props.wells.forEach((w) => {
+    // سقف مارکر DOM (لایه‌های بدون هندسه): هزاران مارکر صفحه را قفل می‌کند
+    const MARKER_CAP = 3000;
+    const list = props.wells.length > MARKER_CAP ? props.wells.slice(0, MARKER_CAP) : props.wells;
+    list.forEach((w) => {
       if (!Number.isFinite(+w.lat) || !Number.isFinite(+w.lng)) return;
       const key = wellKey(w);
       const isH = inHighlightSet(key, highlightSet);
       const { isSrc, isOk, isFail, isAny } = previewFlags(key, w.id, psets);
-      const isDimmed = props.hasFilter && !isH && !isAny;
+      const isEmph = isEmphasized(w);
+      const isDimmed = props.hasFilter && !isH && !isAny && !isEmph;
       const isMatch = props.hasFilter && isH;
       const isCenter = centerKey && key === centerKey;
       const isSel = (selectedKey && (key === selectedKey || String(w.id) === selectedKey)) || isAny;
@@ -1148,7 +1179,7 @@ function renderMarkers(fit = true) {
                 : isH
                   ? "3px solid #fff"
                   : "2px solid rgba(255,255,255,0.4)";
-      const size = isSel ? 22 : isCenter ? 22 : isMatch ? 20 : isH ? 18 : isDimmed ? 8 : 12;
+      const size = isSel ? 22 : isCenter ? 22 : isMatch ? 20 : isH ? 18 : isEmph ? 16 : isDimmed ? 8 : 12;
       const el = document.createElement("div");
       el.style.cssText = `
       width:${size}px;height:${size}px;border-radius:50%;
@@ -1287,8 +1318,10 @@ function updateHighlightData() {
     const key = wellKey(f);
     const hl = inHighlightSet(key, highlightSet);
     const { isSrc, isOk, isFail, isAny } = previewFlags(key, f.properties.id, psets);
+    const isEmph = isEmphasized(f);
     f.properties._highlighted = hl ? 1 : 0;
-    f.properties._dimmed = props.hasFilter && !hl && !isAny ? 1 : 0;
+    f.properties._dimmed = props.hasFilter && !hl && !isAny && !isEmph ? 1 : 0;
+    f.properties._emph = isEmph ? 1 : 0;
     f.properties._match = (props.hasFilter && hl) ? 1 : 0;
     f.properties._psrc = isSrc && !isOk && !isFail ? 1 : 0;
     f.properties._pok = isOk ? 1 : 0;
@@ -1313,6 +1346,7 @@ watch(() => props.previewIds, schedulePreviewRefresh);
 watch(() => props.previewSourceIds, schedulePreviewRefresh);
 watch(() => props.previewOkIds, schedulePreviewRefresh);
 watch(() => props.previewFailIds, schedulePreviewRefresh);
+watch(() => props.emphasizeLayer, schedulePreviewRefresh);
 // عارضه مرجع (قرمز) با تغییر انتخاب به‌روز می‌شود
 watch(() => props.radiusCenter, scheduleHighlight);
 
@@ -1450,9 +1484,9 @@ defineExpose({
       if (map._pickerMarker) map._pickerMarker.remove();
       const el = document.createElement("div");
       el.style.cssText =
-        "width:28px;height:34px;overflow:visible;background:transparent;pointer-events:none;";
+        "width:36px;height:44px;overflow:visible;background:transparent;pointer-events:none;";
       const markerEl = document.createElement("div");
-      markerEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="28" height="34"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#4a9b8e" stroke="#fff" stroke-width="2.5"/><circle cx="12" cy="9" r="3.5" fill="#fff"/></svg>`;
+      markerEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="36" height="44"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#f97316" stroke="#fff" stroke-width="2"/><circle cx="12" cy="9" r="3.5" fill="#fff"/></svg>`;
       el.appendChild(markerEl);
       map._pickerMarker = new mapboxgl.Marker(el)
         .setLngLat(e.lngLat)

@@ -48,6 +48,7 @@
               v-if="activeQueryLayer === layer.uuid"
               :conditions="layerDetails[layer.uuid]?.conditions ?? []"
               :fields="layerDetails[layer.uuid]?.fields ?? []"
+              :field-stats="fieldStatsMap?.[layer.uuid] ?? {}"
               :result-count="layerDetails[layer.uuid]?.resultCount ?? 0"
               :total-count="layerDetails[layer.uuid]?.featureCount ?? 0"
               @add="$emit('add-condition', layer.uuid)"
@@ -78,14 +79,9 @@
         :is-picking="isPickingPoint"
         :spatial-loading="spatialLoading"
         :source-layer="relationSourceLayer"
-        :source-id="relationSourceId"
         :target-layer="relationTargetLayer"
-        :target-id="relationTargetId"
         :operator="relationOperator"
-        :source-fields="relationSourceLayer ? (layerDetails[relationSourceLayer]?.fields ?? []) : []"
-        :target-fields="relationTargetLayer ? (layerDetails[relationTargetLayer]?.fields ?? []) : []"
         :relation-loading="relationLoading"
-        :live-match="relationLiveMatch"
         @update:mode="$emit('update:spatial-mode', $event)"
         @update:tool="$emit('update:spatial-tool', $event)"
         @update:active-layer="$emit('update:active-query-layer', $event)"
@@ -96,9 +92,7 @@
         @clear-spatial="$emit('clear-spatial')"
         @apply-spatial="$emit('apply-spatial')"
         @update:source-layer="$emit('update:relation-source-layer', $event)"
-        @update:source-id="$emit('update:relation-source-id', $event)"
         @update:target-layer="$emit('update:relation-target-layer', $event)"
-        @update:target-id="$emit('update:relation-target-id', $event)"
         @update:operator="$emit('update:relation-operator', $event)"
         @apply-relation="$emit('apply-relation')"
       />
@@ -128,6 +122,7 @@ const props = defineProps({
   layers: { type: Array, default: () => [] },
   layerDetails: { type: Object, default: () => ({}) },
   activeQueryLayer: { type: String, default: null },
+  fieldStatsMap: { type: Object, default: () => ({}) },
   loadingFields: { type: Boolean, default: false },
   loadingFeatures: { type: Boolean, default: false },
   spatialMode: { type: String, required: true },
@@ -141,12 +136,9 @@ const props = defineProps({
   spatialLoading: { type: Boolean, default: false },
   savedQueries: { type: Array, default: () => [] },
   relationSourceLayer: { type: String, default: null },
-  relationSourceId: { type: [String, Number], default: null },
   relationTargetLayer: { type: String, default: null },
-  relationTargetId: { type: [String, Number], default: '__ALL__' },
   relationOperator: { type: String, default: 'within' },
   relationLoading: { type: Boolean, default: false },
-  relationLiveMatch: { type: Boolean, default: null },
 })
 defineEmits([
   'toggle',
@@ -164,9 +156,7 @@ defineEmits([
   'clear-spatial',
   'apply-spatial',
   'update:relation-source-layer',
-  'update:relation-source-id',
   'update:relation-target-layer',
-  'update:relation-target-id',
   'update:relation-operator',
   'apply-relation',
   'load-query',

@@ -31,17 +31,7 @@
         />
       </div>
 
-      <div class="field-group">
-        <label>عارضه مبدأ</label>
-        <AppSelect
-          class="qb-select qb-select--full"
-          :model-value="sourceId != null ? String(sourceId) : ''"
-          :options="sourceFeatureOptions"
-          placeholder="یک عارضه انتخاب کنید…"
-          @update:model-value="$emit('update:source-id', $event)"
-        />
-        <p v-if="isSourceAll" class="sq__hint sq__hint--tiny">همه عارضه‌های لایه مبدأ به‌عنوان مبدأ در نظر گرفته می‌شوند.</p>
-      </div>
+      <p class="sq__hint sq__hint--tiny">همه عارضه‌های لایه مبدأ به‌عنوان مبدأ در نظر گرفته می‌شوند.</p>
 
       <div class="layer-dropdown-wrap">
         <label class="layer-dropdown-label">لایه هدف </label>
@@ -54,18 +44,7 @@
         />
       </div>
 
-      <div class="field-group">
-        <label>عارضه هدف</label>
-        <AppSelect
-          class="qb-select qb-select--full"
-          :model-value="targetId != null ? String(targetId) : ''"
-          :options="targetFeatureOptions"
-          placeholder="یک عارضه انتخاب کنید…"
-          @update:model-value="$emit('update:target-id', $event)"
-        />
-        <p v-if="showLiveOk" class="sq__hint sq__hint--live sq__hint--live-ok">رابطه برقرار است — عارضه هدف سبز نمایش داده می‌شود.</p>
-        <p v-else-if="showLiveFail" class="sq__hint sq__hint--live sq__hint--live-fail">رابطه برقرار نیست — عارضه هدف قرمز نمایش داده می‌شود.</p>
-      </div>
+      <p class="sq__hint sq__hint--tiny">همه عارضه‌های لایه هدف بررسی می‌شوند.</p>
 
       <div class="field-group">
         <label>نوع رابطه</label>
@@ -79,14 +58,13 @@
       <p class="sq__hint">{{ operatorHint }}</p>
 
       <button
-        v-if="canApplyRelation"
         class="btn-apply-spatial"
-        :disabled="relationLoading"
+        :disabled="!canApplyRelation || relationLoading"
         @click="$emit('apply-relation')"
       >
         {{ relationLoading ? 'در حال اعمال…' : 'اعمال رابطه مکانی' }}
       </button>
-      <p v-else class="sq__hint sq__hint--tiny">ابتدا لایه مبدأ، عارضه مبدأ و لایه هدف را انتخاب کنید.</p>
+      <p v-if="!canApplyRelation" class="sq__hint sq__hint--tiny">ابتدا لایه مبدأ و لایه هدف را انتخاب کنید.</p>
     </template>
 
     <!-- ─── جستجوی شعاعی ─── -->
@@ -140,6 +118,9 @@
             placeholder="یک عارضه انتخاب کنید…"
             @update:model-value="onCenterChange"
           />
+          <p v-if="centerOptionsCapped" class="sq__hint">
+            فقط {{ CENTER_OPTIONS_CAP.toLocaleString('fa-IR') }} عارضه اول در لیست است؛ برای بقیه از «انتخاب از روی نقشه» استفاده کنید.
+          </p>
         </div>
 
         <div class="sq__info mono" v-if="radiusCenter && !isCustomPoint && radiusCenter.id != null">
@@ -240,7 +221,7 @@
 <script setup>
 import { computed, ref, watch, nextTick } from "vue";
 import AppSelect from "./AppSelect.vue";
-import { RELATION_OPERATORS, ALL_FEATURES } from "../composables/useSpatialRelations.js";
+import { RELATION_OPERATORS } from "../composables/useSpatialRelations.js";
 
 const props = defineProps({
   mode: { type: String, required: true },
@@ -260,19 +241,11 @@ const props = defineProps({
   customPoint: { type: Object, default: null },
   isPicking: { type: Boolean, default: false },
   spatialLoading: { type: Boolean, default: false },
-  // ── رابطه مکانی ──
+  // ── رابطه مکانی (همیشه کل لایه مبدأ با کل لایه هدف) ──
   sourceLayer: { type: String, default: null },
-  sourceId: { type: [String, Number], default: null },
   targetLayer: { type: String, default: null },
-  targetId: { type: [String, Number], default: ALL_FEATURES },
   operator: { type: String, default: "within" },
-  // فیلدهای لایه مبدأ (برای برچسب عارضه‌ها)
-  sourceFields: { type: Array, default: () => [] },
-  // فیلدهای لایه هدف (برای برچسب عارضه‌ها)
-  targetFields: { type: Array, default: () => [] },
   relationLoading: { type: Boolean, default: false },
-  // نتیجه زنده رابطه بین دو عارضه تکی (null = قابل ارزیابی نیست)
-  liveMatch: { type: Boolean, default: null },
 });
 
 const emit = defineEmits([
@@ -287,9 +260,7 @@ const emit = defineEmits([
   "clear-spatial",
   "apply-spatial",
   "update:source-layer",
-  "update:source-id",
   "update:target-layer",
-  "update:target-id",
   "update:operator",
   "apply-relation",
 ]);
@@ -362,71 +333,22 @@ const operatorHint = computed(
   () => RELATION_OPERATORS.find((o) => o.value === props.operator)?.hint ?? "",
 );
 
-// عارضه‌های لایه مبدأ / هدف
-const sourceWells = computed(() => {
-  if (!props.sourceLayer) return [];
-  return props.wells.filter((w) => String(w._layerUuid) === String(props.sourceLayer));
-});
-const targetWells = computed(() => {
-  if (!props.targetLayer) return [];
-  return props.wells.filter((w) => String(w._layerUuid) === String(props.targetLayer));
-});
-
-// حدس فیلد نام در لایه مبدأ/هدف برای برچسب خوانا
-function guessNameKey(fields) {
-  for (const f of fields ?? []) {
-    if (f.key && f.key.toLowerCase().includes("name")) return f.key;
-  }
-  return null;
-}
-const sourceNameKey = computed(() => guessNameKey(props.sourceFields));
-const targetNameKey = computed(() => guessNameKey(props.targetFields));
-
-function featureLabel(w, nameKey) {
-  return nameKey && w[nameKey] != null && w[nameKey] !== ""
-    ? `#${w.id} — ${w[nameKey]}`
-    : `#${w.id}`;
-}
-
-const ALL_OPTION = { value: ALL_FEATURES, label: "کل لایه — همه عارضه‌ها" };
-
-const sourceFeatureOptions = computed(() => [
-  { ...ALL_OPTION },
-  ...sourceWells.value.map((w) => ({
-    value: String(w.id),
-    label: featureLabel(w, sourceNameKey.value),
-  })),
-]);
-const targetFeatureOptions = computed(() => [
-  { ...ALL_OPTION },
-  ...targetWells.value.map((w) => ({
-    value: String(w.id),
-    label: featureLabel(w, targetNameKey.value),
-  })),
-]);
-
-const isSourceAll = computed(() => props.sourceId === ALL_FEATURES);
-const isTargetAll = computed(() => !props.targetId || props.targetId === ALL_FEATURES);
-
-// اعمال فقط وقتی ممکن است که مبدأ/هدف کامل باشد و هندسه کافی وجود داشته باشد
+// اعمال فقط وقتی ممکن است که هر دو لایه انتخاب شده و حداقل یک هندسه در هر لایه باشد
+// همیشه کل لایه مبدأ با کل لایه هدف مقایسه می‌شود
+// حلقه با خروج زودهنگام: قبلاً دو filter کامل روی کل wells اجرا می‌شد
 const canApplyRelation = computed(() => {
-  if (!props.sourceLayer || props.sourceId == null || props.sourceId === "" || !props.targetLayer) return false;
-  const hasGeom = (w) => !!(w._geometry || (Number.isFinite(+w.lat) && Number.isFinite(+w.lng)));
-  let sources = sourceWells.value;
-  if (!isSourceAll.value) {
-    const src = sources.find((w) => String(w.id) === String(props.sourceId));
-    if (!src) return false;
-    sources = [src];
+  if (!props.sourceLayer || !props.targetLayer) return false;
+  let hasS = false, hasT = false;
+  for (const w of props.wells) {
+    const lu = String(w._layerUuid);
+    if (!hasS && lu === String(props.sourceLayer)) {
+      if (w._geometry || (Number.isFinite(+w.lat) && Number.isFinite(+w.lng))) hasS = true;
+    } else if (!hasT && lu === String(props.targetLayer)) {
+      if (w._geometry || (Number.isFinite(+w.lat) && Number.isFinite(+w.lng))) hasT = true;
+    }
+    if (hasS && hasT) return true;
   }
-  if (!sources.length || !sources.some(hasGeom)) return false;
-  if (!isTargetAll.value) {
-    const tgt = targetWells.value.find((w) => String(w.id) === String(props.targetId));
-    if (!tgt) return false;
-    if (!hasGeom(tgt)) return false;
-  } else if (!targetWells.value.length) {
-    return false;
-  }
-  return true;
+  return false;
 });
 
 // عارضه‌های لایه فعال (فیلتر برای لیست) — اگر لایه‌ای انتخاب نشده همه
@@ -463,14 +385,23 @@ const centerLabel = computed(() => {
   return c[labelField.value] ?? '';
 });
 
-const centerOptions = computed(() =>
-  wellsWithCoords.value.map((w) => ({
-    value: String(w.id),
-    label: labelField.value
-      ? `#${w.id} — ${w[labelField.value]}`
-      : `#${w.id}`,
-  })),
-);
+// سقف گزینه‌های دراپ‌داون مرکز: ساخت ده‌ها هزار آبجکت آپشن روی هر رندر
+// مرورگر را فریز می‌کرد. کاربر می‌تواند از نقشه انتخاب کند (دقیق‌تر و سریع‌تر).
+const CENTER_OPTIONS_CAP = 2000;
+const centerOptions = computed(() => {
+  const src = wellsWithCoords.value;
+  const n = Math.min(src.length, CENTER_OPTIONS_CAP);
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const w = src[i];
+    out[i] = {
+      value: String(w.id),
+      label: labelField.value ? `#${w.id} — ${w[labelField.value]}` : `#${w.id}`,
+    };
+  }
+  return out;
+});
+const centerOptionsCapped = computed(() => wellsWithCoords.value.length > CENTER_OPTIONS_CAP);
 
 function onCenterChange(id) {
   const well = scopedWells.value.find((w) => String(w.id) === String(id));
@@ -567,6 +498,22 @@ const numberCfg = { min: 0.1, step: 0.1 };
 .sq__hint--tiny {
   font-size: 11px;
   opacity: 0.85;
+}
+.sq__hint--live {
+  font-weight: 700;
+  border-radius: var(--radius-xs);
+  padding: 4px 10px;
+  border: 1px solid transparent;
+}
+.sq__hint--live-ok {
+  color: #15803d;
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.4);
+}
+.sq__hint--live-fail {
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.4);
 }
 .sq__legend {
   font-size: 10px;

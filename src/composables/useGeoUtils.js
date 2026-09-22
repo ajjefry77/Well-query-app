@@ -39,11 +39,22 @@ export function findWithinRadius(points, center, radiusKm) {
   const cLat = Number(center?.lat), cLng = Number(center?.lng)
   if (!Number.isFinite(cLat) || !Number.isFinite(cLng)) return []
   const normCenter = { lat: cLat, lng: cLng }
-  return points
-    .filter((p) => Number.isFinite(+p.lat) && Number.isFinite(+p.lng))
-    .map((p) => ({ ...p, distanceKm: haversineDistanceKm(normCenter, p) }))
-    .filter((p) => p.distanceKm <= r)
-    .sort((a, b) => a.distanceKm - b.distanceKm)
+  // پیش‌فیلتر جعبه‌ای (bbox) ارزان قبل از هاورساین گران؛ فقط تطابق‌ها کلون می‌شوند
+  // (قبلاً همه کاندیداها با spread کلون می‌شدند که روی لایه بزرگ فریز می‌داد)
+  const dLat = r / 111.32
+  const cosLat = Math.cos((cLat * Math.PI) / 180)
+  const dLng = Math.abs(cosLat) > 1e-6 ? r / (111.32 * Math.abs(cosLat)) : 180
+  const out = []
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i]
+    const plat = +p.lat, plng = +p.lng
+    if (!Number.isFinite(plat) || !Number.isFinite(plng)) continue
+    if (Math.abs(plat - cLat) > dLat || Math.abs(plng - cLng) > dLng) continue
+    const d = haversineDistanceKm(normCenter, p)
+    if (d <= r) out.push({ ...p, distanceKm: d })
+  }
+  out.sort((a, b) => a.distanceKm - b.distanceKm)
+  return out
 }
 
 /**

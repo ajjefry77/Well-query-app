@@ -441,12 +441,14 @@ function isActive(row) {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  direction: ltr;
 }
 .rt__table {
   border-collapse: separate;
   border-spacing: 0;
   font-size: 12.5px;
   table-layout: fixed;
+  direction: ltr;
 }
 .rt__table thead {
   position: sticky;
@@ -461,7 +463,7 @@ function isActive(row) {
   background: var(--bg-panel-raised);
 }
 .rt__table th {
-  text-align: start;
+  text-align: left;
   padding: 8px 12px;
   padding-inline-end: 20px;
   font-weight: 700;
@@ -480,6 +482,7 @@ function isActive(row) {
   white-space: nowrap;
 }
 .rt__table td {
+  text-align: left;
   padding: 7px 12px;
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-primary);

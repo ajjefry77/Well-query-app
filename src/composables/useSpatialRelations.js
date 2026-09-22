@@ -99,6 +99,34 @@ const OP_FNS = {
   overlaps: (target, source) => booleanOverlap(target, source),
 }
 
+// تساوی هندسی امن (fallback برای ترکیب‌هایی که turf پشتیبانی نمی‌کند)
+function geomsAreEqual(g1, g2) {
+  if (!g1 || !g2) return false
+  try {
+    return booleanEqual(
+      { type: 'Feature', geometry: g1, properties: {} },
+      { type: 'Feature', geometry: g2, properties: {} },
+    ) === true
+  } catch {
+    return false
+  }
+}
+
+function isPointLike(t) {
+  return t === 'Point' || t === 'MultiPoint'
+}
+
+function pointCoords(g) {
+  if (!g) return []
+  if (g.type === 'Point' && Array.isArray(g.coordinates)) return [g.coordinates]
+  if (g.type === 'MultiPoint' && Array.isArray(g.coordinates)) return g.coordinates
+  return []
+}
+
+function coordsEqual(a, b) {
+  return Number(a?.[0]) === Number(b?.[0]) && Number(a?.[1]) === Number(b?.[1])
+}
+
 // ارزیابی یک رابطه بین دو هندسه؛ خطا (ترکیب نامعتبر) → false
 export function evaluateRelation(sourceGeom, targetGeom, operator) {
   const fn = OP_FNS[operator]
@@ -110,6 +138,21 @@ export function evaluateRelation(sourceGeom, targetGeom, operator) {
     const sb = featureBbox(source)
     const tb = featureBbox(target)
     if (sb && tb && bboxesDisjoint(sb, tb)) return false
+    // turf از هندسه نقطه‌ای به‌عنوان «ظرف» (کانتینر) پشتیبانی نمی‌کند و throw می‌دهد؛
+    // در نتیجه within/contains با مبدأ یا هدف نقطه‌ای همیشه false می‌شد.
+    // ظرف نقطه‌ای فقط نقطه‌ای را دربر می‌گیرد که مختصاتش دقیقاً روی همان نقطه(ها) باشد.
+    if (
+      (operator === 'within' && isPointLike(sourceGeom?.type)) ||
+      (operator === 'contains' && isPointLike(targetGeom?.type))
+    ) {
+      const container = operator === 'within' ? sourceGeom : targetGeom
+      const inner = operator === 'within' ? targetGeom : sourceGeom
+      const cCoords = pointCoords(container)
+      const iCoords = pointCoords(inner)
+      if (!cCoords.length) return false
+      if (!iCoords.length) return geomsAreEqual(sourceGeom, targetGeom)
+      return iCoords.every(ic => cCoords.some(cc => coordsEqual(ic, cc)))
+    }
     return fn(target, source) === true
   } catch {
     return false
@@ -129,38 +172,125 @@ export function findMatchingRows(sourceRow, targetRows, operator) {
 
 // حالت چند مبدأ (مبدأ = کل لایه): اجتماع نتایج هر عارضه مبدأ
 // اگر هر دو تک‌عارضه باشند همان رفتار قبلی حفظ می‌شود
+// بهینه‌سازی: bbox همه هندسه‌ها فقط یک بار محاسبه و کش می‌شود.
+// قبلاً evaluateRelation داخل حلقه تودرتو برای هر جفت، bbox مبدأ و هدف را
+// از نو روی همه مختصات راه می‌رفت (O(S*T*N)) که روی لایه‌های بزرگ مرورگر را فریز می‌کرد.
 export function findMatchingRowsMulti(sourceRows, targetRows, operator) {
   if (!Array.isArray(sourceRows) || !Array.isArray(targetRows) || !sourceRows.length) return []
-  const sourceKeys = new Set(
-    sourceRows.map((r) => (r._layerUuid ? `${r._layerUuid}::${r.id}` : String(r.id ?? ''))),
-  )
+  const keyOf = (r) => (r._layerUuid ? `${r._layerUuid}::${r.id}` : String(r.id ?? ''))
   const sourceGeoms = []
   for (const r of sourceRows) {
     const f = rowToFeature(r)
-    if (f?.geometry) sourceGeoms.push({ key: r._layerUuid ? `${r._layerUuid}::${r.id}` : String(r.id ?? ''), geom: f.geometry })
+    if (!f?.geometry) continue
+    const key = keyOf(r)
+    const bbox = featureBbox(f)
+    sourceGeoms.push({ key, geom: f.geometry, bbox })
   }
   if (!sourceGeoms.length) return []
   const seen = new Set()
   const out = []
   for (const row of targetRows) {
-    const key = row._layerUuid ? `${row._layerUuid}::${row.id}` : String(row.id ?? '')
+    const key = keyOf(row)
     const targetFeature = rowToFeature(row)
     if (!targetFeature) continue
-    for (const { key: sKey, geom: sGeom } of sourceGeoms) {
-      if (key && sKey && key === sKey && sourceKeys.size === 1) continue
-      // در حالت چندمبدأ، خود مبدأها هم می‌توانند در لایه هدف باشند؛ جفت یکسان حذف می‌شود
+    const tb = featureBbox(targetFeature)
+    const tGeom = targetFeature.geometry
+    for (const { key: sKey, geom: sGeom, bbox: sb } of sourceGeoms) {
       if (key && key === sKey) continue
+      if (sb && tb && bboxesDisjoint(sb, tb)) continue
       let ok = false
-      try {
-        ok = evaluateRelation(sGeom, targetFeature.geometry, operator)
-      } catch { ok = false }
+      try { ok = evaluateRelationFast(sGeom, tGeom, operator) === true } catch { ok = false }
       if (ok) {
-        if (key && seen.has(key)) break
-        if (key) seen.add(key)
+        if (key) {
+          if (seen.has(key)) break
+          seen.add(key)
+        }
         out.push(row)
         break
       }
     }
   }
+  return out
+}
+
+// ارزیابی سریع وقتی bboxها از قبل محاسبه شده‌اند (بدون محاسبه مجدد bbox)
+function evaluateRelationFast(sourceGeom, targetGeom, operator) {
+  const fn = OP_FNS[operator]
+  if (!fn || !sourceGeom || !targetGeom) return false
+  try {
+    const source = { type: 'Feature', geometry: sourceGeom, properties: {} }
+    const target = { type: 'Feature', geometry: targetGeom, properties: {} }
+    if (
+      (operator === 'within' && isPointLike(sourceGeom?.type)) ||
+      (operator === 'contains' && isPointLike(targetGeom?.type))
+    ) {
+      const container = operator === 'within' ? sourceGeom : targetGeom
+      const inner = operator === 'within' ? targetGeom : sourceGeom
+      const cCoords = pointCoords(container)
+      const iCoords = pointCoords(inner)
+      if (!cCoords.length) return false
+      if (!iCoords.length) return geomsAreEqual(sourceGeom, targetGeom)
+      return iCoords.every(ic => cCoords.some(cc => coordsEqual(ic, cc)))
+    }
+    return fn(target, source) === true
+  } catch {
+    return false
+  }
+}
+
+// نسخه آسنکرون و تکه‌تکه (chunked): هر چند هزار جفت یک بار به event-loop
+// فرصت می‌دهد تا دیالوگ "long script / wait" مرورگر ظاهر نشود و
+// بتوان پیشرفت و لغو (AbortSignal) را گزارش کرد.
+export async function findMatchingRowsMultiAsync(sourceRows, targetRows, operator, opts = {}) {
+  if (!Array.isArray(sourceRows) || !Array.isArray(targetRows) || !sourceRows.length) return []
+  const {
+    chunkTargets = 400,
+    yieldEveryMs = 0,
+    signal = null,
+    onProgress = null,
+  } = opts
+  const keyOf = (r) => (r._layerUuid ? `${r._layerUuid}::${r.id}` : String(r.id ?? ''))
+  const sourceGeoms = []
+  for (const r of sourceRows) {
+    if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
+    const f = rowToFeature(r)
+    if (!f?.geometry) continue
+    sourceGeoms.push({ key: keyOf(r), geom: f.geometry, bbox: featureBbox(f) })
+  }
+  if (!sourceGeoms.length) return []
+  // برای لایه‌های خیلی بزرگ، نمونه‌برداری مبدأ برای تخمین سریع؟ نه — کامل ولی تکه‌تکه
+  const seen = new Set()
+  const out = []
+  const total = targetRows.length
+  let processed = 0
+  const yieldTick = () => new Promise(r => setTimeout(r, yieldEveryMs))
+  for (let t = 0; t < targetRows.length; t++) {
+    if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
+    const row = targetRows[t]
+    const key = keyOf(row)
+    const targetFeature = rowToFeature(row)
+    if (targetFeature) {
+      const tb = featureBbox(targetFeature)
+      for (const { key: sKey, geom: sGeom, bbox: sb } of sourceGeoms) {
+        if (key && key === sKey) continue
+        if (sb && tb && bboxesDisjoint(sb, tb)) continue
+        let ok = false
+        try { ok = evaluateRelationFast(sGeom, targetFeature.geometry, operator) === true } catch { ok = false }
+        if (ok) {
+          if (!key || !seen.has(key)) {
+            if (key) seen.add(key)
+            out.push(row)
+          }
+          break
+        }
+      }
+    }
+    processed++
+    if (processed % chunkTargets === 0) {
+      try { onProgress?.(processed, total) } catch {}
+      await yieldTick()
+    }
+  }
+  try { onProgress?.(total, total) } catch {}
   return out
 }

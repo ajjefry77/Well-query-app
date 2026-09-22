@@ -68,13 +68,15 @@
             :options="booleanOptions"
             @update:model-value="cond.value = $event"
           />
-          <input
-            v-else-if="fieldMeta(cond.field)?.type === 'number'"
-            v-model="cond.value"
-            type="number"
-            class="qb-input mono"
-            placeholder="مقدار عددی…"
-          />
+          <template v-else-if="fieldMeta(cond.field)?.type === 'number'">
+            <input
+              v-model="cond.value"
+              type="number"
+              class="qb-input mono"
+              placeholder="مقدار عددی…"
+            />
+            <span v-if="rangeHint(cond.field)" class="qb-range mono">{{ rangeHint(cond.field) }}</span>
+          </template>
           <input
             v-else
             v-model="cond.value"
@@ -124,6 +126,7 @@ import AppSelect from './AppSelect.vue'
 const props = defineProps({
   conditions: { type: Array, required: true },
   fields: { type: Array, required: true },   // queryableFields از API
+  fieldStats: { type: Object, default: () => ({}) }, // { fieldKey: { min, max } | null }
   resultCount: { type: Number, required: true },
   totalCount: { type: Number, default: 0 }
 })
@@ -150,6 +153,14 @@ function enumOptionsFor(fieldKey) {
 
 function fieldMeta(key) {
   return props.fields.find((f) => f.key === key) ?? null
+}
+
+// بازه مقادیر موجود فیلد عددی (min تا max) برای راهنمای کاربر
+function rangeHint(fieldKey) {
+  const s = props.fieldStats?.[fieldKey]
+  if (!s || !Number.isFinite(s.min) || !Number.isFinite(s.max)) return ''
+  const fmt = (n) => Number(n).toLocaleString('fa-IR', { maximumFractionDigits: 4 })
+  return `بازه: ${fmt(s.min)} تا ${fmt(s.max)}`
 }
 
 function operatorsFor(fieldKey) {
@@ -319,6 +330,13 @@ function handleSave() {
 .qb-select--op {
   flex: 1.2;
   min-width: 105px;
+}
+.qb-range {
+  flex-basis: 100%;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  direction: rtl;
+  line-height: 1.6;
 }
 .qb-input--full {
   flex: 1;

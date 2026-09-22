@@ -669,9 +669,9 @@ defineExpose({
       pickerMarker = L.marker([e.latlng.lat, e.latlng.lng], {
         icon: L.divIcon({
           className: "",
-          html: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="28" height="34"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#4a9b8e" stroke="#fff" stroke-width="2.5"/><circle cx="12" cy="9" r="3.5" fill="#fff"/></svg>`,
-          iconSize: [28, 34],
-          iconAnchor: [14, 34],
+          html: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="36" height="44"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#f97316" stroke="#fff" stroke-width="2"/><circle cx="12" cy="9" r="3.5" fill="#fff"/></svg>`,
+          iconSize: [36, 44],
+          iconAnchor: [18, 44],
         }),
         draggable: false,
       }).addTo(map);

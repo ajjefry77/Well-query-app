@@ -28,6 +28,7 @@
         :active-query-layer="activeQueryLayer"
         :loading-fields="loadingFields"
         :loading-features="loadingFeatures"
+        :field-stats-map="layerFieldStats"
         :spatial-mode="spatialMode"
         :spatial-tool="spatialTool"
         :wells="allWells"
@@ -38,12 +39,9 @@
         :is-picking-point="isPickingPoint"
         :spatial-loading="spatialLoading"
         :relation-source-layer="relationSourceLayer"
-        :relation-source-id="relationSourceId"
         :relation-target-layer="relationTargetLayer"
-        :relation-target-id="relationTargetId"
         :relation-operator="relationOperator"
         :relation-loading="spatialLoading"
-        :relation-live-match="relationLiveMatch"
         :saved-queries="savedQueries"
         @toggle="toggleQueryPanel"
         @update:active-query-layer="activeQueryLayer = $event"
@@ -59,10 +57,8 @@
         @clear-point="onClearPoint"
         @clear-spatial="onClearSpatial"
         @apply-spatial="onApplySpatial"
-        @update:relation-source-layer="onUpdateRelationSourceLayer"
-        @update:relation-source-id="onUpdateRelationSourceId"
-        @update:relation-target-layer="onUpdateRelationTargetLayer"
-        @update:relation-target-id="onUpdateRelationTargetId"
+        @update:relation-source-layer="relationSourceLayer = $event"
+        @update:relation-target-layer="relationTargetLayer = $event"
         @update:relation-operator="relationOperator = $event"
         @apply-relation="onApplyRelation"
         @load-query="onLoadQuery"
@@ -74,17 +70,14 @@
       <section class="map-panel">
         <MapboxMap
            ref="mapRef"
-           :wells="visibleWells"
-           :wells-key="visibleWellsKey"
+           :wells="mapWells"
+           :wells-key="mapWellsKey"
            :highlighted-ids="highlightedIds"
            :has-filter="hasAnyFilter"
            :radius-center="showRadiusOnMap ? committedRadiusCenter : null"
            :radius-km="committedRadiusKm"
             :selected-id="selectedWellId"
-            :preview-ids="relationPreviewIds"
-            :preview-source-ids="relationPreviewSourceIds"
-            :preview-ok-ids="relationPreviewOkIds"
-            :preview-fail-ids="relationPreviewFailIds"
+            :emphasize-layer="relationCommitted ? relationCommitted.sourceLayerUuid : null"
             :theme="theme"
             @select-well="onSelectFromMap"
             @map-empty-click="onMapEmptyClick"
@@ -99,7 +92,12 @@
         <!-- لودینگ اعمال تغییرات مکانی -->
         <div v-if="spatialLoading" class="map-loading-overlay">
           <div class="spinner-ring"></div>
-          <span>در حال اعمال تغییرات…</span>
+          <span>در حال اعمال تغییرات…<template v-if="relationProgress && relationProgress.total > 0"> ({{ Math.round(relationProgress.done / relationProgress.total * 100) }}٪)</template></span>
+        </div>
+
+        <!-- اطلاع سقف رندر نقشه -->
+        <div v-if="mapCappedTotal > mapWells.length" class="map-cap-note">
+          {{ mapWells.length.toLocaleString('fa-IR') }} از {{ mapCappedTotal.toLocaleString('fa-IR') }} عارضه روی نقشه (جدول کامل است)
         </div>
 
         <!-- دکمه نمایش نتایج -->
@@ -199,7 +197,7 @@ import { useWellQuery } from '../composables/useWellQuery.js'
 import { useCoordinates } from '../composables/useCoordinates.js'
 import { useTheme } from '../composables/useTheme.js'
 import { layerColor } from '../composables/useLayerColors.js'
-import { relationLabel, ALL_FEATURES, evaluateRelation, rowToFeature } from '../composables/useSpatialRelations.js'
+import { relationLabel } from '../composables/useSpatialRelations.js'
 import { useRoute, useRouter } from '../router/index.js'
 
 // بارگذاری تنبل: همه‌چیز به‌جز هدر، کد-split می‌شود تا First Paint روی سیستم ضعیف سریع باشد
@@ -230,8 +228,8 @@ const {
   radiusCenter, radiusKm,
   committedRadiusCenter, committedRadiusKm,
   spatialLoading, commitSpatialFilter,
-  relationSourceLayer, relationSourceId, relationTargetLayer, relationTargetId, relationOperator,
-  relationCommitted, relationResults,
+  relationSourceLayer, relationTargetLayer, relationOperator,
+  relationCommitted, relationResults, relationProgress,
   commitRelationFilter, clearRelation,
   savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
   clearAllLocalData,
@@ -430,6 +428,8 @@ function layerGeomKind(uuid) {
 
 // ── جزئیات هر لایه فعال ──
 // conditions: پیش‌نویس قابل ویرایش در کوئری‌ساز؛ activeConds: شرط‌های تأییدشده (خلاصه شرط‌ها)
+// نکته پرفورمنس: resultCount (فیلتر زنده چندده‌هزاری) فقط برای لایه فعال کوئری‌ساز
+// محاسبه می‌شود؛ قبلاً برای همه لایه‌ها روی هر تایپ اجرا و مرورگر فریز می‌شد.
 const layerDetails = computed(() => {
   const map = {}
   for (const layer of activeLayers.value) {
@@ -446,13 +446,46 @@ const layerDetails = computed(() => {
       geomKind: layerGeomKind(uuid),
       fields: layerFields(uuid),
       featureCount: layerFeatureCount(uuid),
-      resultCount: getLayerResultCount(uuid),
+      resultCount: uuid === activeQueryLayer.value ? getLayerResultCount(uuid) : layerFeatureCount(uuid),
       conditions: draftConds,
       appliedConditions: appliedConds,
       activeConds: appliedConds.filter(c => c.value !== '' && c.value !== null && c.value !== undefined),
     }
   }
   return map
+})
+
+// ── بازه مقادیر (min/max) فیلدهای عددی — فقط برای لایه فعال کوئری‌ساز ──
+// قبلاً روی هر تغییر برای همه لایه‌ها روی کل سطرها لوپ می‌زد (O(L*F*N)) و فریز می‌داد.
+const layerFieldStats = computed(() => {
+  const out = {}
+  const uuids = activeQueryLayer.value
+    ? [activeQueryLayer.value]
+    : activeLayers.value.filter(l => isLayerVisible(l.uuid)).map(l => l.uuid)
+  for (const uuid of uuids) {
+    const numFields = layerFields(uuid).filter(f => f.type === 'number')
+    const stats = {}
+    if (numFields.length) {
+      const rows = _layerFeaturesMap.value?.[uuid] ?? []
+      const acc = {}
+      for (const f of numFields) acc[f.key] = { min: Infinity, max: -Infinity }
+      for (const r of rows) {
+        for (const f of numFields) {
+          const n = Number(r[f.key])
+          if (!Number.isFinite(n)) continue
+          const a = acc[f.key]
+          if (n < a.min) a.min = n
+          if (n > a.max) a.max = n
+        }
+      }
+      for (const f of numFields) {
+        const a = acc[f.key]
+        stats[f.key] = Number.isFinite(a.min) ? { min: a.min, max: a.max } : null
+      }
+    }
+    out[uuid] = stats
+  }
+  return out
 })
 
 const layerQuerySummaries = computed(() =>
@@ -484,100 +517,19 @@ const spatialSummaryLabel = computed(() => {
   return 'مرکز نامشخص'
 })
 
-// ── خلاصه رابطه مکانی برای پنل «شرط‌های فعال» ──
+// ── خلاصه رابطه مکانی برای پنل «شرط‌های فعال» (همیشه کل لایه) ──
 const relationSummary = computed(() => {
   const c = relationCommitted.value
   if (!c) return null
   const layerNameOf = (uuid) =>
     activeLayers.value.find(l => String(l.uuid) === String(uuid))?.display_name ?? ''
-  const srcPart = !c.sourceId || c.sourceId === ALL_FEATURES ? 'کل لایه' : `#${c.sourceId}`
-  const tgtPart = !c.targetId || c.targetId === ALL_FEATURES ? 'کل لایه' : `#${c.targetId}`
   return {
     opLabel: relationLabel(c.operator),
-    sourceText: `مبدأ: ${layerNameOf(c.sourceLayerUuid)} ${srcPart}`,
-    targetText: `هدف: ${layerNameOf(c.targetLayerUuid)} ${tgtPart}`,
+    sourceText: `مبدأ: ${layerNameOf(c.sourceLayerUuid)} کل لایه`,
+    targetText: `هدف: ${layerNameOf(c.targetLayerUuid)} کل لایه`,
     count: relationResults.value.length,
   }
 })
-
-// ── پیش‌نمایش فوری عارضه‌های مبدأ/هدف رابطه مکانی روی نقشه ──
-// مبدأ همیشه زرد؛ هدف تکی به‌صورت زنده ارزیابی می‌شود: سبز = رابطه برقرار، قرمز = برقرار نیست
-function isSingleFeatureId(v) {
-  return v != null && v !== '' && v !== ALL_FEATURES
-}
-const relationSourceRow = computed(() => {
-  if (!relationSourceLayer.value || !isSingleFeatureId(relationSourceId.value)) return null
-  return allWells.value.find(w =>
-    String(w._layerUuid) === String(relationSourceLayer.value) &&
-    String(w.id) === String(relationSourceId.value)
-  ) ?? null
-})
-const relationTargetRow = computed(() => {
-  if (!relationTargetLayer.value || !isSingleFeatureId(relationTargetId.value)) return null
-  return allWells.value.find(w =>
-    String(w._layerUuid) === String(relationTargetLayer.value) &&
-    String(w.id) === String(relationTargetId.value)
-  ) ?? null
-})
-// نتیجه زنده رابطه بین دو عارضه تکی انتخاب‌شده (null = قابل ارزیابی نیست)
-const relationLiveMatch = computed(() => {
-  const src = relationSourceRow.value
-  const tgt = relationTargetRow.value
-  if (!src || !tgt) return null
-  const srcGeom = rowToFeature(src)?.geometry
-  const tgtGeom = rowToFeature(tgt)?.geometry
-  if (!srcGeom || !tgtGeom) return null
-  try {
-    return evaluateRelation(srcGeom, tgtGeom, relationOperator.value || 'within') === true
-  } catch { return false }
-})
-const relationPreviewIds = computed(() => {
-  const ids = []
-  if (relationSourceRow.value) ids.push(rowKey(relationSourceRow.value))
-  if (relationTargetRow.value) ids.push(rowKey(relationTargetRow.value))
-  return ids
-})
-// تفکیک رنگی: مبدأ زرد، هدف سبز (رابطه برقرار) یا قرمز (برقرار نیست)
-const relationPreviewSourceIds = computed(() =>
-  relationSourceRow.value ? [rowKey(relationSourceRow.value)] : []
-)
-const relationPreviewOkIds = computed(() =>
-  relationTargetRow.value && relationLiveMatch.value === true ? [rowKey(relationTargetRow.value)] : []
-)
-const relationPreviewFailIds = computed(() =>
-  relationTargetRow.value && relationLiveMatch.value === false ? [rowKey(relationTargetRow.value)] : []
-)
-function zoomToRelationPreview(layerUuid, featureId) {
-  if (!layerUuid || featureId == null || featureId === ALL_FEATURES || featureId === '') return
-  mapRef.value?.zoomToFeature?.(`${layerUuid}::${featureId}`)
-}
-function onUpdateRelationSourceLayer(v) {
-  relationSourceLayer.value = v
-  // اگر عارضه انتخابی متعلق به لایه جدید نیست، ریست شود (به‌جز حالت کل لایه)
-  if (relationSourceId.value != null && relationSourceId.value !== ALL_FEATURES && relationSourceId.value !== '') {
-    const ok = allWells.value.some(w =>
-      String(w._layerUuid) === String(v) && String(w.id) === String(relationSourceId.value)
-    )
-    if (!ok) relationSourceId.value = null
-  }
-}
-function onUpdateRelationSourceId(v) {
-  relationSourceId.value = v
-  zoomToRelationPreview(relationSourceLayer.value, v)
-}
-function onUpdateRelationTargetLayer(v) {
-  relationTargetLayer.value = v
-  if (relationTargetId.value != null && relationTargetId.value !== ALL_FEATURES && relationTargetId.value !== '') {
-    const ok = allWells.value.some(w =>
-      String(w._layerUuid) === String(v) && String(w.id) === String(relationTargetId.value)
-    )
-    if (!ok) relationTargetId.value = ALL_FEATURES
-  }
-}
-function onUpdateRelationTargetId(v) {
-  relationTargetId.value = v
-  zoomToRelationPreview(relationTargetLayer.value, v)
-}
 
 const hiddenLayerUuids = computed(() =>
   activeLayers.value
@@ -671,10 +623,50 @@ const visibleWells = computed(() =>
   allWells.value.filter(w => isLayerVisible(w._layerUuid))
 )
 
-// کلید تغییرناپذیر لایه‌های visible — فقط وقتی تغییر می‌کند ریندر نقشه觸مین‌شود
-const visibleWellsKey = computed(() =>
-  visibleWells.value.map(w => w._layerUuid + ':' + w.id).sort().join('|')
+// سقف عارضه ارسالی به نقشه: رندر ده‌ها هزار پلی‌گان Mapbox را قفل می‌کند.
+// وقتی فیلتر فعال است نتایج (مهم‌ترین‌ها) وگرنه نمونه سیستماتیک از همه؛
+// سطر انتخاب‌شده همیشه نگه داشته می‌شود تا زوم از جدول کار کند.
+const MAP_RENDER_CAP = 8000
+const mapWells = computed(() => {
+  const src = hasAnyFilter.value ? displayRows.value : visibleWells.value
+  if (src.length <= MAP_RENDER_CAP) return src
+  const step = src.length / MAP_RENDER_CAP
+  const out = new Array(MAP_RENDER_CAP)
+  for (let i = 0; i < MAP_RENDER_CAP; i++) out[i] = src[Math.floor(i * step)]
+  const keep = activeWellId.value ?? selectedWellId.value
+  if (keep) {
+    let found = false
+    for (let i = 0; i < out.length; i++) {
+      if (rowKey(out[i]) === keep) { found = true; break }
+    }
+    if (!found) {
+      const row = src.find(r => rowKey(r) === keep)
+      if (row) out.push(row)
+    }
+  }
+  return out
+})
+const mapCappedTotal = computed(() =>
+  hasAnyFilter.value ? displayRows.value.length : visibleWells.value.length
 )
+
+// کلید ارزان تغییر نقشه — قبلاً کل idها sort و join می‌شد (رشته چندمگابایتی روی
+// هر کوئری) که خودش به‌تنهایی مرورگر را فریز می‌کرد. حالا فقط ترکیب لایه‌ها،
+/// تعدادها و وضعیت فیلتر.
+const visibleWellsKey = computed(() => {
+  const parts = []
+  for (const l of activeLayers.value) {
+    if (!isLayerVisible(l.uuid)) continue
+    parts.push(`${l.uuid}:${(_layerFeaturesMap.value?.[l.uuid] ?? []).length}`)
+  }
+  return parts.join('|')
+})
+const mapWellsKey = computed(() => {
+  const w = mapWells.value
+  const f = w.length ? rowKey(w[0]) : ''
+  const l = w.length > 1 ? rowKey(w[w.length - 1]) : ''
+  return `${hasAnyFilter.value ? 'f' : 'a'}|${visibleWellsKey.value}|${mapCappedTotal.value}|${w.length}|${f}|${l}`
+})
 
 // لایه‌های قابل انتخاب در کوئری‌ها (مخفی‌ها با چشم حذف می‌شوند)
 const visibleActiveLayers = computed(() =>
@@ -759,7 +751,6 @@ async function onApplyRelation() {
 function onClearRelation() {
   clearRelation()
 }
-// (منطق ریست عارضه مبدأ/هدف هنگام تعویض لایه در onUpdateRelation* انجام می‌شود)
 // اجرای کوئری توصیفی: تأیید پیش‌نویس‌ها و زوم روی نتایج
 function onApplyAttribute() {
   applyAttributeConditions()
@@ -918,6 +909,22 @@ function handleClearData() {
   min-width: 24px;
   text-align: center;
   line-height: 20px;
+}
+.map-cap-note {
+  position: absolute;
+  bottom: 12px;
+  inset-inline-start: 12px;
+  z-index: 500;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 /* ---------- صفحه چینه‌شناسی ---------- */

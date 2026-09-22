@@ -251,6 +251,8 @@ export async function fetchAllFeatures(layerUuid, opts = {}) {
     page += pages.length
     if (page > MAX_PAGE) break
     if (opts.onProgress) opts.onProgress(all.length)
+    // فرصت به event-loop تا در حین لود چندده‌هزاری، UI قفل نشود
+    await sleep(0)
   }
 
   return all
