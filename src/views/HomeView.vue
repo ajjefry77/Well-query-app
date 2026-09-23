@@ -76,9 +76,8 @@
            :has-filter="hasAnyFilter"
            :radius-center="showRadiusOnMap ? committedRadiusCenter : null"
            :radius-km="committedRadiusKm"
-            :selected-id="selectedWellId"
-            :emphasize-layer="relationCommitted ? relationCommitted.sourceLayerUuid : null"
-            :theme="theme"
+             :selected-id="selectedWellId"
+             :theme="theme"
             @select-well="onSelectFromMap"
             @map-empty-click="onMapEmptyClick"
           />

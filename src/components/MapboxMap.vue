@@ -191,8 +191,6 @@ const props = defineProps({
   previewSourceIds: { type: Array, default: () => [] },
   previewOkIds: { type: Array, default: () => [] },
   previewFailIds: { type: Array, default: () => [] },
-  // لایه مبدأ رابطه مکانی تأییدشده — بعد از Apply کمی پررنگ‌تر نمایش داده می‌شود
-  emphasizeLayer: { type: String, default: null },
   theme: { type: String, default: "light" },
 });
 const emit = defineEmits(["select-well", "map-empty-click"]);
@@ -697,12 +695,6 @@ function previewFlags(key, plainId, sets) {
   const isFail = inIdSet(key, plainId, sets.fail);
   return { isSrc, isOk, isFail, isAny: isSrc || isOk || isFail };
 }
-// آیا عارضه متعلق به لایه تأکیدی (مبدأ رابطه تأییدشده) است؟
-function isEmphasized(f) {
-  if (!props.emphasizeLayer) return false;
-  const lu = f?._layerUuid ?? f?.properties?._layerUuid;
-  return lu != null && String(lu) === String(props.emphasizeLayer);
-}
 
 function buildGeoJSON(wells) {
   // بدون spread کردن _geometry داخل properties (قبلاً کل هندسه هم در props کپی
@@ -823,11 +815,9 @@ function renderMarkers(fit = true) {
       const hl = inHighlightSet(key, highlightSet);
       const match = props.hasFilter && hl;
       const { isSrc, isOk, isFail, isAny } = previewFlags(key, f.properties.id, psets);
-      const isEmph = isEmphasized(f);
       f.properties._color = WELL_COLOR;
       f.properties._highlighted = hl ? 1 : 0;
-      f.properties._dimmed = props.hasFilter && !hl && !isAny && !isEmph ? 1 : 0;
-      f.properties._emph = isEmph ? 1 : 0;
+      f.properties._dimmed = props.hasFilter && !hl && !isAny ? 1 : 0;
       f.properties._match = match ? 1 : 0;
       f.properties._psrc = isSrc && !isOk && !isFail ? 1 : 0;
       f.properties._pok = isOk ? 1 : 0;
@@ -886,8 +876,6 @@ function renderMarkers(fit = true) {
           0.65,
           ["==", ["get", "_highlighted"], 1],
           0.55,
-          ["==", ["get", "_emph"], 1],
-          0.42, // لایه مبدأ تأییدشده → کمی پررنگ‌تر
           ["==", ["get", "_dimmed"], 1],
           0.06,
           0.2, // عادی بدون فیلتر
@@ -938,8 +926,6 @@ function renderMarkers(fit = true) {
           3.5,
           ["==", ["get", "_highlighted"], 1],
           3,
-          ["==", ["get", "_emph"], 1],
-          3, // لایه مبدأ تأییدشده → خط ضخیم‌تر
           1.5,
         ],
         "line-opacity": [
@@ -954,8 +940,6 @@ function renderMarkers(fit = true) {
           1,
           ["==", ["get", "_highlighted"], 1],
           1,
-          ["==", ["get", "_emph"], 1],
-          0.9,
           ["==", ["get", "_dimmed"], 1],
           0.15,
           0.5,
@@ -989,8 +973,6 @@ function renderMarkers(fit = true) {
           3.5,
           ["==", ["get", "_highlighted"], 1],
           3,
-          ["==", ["get", "_emph"], 1],
-          3, // لایه مبدأ تأییدشده → خط ضخیم‌تر
           ["==", ["get", "_dimmed"], 1],
           1,
           1.5,
@@ -1038,8 +1020,6 @@ function renderMarkers(fit = true) {
           11,
           ["==", ["get", "_highlighted"], 1],
           9,
-          ["==", ["get", "_emph"], 1],
-          8, // لایه مبدأ تأییدشده → نقطه کمی بزرگ‌تر
           ["==", ["get", "_dimmed"], 1],
           4,
           6,
@@ -1145,8 +1125,7 @@ function renderMarkers(fit = true) {
       const key = wellKey(w);
       const isH = inHighlightSet(key, highlightSet);
       const { isSrc, isOk, isFail, isAny } = previewFlags(key, w.id, psets);
-      const isEmph = isEmphasized(w);
-      const isDimmed = props.hasFilter && !isH && !isAny && !isEmph;
+      const isDimmed = props.hasFilter && !isH && !isAny;
       const isMatch = props.hasFilter && isH;
       const isCenter = centerKey && key === centerKey;
       const isSel = (selectedKey && (key === selectedKey || String(w.id) === selectedKey)) || isAny;
@@ -1179,7 +1158,7 @@ function renderMarkers(fit = true) {
                 : isH
                   ? "3px solid #fff"
                   : "2px solid rgba(255,255,255,0.4)";
-      const size = isSel ? 22 : isCenter ? 22 : isMatch ? 20 : isH ? 18 : isEmph ? 16 : isDimmed ? 8 : 12;
+      const size = isSel ? 22 : isCenter ? 22 : isMatch ? 20 : isH ? 18 : isDimmed ? 8 : 12;
       const el = document.createElement("div");
       el.style.cssText = `
       width:${size}px;height:${size}px;border-radius:50%;
@@ -1318,10 +1297,8 @@ function updateHighlightData() {
     const key = wellKey(f);
     const hl = inHighlightSet(key, highlightSet);
     const { isSrc, isOk, isFail, isAny } = previewFlags(key, f.properties.id, psets);
-    const isEmph = isEmphasized(f);
     f.properties._highlighted = hl ? 1 : 0;
-    f.properties._dimmed = props.hasFilter && !hl && !isAny && !isEmph ? 1 : 0;
-    f.properties._emph = isEmph ? 1 : 0;
+    f.properties._dimmed = props.hasFilter && !hl && !isAny ? 1 : 0;
     f.properties._match = (props.hasFilter && hl) ? 1 : 0;
     f.properties._psrc = isSrc && !isOk && !isFail ? 1 : 0;
     f.properties._pok = isOk ? 1 : 0;
@@ -1346,7 +1323,6 @@ watch(() => props.previewIds, schedulePreviewRefresh);
 watch(() => props.previewSourceIds, schedulePreviewRefresh);
 watch(() => props.previewOkIds, schedulePreviewRefresh);
 watch(() => props.previewFailIds, schedulePreviewRefresh);
-watch(() => props.emphasizeLayer, schedulePreviewRefresh);
 // عارضه مرجع (قرمز) با تغییر انتخاب به‌روز می‌شود
 watch(() => props.radiusCenter, scheduleHighlight);
 

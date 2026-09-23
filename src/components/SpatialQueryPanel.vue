@@ -58,13 +58,14 @@
       <p class="sq__hint">{{ operatorHint }}</p>
 
       <button
+        v-if="canApplyRelation"
         class="btn-apply-spatial"
-        :disabled="!canApplyRelation || relationLoading"
+        :disabled="relationLoading"
         @click="$emit('apply-relation')"
       >
         {{ relationLoading ? 'در حال اعمال…' : 'اعمال رابطه مکانی' }}
       </button>
-      <p v-if="!canApplyRelation" class="sq__hint sq__hint--tiny">ابتدا لایه مبدأ و لایه هدف را انتخاب کنید.</p>
+      <p v-else class="sq__hint sq__hint--tiny">ابتدا لایه مبدأ و لایه هدف را انتخاب کنید.</p>
     </template>
 
     <!-- ─── جستجوی شعاعی ─── -->
@@ -498,22 +499,6 @@ const numberCfg = { min: 0.1, step: 0.1 };
 .sq__hint--tiny {
   font-size: 11px;
   opacity: 0.85;
-}
-.sq__hint--live {
-  font-weight: 700;
-  border-radius: var(--radius-xs);
-  padding: 4px 10px;
-  border: 1px solid transparent;
-}
-.sq__hint--live-ok {
-  color: #15803d;
-  background: rgba(34, 197, 94, 0.1);
-  border-color: rgba(34, 197, 94, 0.4);
-}
-.sq__hint--live-fail {
-  color: #b91c1c;
-  background: rgba(239, 68, 68, 0.08);
-  border-color: rgba(239, 68, 68, 0.4);
 }
 .sq__legend {
   font-size: 10px;

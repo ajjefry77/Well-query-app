@@ -99,34 +99,6 @@ const OP_FNS = {
   overlaps: (target, source) => booleanOverlap(target, source),
 }
 
-// تساوی هندسی امن (fallback برای ترکیب‌هایی که turf پشتیبانی نمی‌کند)
-function geomsAreEqual(g1, g2) {
-  if (!g1 || !g2) return false
-  try {
-    return booleanEqual(
-      { type: 'Feature', geometry: g1, properties: {} },
-      { type: 'Feature', geometry: g2, properties: {} },
-    ) === true
-  } catch {
-    return false
-  }
-}
-
-function isPointLike(t) {
-  return t === 'Point' || t === 'MultiPoint'
-}
-
-function pointCoords(g) {
-  if (!g) return []
-  if (g.type === 'Point' && Array.isArray(g.coordinates)) return [g.coordinates]
-  if (g.type === 'MultiPoint' && Array.isArray(g.coordinates)) return g.coordinates
-  return []
-}
-
-function coordsEqual(a, b) {
-  return Number(a?.[0]) === Number(b?.[0]) && Number(a?.[1]) === Number(b?.[1])
-}
-
 // ارزیابی یک رابطه بین دو هندسه؛ خطا (ترکیب نامعتبر) → false
 export function evaluateRelation(sourceGeom, targetGeom, operator) {
   const fn = OP_FNS[operator]
@@ -138,21 +110,6 @@ export function evaluateRelation(sourceGeom, targetGeom, operator) {
     const sb = featureBbox(source)
     const tb = featureBbox(target)
     if (sb && tb && bboxesDisjoint(sb, tb)) return false
-    // turf از هندسه نقطه‌ای به‌عنوان «ظرف» (کانتینر) پشتیبانی نمی‌کند و throw می‌دهد؛
-    // در نتیجه within/contains با مبدأ یا هدف نقطه‌ای همیشه false می‌شد.
-    // ظرف نقطه‌ای فقط نقطه‌ای را دربر می‌گیرد که مختصاتش دقیقاً روی همان نقطه(ها) باشد.
-    if (
-      (operator === 'within' && isPointLike(sourceGeom?.type)) ||
-      (operator === 'contains' && isPointLike(targetGeom?.type))
-    ) {
-      const container = operator === 'within' ? sourceGeom : targetGeom
-      const inner = operator === 'within' ? targetGeom : sourceGeom
-      const cCoords = pointCoords(container)
-      const iCoords = pointCoords(inner)
-      if (!cCoords.length) return false
-      if (!iCoords.length) return geomsAreEqual(sourceGeom, targetGeom)
-      return iCoords.every(ic => cCoords.some(cc => coordsEqual(ic, cc)))
-    }
     return fn(target, source) === true
   } catch {
     return false
@@ -220,18 +177,6 @@ function evaluateRelationFast(sourceGeom, targetGeom, operator) {
   try {
     const source = { type: 'Feature', geometry: sourceGeom, properties: {} }
     const target = { type: 'Feature', geometry: targetGeom, properties: {} }
-    if (
-      (operator === 'within' && isPointLike(sourceGeom?.type)) ||
-      (operator === 'contains' && isPointLike(targetGeom?.type))
-    ) {
-      const container = operator === 'within' ? sourceGeom : targetGeom
-      const inner = operator === 'within' ? targetGeom : sourceGeom
-      const cCoords = pointCoords(container)
-      const iCoords = pointCoords(inner)
-      if (!cCoords.length) return false
-      if (!iCoords.length) return geomsAreEqual(sourceGeom, targetGeom)
-      return iCoords.every(ic => cCoords.some(cc => coordsEqual(ic, cc)))
-    }
     return fn(target, source) === true
   } catch {
     return false
