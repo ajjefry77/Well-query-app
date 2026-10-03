@@ -216,8 +216,8 @@ input[type='range'] { accent-color: var(--brand); }
   font-family: var(--font-fa);
   direction: ltr;
   text-align: left;
-  min-width: 200px;
-  max-width: 280px;
+  min-width: 220px;
+  max-width: 320px;
 }
 .wqa-popup__title {
   font-weight: 700;
@@ -227,6 +227,14 @@ input[type='range'] { accent-color: var(--brand); }
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border-subtle);
   text-align: left;
+}
+/* بدنه اسکرول‌خور: همه فیچرها نمایش داده می‌شوند */
+.wqa-popup__scroll {
+  max-height: 260px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-inline-end: 4px;
+  overscroll-behavior: contain;
 }
 .wqa-popup__table {
   font-size: 12px;
@@ -248,6 +256,50 @@ input[type='range'] { accent-color: var(--brand); }
   overflow-wrap: anywhere;
   text-align: left;
 }
+/* تب‌های چندلایه‌ای (عارضه‌های روی هم) */
+.wqa-popup__count {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  text-align: center;
+  direction: rtl;
+}
+.wqa-popup__tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  direction: rtl;
+}
+.wqa-popup__tab {
+  flex: 1 0 auto;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-deep);
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wqa-popup__tab:hover {
+  border-color: var(--brand);
+  color: var(--text-primary);
+}
+.wqa-popup__tab--active {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+.wqa-popup__page { display: none; }
+.wqa-popup__page--active { display: block; }
 
 .map-shell .mapboxgl-popup-content {
   background: var(--bg-panel);

@@ -365,6 +365,17 @@ async function applyLayerSelection(layers) {
   await setActiveLayers(layers)
 }
 
+// وقتی لایه‌ها از localStorage بازیابی می‌شوند، لایه فعال کوئری را هم ست کن
+watch(activeLayers, (layers) => {
+  if (!layers?.length) {
+    if (!showLayerModal.value) activeQueryLayer.value = null
+    return
+  }
+  if (!layers.some(l => String(l.uuid) === String(activeQueryLayer.value))) {
+    activeQueryLayer.value = layers[0]?.uuid ?? null
+  }
+})
+
 function syncViewport(mq) {
   return () => {
     isMobile.value = mq.matches
@@ -615,7 +626,46 @@ async function handleLayerDataExport(format) {
 }
 // سقف ارسال به نقشه برای جلوگیری از فریز روی 100k سطر (کمتر = سریع‌تر روی سیستم ضعیف)
 const MAX_HIGHLIGHT = 2000
-const highlightedIds = computed(() => combinedResults.value.slice(0, MAX_HIGHLIGHT).map(rowKey))
+
+// ── نمونه‌برداری عادلانه per-layer ──
+// مشکل: نمونه‌برداری سراسری روی آرایه الحاقی لایه‌ها، سهم هر لایه را متناسب با
+// تعدادش می‌داد؛ لایه کوچک (مثلاً ۸۱ پلی‌گان) زیر خروار عارضه لایه بزرگ گم می‌شد
+// و روی نقشه ناقص/تکه‌تکه دیده می‌شد. اینجا لایه‌های کوچک همیشه کامل می‌مانند و
+// سهمیه باقی‌مانده بین لایه‌های بزرگ تقسیم می‌شود.
+function fairSamplePerLayer(src, cap) {
+  if (!Array.isArray(src) || src.length <= cap) return src
+  const groups = new Map()
+  for (const r of src) {
+    const k = String(r._layerUuid ?? '')
+    let arr = groups.get(k)
+    if (!arr) { arr = []; groups.set(k, arr) }
+    arr.push(r)
+  }
+  // لایه‌های کوچک اول تا سهم کامل بگیرند و هیچ لایه‌ای ناقص نماند
+  const keys = [...groups.keys()].sort((a, b) => groups.get(a).length - groups.get(b).length)
+  const quota = new Map()
+  let remaining = cap
+  keys.forEach((k, i) => {
+    const n = groups.get(k).length
+    const share = Math.ceil(remaining / (keys.length - i))
+    const q = Math.min(n, share)
+    quota.set(k, q)
+    remaining -= q
+  })
+  const out = []
+  for (const k of groups.keys()) {
+    const rows = groups.get(k)
+    const q = quota.get(k) ?? rows.length
+    if (q >= rows.length) {
+      for (const r of rows) out.push(r)
+    } else {
+      const step = rows.length / q
+      for (let i = 0; i < q; i++) out.push(rows[Math.floor(i * step)])
+    }
+  }
+  return out
+}
+const highlightedIds = computed(() => fairSamplePerLayer(combinedResults.value, MAX_HIGHLIGHT).map(rowKey))
 
 // لایه‌های مخفی (با آیکون چشم) از روی نقشه حذف می‌شوند؛ ولی داده‌های آن‌ها در نتایج/جدول باقی می‌ماند
 const visibleWells = computed(() =>
@@ -629,9 +679,7 @@ const MAP_RENDER_CAP = 8000
 const mapWells = computed(() => {
   const src = hasAnyFilter.value ? displayRows.value : visibleWells.value
   if (src.length <= MAP_RENDER_CAP) return src
-  const step = src.length / MAP_RENDER_CAP
-  const out = new Array(MAP_RENDER_CAP)
-  for (let i = 0; i < MAP_RENDER_CAP; i++) out[i] = src[Math.floor(i * step)]
+  const out = fairSamplePerLayer(src, MAP_RENDER_CAP)
   const keep = activeWellId.value ?? selectedWellId.value
   if (keep) {
     let found = false

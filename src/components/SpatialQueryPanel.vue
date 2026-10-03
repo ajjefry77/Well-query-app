@@ -63,7 +63,7 @@
         :disabled="relationLoading"
         @click="$emit('apply-relation')"
       >
-        {{ relationLoading ? 'در حال اعمال…' : 'اعمال رابطه مکانی' }}
+        {{ relationLoading ? 'در حال اعمال…' : 'اعمال کوئری' }}
       </button>
       <p v-else class="sq__hint sq__hint--tiny">ابتدا لایه مبدأ و لایه هدف را انتخاب کنید.</p>
     </template>
@@ -188,7 +188,7 @@
       :disabled="spatialLoading"
       @click="$emit('apply-spatial')"
     >
-      {{ spatialLoading ? 'در حال اعمال…' : 'اعمال تغییرات' }}
+      {{ spatialLoading ? 'در حال اعمال…' : 'اعمال کوئری' }}
     </button>
     </template>
 

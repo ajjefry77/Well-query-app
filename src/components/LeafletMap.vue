@@ -224,6 +224,93 @@ function makePointIcon(color, highlighted, dimmed, isCenter = false, matched = f
   });
 }
 
+// ─── پاپ‌آپ: همه فیچرها + اسکرول + تب چندلایه‌ای ───
+function escapeHtml(text) {
+  if (text == null) return "—";
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+function popupTitle(w, fp) {
+  const layerName = w?._layerName ?? fp?._layerName ?? "";
+  const id = w?.id ?? fp?.id ?? "—";
+  return layerName ? `${escapeHtml(layerName)} — عارضه #${escapeHtml(id)}` : `عارضه #${escapeHtml(id)}`;
+}
+function popupTable(fp) {
+  const entries = Object.entries(fp || {})
+    .filter(([k]) => !k.startsWith("_") && k !== "lat" && k !== "lng")
+    .map(([k, v]) => `<tr><td class="wqa-popup__key">${escapeHtml(k)}</td><td class="wqa-popup__val">${escapeHtml(v ?? "—")}</td></tr>`)
+    .join("");
+  return `<div class="wqa-popup__scroll"><table class="wqa-popup__table">${entries || `<tr><td class="wqa-popup__val">بدون مشخصات</td></tr>`}</table></div>`;
+}
+function stackedPopupHTML(items) {
+  if (!items.length) return "";
+  if (items.length === 1) return `<div class="wqa-popup"><div class="wqa-popup__title">${popupTitle(items[0].well, items[0].fp)}</div>${popupTable(items[0].fp)}</div>`;
+  const tabs = items.map((it, i) => {
+    const ln = it.well?._layerName ?? it.fp?._layerName ?? "";
+    const label = `${escapeHtml(String(ln || "لایه").slice(0, 14))} #${escapeHtml(it.well?.id ?? it.fp?.id ?? i + 1)}`;
+    return `<button type="button" class="wqa-popup__tab${i === 0 ? " wqa-popup__tab--active" : ""}" data-idx="${i}" title="${escapeHtml(ln || "")}">${label}</button>`;
+  }).join("");
+  const pages = items.map((it, i) =>
+    `<div class="wqa-popup__page${i === 0 ? " wqa-popup__page--active" : ""}" data-idx="${i}"><div class="wqa-popup__title">${popupTitle(it.well, it.fp)}</div>${popupTable(it.fp)}</div>`
+  ).join("");
+  return `<div class="wqa-popup wqa-popup--tabs"><div class="wqa-popup__count">${items.length.toLocaleString("fa-IR")} عارضه در این نقطه</div><div class="wqa-popup__tabs">${tabs}</div><div class="wqa-popup__pages">${pages}</div></div>`;
+}
+// عارضه‌های هم‌مکان: هم‌مختصات دقیق یا هم‌شناسه در لایه دیگر (سقف ۱۰ تب)
+function collectStacked(e, well, fp) {
+  const items = [{ well, fp: fp || {} }];
+  try {
+    const seen = new Set([wellKey(well)]);
+    const latlng = e?.latlng;
+    for (const o of props.wells) {
+      if (items.length >= 10) break;
+      const k = wellKey(o);
+      if (!k || seen.has(k)) continue;
+      let same = false;
+      if (latlng && Number.isFinite(+o.lat) && Number.isFinite(+o.lng)) {
+        const p = map.latLngToContainerPoint(latlng);
+        const q = map.latLngToContainerPoint([+o.lat, +o.lng]);
+        if (Math.hypot(p.x - q.x, p.y - q.y) <= 12) same = true;
+      }
+      if (!same && o.id != null && well?.id != null && String(o.id) === String(well.id) && String(o._layerUuid) !== String(well._layerUuid)) same = true;
+      if (same) {
+        seen.add(k);
+        const { _geometry, ...rest } = o;
+        items.push({ well: o, fp: o._geometry ? { ...rest, ...((o._geometry?.properties) || {}) } : rest });
+      }
+    }
+  } catch {}
+  return items;
+}
+function openStackedPopup(latlng, items) {
+  if (!map || !latlng || !items.length) return;
+  const popup = L.popup({ maxWidth: 340, maxHeight: 340 })
+    .setLatLng(latlng)
+    .setContent(stackedPopupHTML(items));
+  popup.openOn(map);
+}
+// تعویض تب با delegation (پاپ‌آپ لیفلت داینامیک است)
+function bindTabDelegation() {
+  try {
+    const container = map?.getContainer?.();
+    if (!container || container._wqaTabBound) return;
+    container._wqaTabBound = true;
+    container.addEventListener("click", (ev) => {
+      const btn = ev.target?.closest?.(".wqa-popup__tab");
+      if (!btn || !container.contains(btn)) return;
+      ev.stopPropagation();
+      const root = btn.closest(".wqa-popup");
+      if (!root) return;
+      const idx = btn.getAttribute("data-idx");
+      root.querySelectorAll(".wqa-popup__tab").forEach((t) => t.classList.toggle("wqa-popup__tab--active", t.getAttribute("data-idx") === idx));
+      root.querySelectorAll(".wqa-popup__page").forEach((p) => p.classList.toggle("wqa-popup__page--active", p.getAttribute("data-idx") === idx));
+    });
+  } catch {}
+}
+
 function renderFeatures(fit = true) {
   if (!geoLayer) return;
   geoLayer.clearLayers();
@@ -306,27 +393,13 @@ function renderFeatures(fit = true) {
           ?? props.wells.find((w) => String(w.id) === String(feature.properties.id));
         if (!well) return;
 
-        const props_ = feature.properties;
-        const rows = Object.entries(props_)
-          .filter(([k]) => !k.startsWith("_") && k !== "lat" && k !== "lng")
-          .slice(0, 8)
-          .map(
-            ([k, v]) =>
-              `<tr><td class="wqa-popup__key">${k}</td><td class="wqa-popup__val">${escapeHtml(v ?? "—")}</td></tr>`,
-          )
-          .join("");
-
-        function escapeHtml(text) {
-  if (text == null) return ''
-  return String(text)
-    .replace(/&/g, '&')
-    .replace(/</g, '<')
-    .replace(/>/g, '>')
-    .replace(/"/g, '"')
-    .replace(/'/g, '&#039;')
-}
-
-        layer.on("click", (e) => pickFeature(e, well));
+        layer.on("click", (e) => {
+          pickFeature(e, well);
+          try {
+            const items = collectStacked(e, well, feature.properties);
+            openStackedPopup(e.latlng ?? layer.getBounds?.().getCenter?.(), items);
+          } catch {}
+        });
         const wkey = wellKey(well);
         featureRefs.set(wkey, layer);
         featureRefs.set(String(well.id), layer);
@@ -366,7 +439,13 @@ function renderFeatures(fit = true) {
         opacity: (isSel || isCenter || matched) ? 1 : (dimmed ? 0.35 : 1),
       });
       marker._wellId = key;
-      marker.on("click", (e) => pickFeature(e, w));
+      marker.on("click", (e) => {
+        pickFeature(e, w);
+        try {
+          const { _geometry, ...fp } = w;
+          openStackedPopup(e.latlng, collectStacked(e, w, fp));
+        } catch {}
+      });
       marker.addTo(geoLayer);
       featureRefs.set(key, marker);
       featureRefs.set(String(w.id), marker);
@@ -417,7 +496,13 @@ function addCoordMarkers(highlightSet, centerKey, selectedKey, psets) {
         opacity: (isSel || isCenter || matched) ? 1 : (dimmed ? 0.35 : 1),
       });
       marker._wellId = key;
-      marker.on("click", (e) => pickFeature(e, w));
+      marker.on("click", (e) => {
+        pickFeature(e, w);
+        try {
+          const { _geometry, ...fp } = w;
+          openStackedPopup(e.latlng, collectStacked(e, w, fp));
+        } catch {}
+      });
       marker.addTo(geoLayer);
       featureRefs.set(key, marker);
       featureRefs.set(String(w.id), marker);
@@ -474,6 +559,7 @@ onMounted(() => {
 
   geoLayer = L.layerGroup().addTo(map);
 
+  bindTabDelegation();
   renderFeatures();
 });
 

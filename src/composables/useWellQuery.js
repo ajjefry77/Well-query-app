@@ -14,6 +14,7 @@ import {
 // لایهٔ انتخاب‌شده و شرط‌های کوئری دیگر در localStorage نگه‌داری نمی‌شوند.
 const LS_KEYS = {
   savedQueries: 'wqa:savedQueries',
+  activeLayers: 'wqa:activeLayers',
 }
 // کلیدهای قدیمی شعاع که دیگر ذخیره نمی‌شوند؛ با رفرش باید به دیفالت برگردد
 const LEGACY_RADIUS_KEYS = ['wqa:radiusKm', 'wqa:radiusUnit']
@@ -38,8 +39,9 @@ function evaluateCondition(row, { field, operator, value }) {
   if (rowValue === null || rowValue === undefined) return false
   const v = typeof value === 'string' ? value.trim() : value
   switch (operator) {
-    case '=':       return String(rowValue) === String(v)
-    case '!=':      return String(rowValue) !== String(v)
+    // مقایسه متنی بدون حساسیت به بزرگی/کوچکی حروف
+    case '=':       return String(rowValue).trim().toLowerCase() === String(v ?? '').trim().toLowerCase()
+    case '!=':      return String(rowValue).trim().toLowerCase() !== String(v ?? '').trim().toLowerCase()
     case '>':
     case '>=':
     case '<':
@@ -144,8 +146,17 @@ export function useWellQuery() {
     apiError.value = null
     try {
       vectorLayers.value = await fetchVectorLayers()
-      // توجه: لایهٔ فعال دیگر از localStorage بازیابی نمی‌شود؛
-      // انتخاب لایه فقط در حافظهٔ همان نشست (session) باقی می‌ماند.
+      // بازیابی لایه‌های انتخاب‌شده از نشست قبل
+      try {
+        const saved = lsGet(LS_KEYS.activeLayers, [])
+        if (Array.isArray(saved) && saved.length) {
+          const wanted = new Set(saved.map(String))
+          const restored = vectorLayers.value.filter(l => wanted.has(String(l.uuid)))
+          if (restored.length) {
+            await setActiveLayers(restored)
+          }
+        }
+      } catch {}
     } catch (e) {
       apiError.value = e.message
     } finally {
@@ -183,7 +194,12 @@ export function useWellQuery() {
     queryableFields.value = Object.values(fieldMap)
   }
 
-  // توجه: دیگر لایهٔ فعال و شرط‌های کوئری در localStorage ذخیره نمی‌شوند.
+  // لایه‌های انتخاب‌شده در localStorage ذخیره می‌شوند تا با رفرش باقی بمانند
+  watch(activeLayers, (val) => {
+    try {
+      lsSet(LS_KEYS.activeLayers, (val ?? []).map(l => l.uuid))
+    } catch {}
+  })
 
   // ── اضافه کردن یک لایه ──
   async function addLayer(layer) {
@@ -643,7 +659,7 @@ export function useWellQuery() {
 
   // ── پاک کردن همه داده‌های ذخیره‌شده ──
   function clearAllLocalData() {
-    // پاک کردن localStorage (فقط کوئری‌های ذخیره‌شده در localStorage است)
+    // پاک کردن localStorage (کوئری‌های ذخیره‌شده + لایه‌های انتخاب‌شده)
     Object.values(LS_KEYS).forEach(key => localStorage.removeItem(key))
     try { LEGACY_RADIUS_KEYS.forEach(k => localStorage.removeItem(k)) } catch {}
     for (const [, c] of inFlight) c.abort()

@@ -726,19 +726,127 @@ function clearWellLayers() {
   if (map.getSource("wells-src")) map.removeSource("wells-src");
 }
 
-function popupHTML(w, props_) {
-  const entries = Object.entries(props_)
+function escapePopupHtml(text) {
+  if (text == null) return "—";
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function featureTitle(w, fp) {
+  const layerName = w?._layerName ?? fp?._layerName ?? w?.properties?._layerName ?? "";
+  const id = w?.id ?? fp?.id ?? "—";
+  const safeLayer = layerName ? escapePopupHtml(layerName) : "";
+  if (safeLayer) return `${safeLayer} — عارضه #${escapePopupHtml(id)}`;
+  return `عارضه #${escapePopupHtml(id)}`;
+}
+
+function featureTable(fp) {
+  const entries = Object.entries(fp || {})
     .filter(([k]) => !k.startsWith("_") && k !== "lat" && k !== "lng")
-    .slice(0, 8)
     .map(
       ([k, v]) =>
-        `<tr><td class="wqa-popup__key">${k}</td><td class="wqa-popup__val">${v ?? "—"}</td></tr>`,
+        `<tr><td class="wqa-popup__key">${escapePopupHtml(k)}</td><td class="wqa-popup__val">${escapePopupHtml(v ?? "—")}</td></tr>`,
     )
     .join("");
+  const body = entries || `<tr><td class="wqa-popup__val">بدون مشخصات</td></tr>`;
+  return `<div class="wqa-popup__scroll"><table class="wqa-popup__table">${body}</table></div>`;
+}
+
+function popupHTML(w, props_) {
   return `<div class="wqa-popup">
-    <div class="wqa-popup__title">عارضه #${w.id}</div>
-    <table class="wqa-popup__table">${entries}</table>
+    <div class="wqa-popup__title">${featureTitle(w, props_)}</div>
+    ${featureTable(props_)}
   </div>`;
+}
+
+// پاپ‌آپ چندعارضه‌ای (تب‌دار): وقتی چند لایه روی هم افتاده‌اند
+function multiPopupHTML(items) {
+  if (!Array.isArray(items) || !items.length) return "";
+  if (items.length === 1) return popupHTML(items[0].well, items[0].fp);
+  const tabs = items
+    .map((it, i) => {
+      const layerName = it.well?._layerName ?? it.fp?._layerName ?? "";
+      const shortLayer = layerName ? String(layerName).slice(0, 14) : "لایه";
+      const label = `${escapePopupHtml(shortLayer)} #${escapePopupHtml(it.well?.id ?? it.fp?.id ?? i + 1)}`;
+      return `<button type="button" class="wqa-popup__tab${i === 0 ? " wqa-popup__tab--active" : ""}" data-idx="${i}" title="${escapePopupHtml(layerName || "")}">${label}</button>`;
+    })
+    .join("");
+  const pages = items
+    .map(
+      (it, i) =>
+        `<div class="wqa-popup__page${i === 0 ? " wqa-popup__page--active" : ""}" data-idx="${i}">` +
+        `<div class="wqa-popup__title">${featureTitle(it.well, it.fp)}</div>${featureTable(it.fp)}</div>`,
+    )
+    .join("");
+  return `<div class="wqa-popup wqa-popup--tabs">
+    <div class="wqa-popup__count">${items.length.toLocaleString("fa-IR")} عارضه در این نقطه</div>
+    <div class="wqa-popup__tabs" role="tablist">${tabs}</div>
+    <div class="wqa-popup__pages">${pages}</div>
+  </div>`;
+}
+
+function bindPopupTabs(popup) {
+  try {
+    const el = popup.getElement();
+    if (!el) return;
+    const tabs = el.querySelectorAll(".wqa-popup__tab");
+    const pages = el.querySelectorAll(".wqa-popup__page");
+    if (!tabs.length || !pages.length) return;
+    tabs.forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const idx = btn.getAttribute("data-idx");
+        tabs.forEach((t) => t.classList.toggle("wqa-popup__tab--active", t.getAttribute("data-idx") === idx));
+        pages.forEach((p) => p.classList.toggle("wqa-popup__page--active", p.getAttribute("data-idx") === idx));
+      });
+    });
+  } catch {}
+}
+
+// جمع‌آوری همه عارضه‌های زیر نقطه کلیک (حذف تکراری fill/line یک پلی‌گان + سقف تب)
+function collectStackedFeatures(e) {
+  const MAX_TABS = 10;
+  const seen = new Set();
+  const items = [];
+  try {
+    const layerIds = ["wells-fill", "wells-line", "wells-polyline", "wells-point"].filter((id) => {
+      try { return map.getLayer(id); } catch { return false; }
+    });
+    const rendered = map.queryRenderedFeatures(e.point, { layers: layerIds });
+    for (const f of rendered || []) {
+      const fp = f.properties || {};
+      const fpKey = wellKey({ properties: fp, id: fp.id });
+      if (!fpKey || seen.has(fpKey)) continue;
+      seen.add(fpKey);
+      const well = props.wells.find((w) => wellKey(w) === fpKey)
+        ?? props.wells.find((w) => String(w.id) === String(fp.id));
+      if (!well) continue;
+      items.push({ well, fp });
+      if (items.length >= MAX_TABS) break;
+    }
+  } catch {}
+  // fallback: حداقل همان فیچر کلیک‌شده
+  if (!items.length && e.features?.length) {
+    const fp = e.features[0].properties || {};
+    const fpKey = wellKey({ properties: fp, id: fp.id });
+    const well = props.wells.find((w) => wellKey(w) === fpKey)
+      ?? props.wells.find((w) => String(w.id) === String(fp.id));
+    if (well) items.push({ well, fp });
+  }
+  return items;
+}
+
+function showStackedPopup(items, lngLat) {
+  const popup = new mapboxgl.Popup({ maxWidth: "340px" })
+    .setLngLat(lngLat)
+    .setHTML(multiPopupHTML(items))
+    .addTo(map);
+  bindPopupTabs(popup);
+  return popup;
 }
 
 let wellsEventsBound = false;
@@ -751,16 +859,10 @@ function bindWellEventsOnce() {
         if (activeMode.value) return;
         // در حالت انتخاب هوشمند، هندلر کلیک نقشه تصمیم می‌گیرد (جلوگیری از دابل‌فایر)
         if (picking) return;
-        const fp = e.features[0].properties;
-        const fpKey = wellKey({ properties: fp, id: fp.id });
-        const well = props.wells.find((w) => wellKey(w) === fpKey)
-          ?? props.wells.find((w) => String(w.id) === String(fp.id));
-        if (!well) return;
-        emit("select-well", well);
-        new mapboxgl.Popup({ maxWidth: "280px" })
-          .setLngLat(e.lngLat)
-          .setHTML(popupHTML(well, fp))
-          .addTo(map);
+        const items = collectStackedFeatures(e);
+        if (!items.length) return;
+        emit("select-well", items[0].well);
+        showStackedPopup(items, e.lngLat);
       });
       map.on("mouseenter", layerId, () => {
         map.getCanvas().style.cursor = "pointer";
@@ -1166,20 +1268,17 @@ function renderMarkers(fit = true) {
       box-shadow:0 2px 6px rgba(0,0,0,0.4);cursor:pointer;
       opacity:${opacity};
       ${isSel || isCenter || isMatch ? "outline:3px solid rgba(34,197,94,0.45);outline-offset:3px;" : (isH ? "outline:3px solid rgba(240,165,0,0.4);outline-offset:3px;" : "")}`;
-      const entries = Object.entries(w)
-        .filter(([k]) => !k.startsWith("_") && k !== "lat" && k !== "lng")
-        .slice(0, 8)
-        .map(
-          ([k, v]) =>
-            `<tr><td class="wqa-popup__key">${k}</td><td class="wqa-popup__val">${v ?? "—"}</td></tr>`,
-        )
-        .join("");
-      const popup = new mapboxgl.Popup({ offset: 14, maxWidth: "280px" })
-        .setHTML(`
-        <div class="wqa-popup">
-          <div class="wqa-popup__title">عارضه #${w.id}</div>
-          <table class="wqa-popup__table">${entries}</table>
-        </div>`);
+      // عارضه‌های هم‌مختصات (دو لایه روی هم) → تب در یک پاپ‌آپ
+      const stacked = props.wells.filter(
+        (o) => Number.isFinite(+o.lat) && Number.isFinite(+o.lng) && +o.lat === +w.lat && +o.lng === +w.lng,
+      ).slice(0, 10);
+      const markerItems = (stacked.length > 1 ? stacked : [w]).map((s) => {
+        const { _geometry, ...fp } = s;
+        return { well: s, fp };
+      });
+      const popup = new mapboxgl.Popup({ offset: 14, maxWidth: "340px" })
+        .setHTML(multiPopupHTML(markerItems));
+      popup.on("open", () => bindPopupTabs(popup));
       el.addEventListener("click", (e) => {
         if (activeMode.value) {
           e.stopPropagation();
