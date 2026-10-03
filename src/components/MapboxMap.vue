@@ -127,6 +127,186 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount, watch } from "vue";
+import { resolveFeatureStyle, rampStops } from "../composables/useSymbology.js";
+
+// ─── سیمبولوژی (ArcGIS-style): استایل پایه هر عارضه از کانفیگ لایه‌اش ───
+function geomKindOf(w) {
+  const g = w?._geometry ?? w?.geometry
+  const t = g?.type
+  if (t === 'LineString' || t === 'MultiLineString') return 'line'
+  if (t === 'Polygon' || t === 'MultiPolygon') return 'polygon'
+  return 'point'
+}
+function symStyleOf(w) {
+  try {
+    const cfg = props.symConfigs?.[w?._layerUuid]
+    if (!cfg || cfg.renderer === 'heatmap') return null
+    return resolveFeatureStyle(w, cfg, geomKindOf(w))
+  } catch { return null }
+}
+function heatConfigs() {
+  const out = []
+  const cfgs = props.symConfigs || {}
+  for (const uuid of Object.keys(cfgs)) {
+    if (cfgs[uuid]?.renderer === 'heatmap') out.push({ uuid, heat: cfgs[uuid].heat || {} })
+  }
+  return out
+}
+function dotConfigs() {
+  const out = []
+  const cfgs = props.symConfigs || {}
+  for (const uuid of Object.keys(cfgs)) {
+    if (cfgs[uuid]?.renderer === 'dot') out.push({ uuid, dot: cfgs[uuid].dot || {}, field: cfgs[uuid].field })
+  }
+  return out
+}
+// تست نقطه‌در‌پلیگان (ray casting) برای تولید دات‌دنسیتی
+function pip(lng, lat, ring) {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1]
+    const xj = ring[j][0], yj = ring[j][1]
+    if ((yi > lat) !== (yj > lat) && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+function polyRings(w) {
+  const g = w?._geometry
+  if (!g) return []
+  if (g.type === 'Polygon') return [g.coordinates[0]]
+  if (g.type === 'MultiPolygon') return g.coordinates.map(p => p[0])
+  return []
+}
+function buildDotGeoJSON() {
+  const feats = []
+  for (const d of dotConfigs()) {
+    const per = Math.max(0.001, Number(d.dot.value) || 1)
+    const rows = props.wells.filter(w => String(w._layerUuid) === String(d.uuid))
+    let budget = 4000
+    for (const w of rows) {
+      if (budget <= 0) break
+      const rings = polyRings(w)
+      if (!rings.length) continue
+      let n = 1
+      if (d.field) {
+        const v = Number(w[d.field])
+        n = Number.isFinite(v) ? Math.max(0, Math.round(v / per)) : 0
+      }
+      n = Math.min(250, n, budget)
+      if (n <= 0) continue
+      budget -= n
+      // bbox بزرگ‌ترین رینگ
+      let big = rings[0], bigA = -1
+      for (const r of rings) {
+        let a = 0
+        for (let i = 0; i + 1 < r.length; i++) a += r[i][0] * r[i+1][1] - r[i+1][0] * r[i][1]
+        a = Math.abs(a / 2)
+        if (a > bigA) { bigA = a; big = r }
+      }
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+      for (const c of big) {
+        if (c[0] < minX) minX = c[0]
+        if (c[0] > maxX) maxX = c[0]
+        if (c[1] < minY) minY = c[1]
+        if (c[1] > maxY) maxY = c[1]
+      }
+      let placed = 0, tries = 0
+      while (placed < n && tries < n * 12 + 20) {
+        tries++
+        const x = minX + Math.random() * (maxX - minX)
+        const y = minY + Math.random() * (maxY - minY)
+        if (!pip(x, y, big)) continue
+        feats.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [x, y] }, properties: { _dotLayer: d.uuid } })
+        placed++
+      }
+    }
+  }
+  return { type: 'FeatureCollection', features: feats }
+}
+let dotCache = { sig: '', geo: null };
+function dotGeoCached() {
+  const dots = dotConfigs();
+  const sig = `${props.wellsKey}|${dots.map(d => `${d.uuid}:${d.field}:${d.dot.value}`).join(',')}`;
+  if (dotCache.sig === sig && dotCache.geo) return dotCache.geo;
+  const geo = buildDotGeoJSON();
+  dotCache = { sig, geo };
+  return geo;
+}
+function heatColorExpr(rampId) {
+  const stops = rampStops(rampId || 'turbo')
+  const n = stops.length
+  const expr = ['interpolate', ['linear'], ['heatmap-density'], 0, 'rgba(0,0,0,0)']
+  for (let i = 0; i < n; i++) {
+    expr.push((i + 1) / (n + 1))
+    expr.push(stops[i])
+  }
+  return expr
+}
+const SYM_HEAT_PREFIX = 'sym-heat-'
+const SYM_DOT_SRC = 'sym-dot-src'
+const SYM_DOT_LAYER = 'sym-dot-layer'
+function clearSymLayers() {
+  if (!map) return
+  try {
+    for (const d of heatConfigs()) {
+      const lid = SYM_HEAT_PREFIX + String(d.uuid).slice(0, 8)
+      if (map.getLayer(lid)) map.removeLayer(lid)
+      if (map.getSource(lid)) map.removeSource(lid)
+    }
+    // لایه‌های قدیمی جا‌مانده از لایه حذف‌شده
+    for (const lid of [...(map.getStyle()?.layers ?? [])].map(l => l.id)) {
+      if (lid.startsWith(SYM_HEAT_PREFIX) && !heatConfigs().some(d => SYM_HEAT_PREFIX + String(d.uuid).slice(0, 8) === lid)) {
+        try { map.removeLayer(lid) } catch {}
+        try { map.removeSource(lid) } catch {}
+      }
+    }
+    if (map.getLayer(SYM_DOT_LAYER)) map.removeLayer(SYM_DOT_LAYER)
+    if (map.getSource(SYM_DOT_SRC)) map.removeSource(SYM_DOT_SRC)
+  } catch {}
+}
+function refreshSymLayers() {
+  if (!map || !map.isStyleLoaded()) return
+  clearSymLayers()
+  try {
+    // ── هیت‌مپ: یک لایه heatmap به‌ازای هر لایه نقطه‌ای با رندر heatmap ──
+    for (const d of heatConfigs()) {
+      const lid = SYM_HEAT_PREFIX + String(d.uuid).slice(0, 8)
+      const pts = []
+      for (const w of props.wells) {
+        if (String(w._layerUuid) !== String(d.uuid)) continue
+        const g = w._geometry
+        if (g?.type === 'Point' && Array.isArray(g.coordinates)) pts.push({ type: 'Feature', geometry: g, properties: {} })
+        else if (Number.isFinite(+w.lat) && Number.isFinite(+w.lng)) pts.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [+w.lng, +w.lat] }, properties: {} })
+      }
+      map.addSource(lid, { type: 'geojson', data: { type: 'FeatureCollection', features: pts } })
+      map.addLayer({
+        id: lid, type: 'heatmap', source: lid,
+        paint: {
+          'heatmap-radius': d.heat.radius ?? 30,
+          'heatmap-intensity': d.heat.intensity ?? 0.6,
+          'heatmap-opacity': d.heat.opacity ?? 0.85,
+          'heatmap-color': heatColorExpr(d.heat.ramp),
+        },
+      })
+    }
+    // ── دات‌دنسیتی: یک لایه circle روی نقاط تولیدشده ──
+    const dots = dotConfigs()
+    if (dots.length) {
+      const geo = dotGeoCached()
+      const first = dots[0]
+      map.addSource(SYM_DOT_SRC, { type: 'geojson', data: geo })
+      map.addLayer({
+        id: SYM_DOT_LAYER, type: 'circle', source: SYM_DOT_SRC,
+        paint: {
+          'circle-radius': first.dot.size ?? 2.5,
+          'circle-color': first.dot.color ?? '#1a1a1a',
+          'circle-opacity': first.dot.opacity ?? 0.85,
+          'circle-stroke-width': 0,
+        },
+      })
+    }
+  } catch {}
+}
 
 // ─── لود تنبل mapbox/draw: ایمپورت استاتیک حذف شد تا باندل اولیه ~۱MB سبک‌تر شود ───
 // mapbox-gl فقط وقتی این کامپوننت (async) باز شود دانلود می‌شود، نه در لود اول صفحه.
@@ -185,6 +365,9 @@ const props = defineProps({
   radiusCenter: { type: Object, default: null },
   radiusKm: { type: Number, default: 0 },
   selectedId: { type: [String, Number], default: null },
+  // کانفیگ سیمبولوژی هر لایه (uuid -> config) — استایل per-feature داخل همین کامپوننت ساخته می‌شود
+  symConfigs: { type: Object, default: () => ({}) },
+  symVersion: { type: Number, default: 0 },
   // هایلایت فوری عارضه‌های مبدأ/هدف رابطه مکانی (قبل از Apply)
   previewIds: { type: Array, default: () => [] },
   // تفکیک رنگی: مبدأ زرد، هدف سبز (رابطه برقرار) / قرمز (برقرار نیست)
@@ -221,9 +404,9 @@ let pendingHighlight = false;
 let firstRender = true;
 let lastWellsKey = '';
 
-function scheduleRender() {
+function scheduleRender(force = false) {
   const key = props.wellsKey;
-  if (key === lastWellsKey && !firstRender) return;
+  if (!force && key === lastWellsKey && !firstRender) return;
   lastWellsKey = key;
   pendingWells = true;
   if (!renderRaf) {
@@ -702,12 +885,26 @@ function buildGeoJSON(wells) {
   const features = []
   for (let i = 0; i < wells.length; i++) {
     const w = wells[i]
-    const geom = w._geometry ?? (Number.isFinite(+w.lat) && Number.isFinite(+w.lng)
+    // لایه هیت‌مپ: نقطه پایه رندر نمی‌شود (فقط لایه heatmap)
+    const wCfg = props.symConfigs?.[w._layerUuid]
+    const geomRaw = w._geometry ?? (Number.isFinite(+w.lat) && Number.isFinite(+w.lng)
       ? { type: "Point", coordinates: [+w.lng, +w.lat] }
       : null)
-    if (!geom) continue
-    const { _geometry, ...props } = w
-    features.push({ type: "Feature", geometry: geom, properties: props })
+    if (!geomRaw) continue
+    if (wCfg?.renderer === 'heatmap' && (geomRaw.type === 'Point' || geomRaw.type === 'MultiPoint')) continue
+    // نکته: نام محلی fp انتخاب شد تا روی props کامپوننت سایه نیندازد (TDZ)
+    const { _geometry, ...fp } = w
+    // ── سیمبولوژی: استایل پایه از کانفیگ لایه ──
+    const sym = symStyleOf(w)
+    if (sym) {
+      fp._sym_color = sym.color
+      fp._sym_stroke = sym.strokeColor
+      fp._sym_strokew = sym.strokeWidth
+      fp._sym_size = sym.size
+      fp._sym_fillop = sym.fillOpacity
+      fp._sym_op = sym.opacity
+    }
+    features.push({ type: "Feature", geometry: geomRaw, properties: fp })
   }
   return { type: "FeatureCollection", features }
 }
@@ -956,6 +1153,9 @@ function renderMarkers(fit = true) {
           "#f0a500",
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
+          // سیمبولوژی لایه بر هایلایت/مچ اولویت دارد تا تغییرات کاربر همیشه دیده شود
+          ["!=", ["get", "_sym_color"], null],
+          ["get", "_sym_color"], // سیمبولوژی لایه
           ["==", ["get", "_match"], 1],
           "#22c55e", // داخل کوئری → سبز مشخص
           ["==", ["get", "_highlighted"], 1],
@@ -980,7 +1180,7 @@ function renderMarkers(fit = true) {
           0.55,
           ["==", ["get", "_dimmed"], 1],
           0.06,
-          0.2, // عادی بدون فیلتر
+          ["coalesce", ["get", "_sym_fillop"], 0.2], // عادی: شفافیت سیمبولوژی
         ],
       },
     });
@@ -1006,6 +1206,8 @@ function renderMarkers(fit = true) {
           "#f0a500",
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
+          ["!=", ["get", "_sym_color"], null],
+          ["coalesce", ["get", "_sym_stroke"], ["get", "_sym_color"]],
           ["==", ["get", "_match"], 1],
           "#14532d",
           ["==", ["get", "_highlighted"], 1],
@@ -1024,6 +1226,10 @@ function renderMarkers(fit = true) {
           4,
           ["==", ["get", "_isCenter"], 1],
           4,
+          ["!=", ["get", "_sym_strokew"], null],
+          ["get", "_sym_strokew"],
+          ["!=", ["get", "_sym_size"], null],
+          ["get", "_sym_size"],
           ["==", ["get", "_match"], 1],
           3.5,
           ["==", ["get", "_highlighted"], 1],
@@ -1071,6 +1277,10 @@ function renderMarkers(fit = true) {
           4,
           ["==", ["get", "_isCenter"], 1],
           4,
+          ["!=", ["get", "_sym_size"], null],
+          ["get", "_sym_size"],
+          ["!=", ["get", "_sym_strokew"], null],
+          ["get", "_sym_strokew"],
           ["==", ["get", "_match"], 1],
           3.5,
           ["==", ["get", "_highlighted"], 1],
@@ -1091,13 +1301,15 @@ function renderMarkers(fit = true) {
           "#f0a500",
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
+          ["!=", ["get", "_sym_color"], null],
+          ["get", "_sym_color"],
           ["==", ["get", "_match"], 1],
           "#22c55e",
           ["==", ["get", "_highlighted"], 1],
           "#4a9b8e",
           "#8a9490",
         ],
-        "line-opacity": ["case", ["==", ["get", "_dimmed"], 1], 0.25, 1],
+        "line-opacity": ["case", ["==", ["get", "_dimmed"], 1], 0.25, ["coalesce", ["get", "_sym_op"], 1]],
       },
     });
     map.addLayer({
@@ -1118,6 +1330,8 @@ function renderMarkers(fit = true) {
           12,
           ["==", ["get", "_isCenter"], 1],
           12,
+          ["!=", ["get", "_sym_size"], null],
+          ["get", "_sym_size"],
           ["==", ["get", "_match"], 1],
           11,
           ["==", ["get", "_highlighted"], 1],
@@ -1138,6 +1352,8 @@ function renderMarkers(fit = true) {
           "#f0a500",
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
+          ["!=", ["get", "_sym_color"], null],
+          ["get", "_sym_color"],
           ["==", ["get", "_match"], 1],
           "#22c55e",
           ["==", ["get", "_dimmed"], 1],
@@ -1158,7 +1374,7 @@ function renderMarkers(fit = true) {
           1,
           ["==", ["get", "_dimmed"], 1],
           0.3,
-          1,
+          ["coalesce", ["get", "_sym_op"], 1],
         ],
         "circle-stroke-width": [
           "case",
@@ -1172,7 +1388,7 @@ function renderMarkers(fit = true) {
           3,
           ["==", ["get", "_isCenter"], 1],
           3,
-          2,
+          ["coalesce", ["get", "_sym_strokew"], 2],
         ],
         "circle-stroke-color": [
           "case",
@@ -1192,6 +1408,8 @@ function renderMarkers(fit = true) {
           "#1a1a1a",
           ["==", ["get", "_dimmed"], 1],
           "#666",
+          ["!=", ["get", "_sym_stroke"], null],
+          ["get", "_sym_stroke"],
           "#ffffff",
         ],
         "circle-stroke-opacity": [
@@ -1231,6 +1449,8 @@ function renderMarkers(fit = true) {
       const isMatch = props.hasFilter && isH;
       const isCenter = centerKey && key === centerKey;
       const isSel = (selectedKey && (key === selectedKey || String(w.id) === selectedKey)) || isAny;
+      const sym = symStyleOf(w);
+      const symColor = sym?.color ?? null;
       const color = isFail
         ? PREVIEW_FAIL_COLOR
         : isOk
@@ -1241,12 +1461,12 @@ function renderMarkers(fit = true) {
               ? "#f0a500"
               : isCenter
                 ? "#e74c3c"
-                : isMatch
+                : (symColor ?? (isMatch
                   ? "#22c55e"
                   : isH
                     ? "#4a9b8e"
-                    : "#8a9490";
-      const opacity = isSel || isCenter || isMatch ? "1" : isDimmed ? "0.25" : "1";
+                    : "#8a9490"));
+      const opacity = isSel || isCenter || isMatch ? "1" : isDimmed ? "0.25" : String(sym?.opacity ?? 1);
       const border = isFail
         ? `3px solid ${PREVIEW_FAIL_BORDER}`
         : isOk
@@ -1260,7 +1480,9 @@ function renderMarkers(fit = true) {
                 : isH
                   ? "3px solid #fff"
                   : "2px solid rgba(255,255,255,0.4)";
-      const size = isSel ? 22 : isCenter ? 22 : isMatch ? 20 : isH ? 18 : isDimmed ? 8 : 12;
+      const symSize = Math.max(4, Math.min(30, Number(sym?.size) || 12));
+      const hasSym = sym?.size != null;
+      const size = isSel ? 22 : isCenter ? 22 : isDimmed ? 8 : hasSym ? symSize : isMatch ? 20 : isH ? 18 : symSize;
       const el = document.createElement("div");
       el.style.cssText = `
       width:${size}px;height:${size}px;border-radius:50%;
@@ -1304,6 +1526,8 @@ function renderMarkers(fit = true) {
       if (fit) map.fitBounds(bounds, { padding: 48, maxZoom: 14, duration: 800 });
     }
   }
+  lastSymStruct = symStructSig();
+  refreshSymLayers();
 }
 
 // ─── mount ─────────────────────────────────────────────────
@@ -1379,7 +1603,7 @@ onBeforeUnmount(() => {
   if (map) map.remove();
 });
 
-watch(() => props.wells, scheduleRender);
+watch(() => props.wells, () => scheduleRender());
 
 // وقتی فقط highlight یا filter عوض شد، فقط data رو آپدیت کن (سریع‌تر از renderMarkers کامل)
 function updateHighlightData() {
@@ -1424,6 +1648,62 @@ watch(() => props.previewOkIds, schedulePreviewRefresh);
 watch(() => props.previewFailIds, schedulePreviewRefresh);
 // عارضه مرجع (قرمز) با تغییر انتخاب به‌روز می‌شود
 watch(() => props.radiusCenter, scheduleHighlight);
+
+// ─── سیمبولوژی: به‌روزرسانی زنده ──────────────────────────
+// تغییر رنگ/اندازه → فقط propertyها + setData (سریع)
+// تغییر ساختاری (تعویض renderer / heatmap / dot) → بازسازی کامل
+function symStructSig() {
+  return Object.entries(props.symConfigs || {}).map(([k, c]) => `${k}:${c?.renderer}`).join('|')
+}
+let lastSymStruct = symStructSig()
+function updateSymData() {
+  if (!map || !map.isStyleLoaded()) return
+  if (!wellsGeoJSON || !map.getSource("wells-src")) {
+    scheduleRender(true)
+    return
+  }
+  const byKey = new Map()
+  for (const w of props.wells) {
+    const k = wellKey(w)
+    if (k && !byKey.has(k)) byKey.set(k, w)
+  }
+  for (const f of wellsGeoJSON.features) {
+    const key = wellKey(f)
+    let w = byKey.get(key)
+    if (!w && key && key.includes("::")) {
+      const base = key.slice(key.indexOf("::") + 2)
+      w = props.wells.find(x => String(x.id) === base)
+    }
+    delete f.properties._sym_color
+    delete f.properties._sym_stroke
+    delete f.properties._sym_strokew
+    delete f.properties._sym_size
+    delete f.properties._sym_fillop
+    delete f.properties._sym_op
+    const sym = w ? symStyleOf(w) : null
+    if (sym) {
+      f.properties._sym_color = sym.color
+      f.properties._sym_stroke = sym.strokeColor
+      f.properties._sym_strokew = sym.strokeWidth
+      f.properties._sym_size = sym.size
+      f.properties._sym_fillop = sym.fillOpacity
+      f.properties._sym_op = sym.opacity
+    }
+  }
+  try { map.getSource("wells-src").setData(wellsGeoJSON) } catch {}
+  refreshSymLayers()
+}
+function onSymChange() {
+  const sig = symStructSig()
+  if (sig !== lastSymStruct) {
+    lastSymStruct = sig
+    scheduleRender(true)
+  } else {
+    updateSymData()
+  }
+}
+watch(() => props.symConfigs, onSymChange, { deep: true })
+watch(() => props.symVersion, () => scheduleRender(true))
 
 // ─── تعویض تم نقشه (روشن ↔ تیره) ──────────────────────────
 function applyMapTheme(t) {

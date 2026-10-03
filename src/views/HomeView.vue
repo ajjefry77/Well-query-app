@@ -78,9 +78,13 @@
            :radius-km="committedRadiusKm"
              :selected-id="selectedWellId"
              :theme="theme"
+             :sym-configs="symConfigs"
+             :sym-version="symVersion"
             @select-well="onSelectFromMap"
             @map-empty-click="onMapEmptyClick"
           />
+          <!-- لجند سیمبولوژی -->
+          <MapLegend :entries="legendEntries" />
 
         <!-- لودینگ افزودن لایه تا آماده‌شدن نقشه -->
         <div v-if="mapLoading" class="map-loading-overlay">
@@ -135,6 +139,7 @@
         @clear-relation="onClearRelation"
         @clear-all="onClearAllQueries"
         @view-layer-data="onOpenLayerData"
+        @open-symbology="onOpenSymbology"
       />
 
       <!-- موبایل: نوار grab + تب‌های پنل پایین -->
@@ -157,6 +162,20 @@
       :active-layers="activeLayers"
       @close="showLayerModal = false"
       @apply="applyLayerSelection"
+    />
+
+    <!-- مودال سیمبولوژی (کلیک‌راست روی لایه) -->
+    <SymbologyModal
+      v-if="showSymbology && symLayer"
+      :layer="symLayer"
+      :layer-name="symLayer.display_name || symLayer.name"
+      :geom-kind="symGeomKind"
+      :fields="layerFields(symLayer.uuid)"
+      :rows="layerRows(symLayer.uuid)"
+      :model-value="symConfigForModal"
+      @update:model-value="onSymUpdate"
+      @reset="onSymReset"
+      @close="showSymbology = false"
     />
 
     <!-- مودال نتایج تمام‌صفحه -->
@@ -196,6 +215,7 @@ import { useWellQuery } from '../composables/useWellQuery.js'
 import { useCoordinates } from '../composables/useCoordinates.js'
 import { useTheme } from '../composables/useTheme.js'
 import { layerColor } from '../composables/useLayerColors.js'
+import { useSymbology, legendItems } from '../composables/useSymbology.js'
 import { relationLabel } from '../composables/useSpatialRelations.js'
 import { useRoute, useRouter } from '../router/index.js'
 
@@ -208,6 +228,8 @@ const MobileSheet = defineAsyncComponent(() => import('../components/MobileSheet
 // بارگذاری تنبل: نقشه و نمودار چینه‌شناسی فقط هنگام نیاز لود می‌شوند
 const MapboxMap = defineAsyncComponent(() => import('../components/MapboxMap.vue'))
 const StratigraphyChart = defineAsyncComponent(() => import('../components/StratigraphyChart.vue'))
+const SymbologyModal = defineAsyncComponent(() => import('../components/SymbologyModal.vue'))
+const MapLegend = defineAsyncComponent(() => import('../components/MapLegend.vue'))
 
 const { crs, convertFeature } = useCoordinates()
 const { theme, toggle: toggleTheme } = useTheme()
@@ -239,6 +261,9 @@ function layerFeatureCount(uuid) {
 }
 function layerFields(uuid) {
   return _layerFieldsMap.value?.[uuid] ?? []
+}
+function layerRows(uuid) {
+  return _layerFeaturesMap.value?.[uuid] ?? []
 }
 
 // ── همگام‌سازی تب با URL (route managing) ──
@@ -720,8 +745,61 @@ const visibleActiveLayers = computed(() =>
   activeLayers.value.filter(layer => isLayerVisible(layer.uuid))
 )
 
+// ── سیمبولوژی به سبک ArcGIS (کلیک‌راست روی لایه) ──
+const {
+  configs: symConfigs,
+  getConfig: getSymConfig,
+  setConfig: setSymConfig,
+  resetConfig: resetSymConfig,
+  removeConfig: removeSymConfig,
+  clearAll: clearSymAll,
+} = useSymbology()
+const symVersion = ref(0)
+const symLayerUuid = ref(null)
+const showSymbology = ref(false)
+const symLayer = computed(() =>
+  activeLayers.value.find(l => String(l.uuid) === String(symLayerUuid.value)) ?? null
+)
+const symGeomKind = computed(() =>
+  symLayer.value ? layerGeomKind(symLayer.value.uuid) : 'point'
+)
+const symConfigForModal = computed(() => {
+  if (!symLayer.value) return null
+  return symConfigs.value[symLayer.value.uuid]
+    ?? getSymConfig(symLayer.value.uuid, symGeomKind.value, layerColor(symLayer.value.uuid))
+})
+// ورودی‌های لجند روی نقشه (فقط لایه‌های نمایان با رندر thematic)
+const legendEntries = computed(() =>
+  activeLayers.value
+    .filter(l => isLayerVisible(l.uuid))
+    .map(l => {
+      const cfg = symConfigs.value?.[l.uuid]
+      if (!cfg || cfg.renderer === 'single') return null
+      const gk = layerGeomKind(l.uuid)
+      return { uuid: l.uuid, name: l.display_name || l.name, geomKind: gk, items: legendItems(cfg, gk) }
+    })
+    .filter(Boolean)
+)
+function onOpenSymbology(uuid) {
+  const layer = activeLayers.value.find(l => String(l.uuid) === String(uuid))
+  if (!layer) return
+  getSymConfig(uuid, layerGeomKind(uuid), layerColor(uuid))
+  symLayerUuid.value = uuid
+  showSymbology.value = true
+}
+function onSymUpdate(cfg) {
+  if (!symLayerUuid.value) return
+  setSymConfig(symLayerUuid.value, JSON.parse(JSON.stringify(cfg)))
+}
+function onSymReset() {
+  if (!symLayerUuid.value) return
+  resetSymConfig(symLayerUuid.value, symGeomKind.value, layerColor(symLayerUuid.value))
+  symVersion.value++
+}
+
 // ── handlers ──
 function onRemoveLayer(uuid) {
+  removeSymConfig(uuid)
   removeLayer(uuid)
   if (activeQueryLayer.value === uuid) {
     const remaining = activeLayers.value.filter(l => l.uuid !== uuid)
@@ -858,6 +936,7 @@ async function handleExport(format) {
 
 function handleClearData() {
   if (!confirm('همه داده‌های ذخیره‌شده (لایه‌های فعال، شرط‌ها، کوئری‌های ذخیره‌شده و تنظیمات) پاک شوند؟')) return
+  clearSymAll()
   clearAllLocalData()
   activeQueryLayer.value = null
   showResultsModal.value = false

@@ -12,6 +12,25 @@ import { ref, onMounted, onBeforeUnmount, watch } from "vue";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { toGeoJSON } from "../composables/useGeoUtils.js";
+import { resolveFeatureStyle } from "../composables/useSymbology.js";
+
+// ─── سیمبولوژی (ArcGIS-style) ───
+function geomKindOf(obj) {
+  const g = obj?._geometry ?? obj?.geometry
+  const t = g?.type
+  if (t === "LineString" || t === "MultiLineString") return "line"
+  if (t === "Polygon" || t === "MultiPolygon") return "polygon"
+  return "point"
+}
+function symOf(obj) {
+  try {
+    const uuid = obj?._layerUuid ?? obj?.properties?._layerUuid
+    const cfg = uuid ? props.symConfigs?.[uuid] : null
+    if (!cfg || cfg.renderer === "heatmap") return null
+    const row = obj?.properties ? { ...obj.properties, _geometry: obj.geometry } : obj
+    return resolveFeatureStyle(row, cfg, geomKindOf(obj))
+  } catch { return null }
+}
 
 const props = defineProps({
   wells: { type: Array, required: true },
@@ -21,6 +40,8 @@ const props = defineProps({
   radiusCenter: { type: Object, default: null },
   radiusKm: { type: Number, default: 0 },
   selectedId: { type: [String, Number], default: null },
+  symConfigs: { type: Object, default: () => ({}) },
+  symVersion: { type: Number, default: 0 },
   previewIds: { type: Array, default: () => [] },
   previewSourceIds: { type: Array, default: () => [] },
   previewOkIds: { type: Array, default: () => [] },
@@ -43,9 +64,9 @@ let pendingHighlight = false;
 let firstRender = true;
 let lastWellsKey = '';
 
-function scheduleRender() {
+function scheduleRender(force = false) {
   const key = props.wellsKey;
-  if (key === lastWellsKey && !firstRender) return;
+  if (!force && key === lastWellsKey && !firstRender) return;
   lastWellsKey = key;
   pendingWells = true;
   if (!renderRaf) {
@@ -172,7 +193,8 @@ function inIdSet(key, plainId, set) {
 }
 
 function defaultStyle(feature, highlighted, matched = false) {
-  const color = colorForId(feature?.properties?.id ?? "");
+  const sym = symOf(feature);
+  const color = sym?.color ?? colorForId(feature?.properties?.id ?? "");
   const dimmed = props.hasFilter && !highlighted
   if (matched) {
     return {
@@ -194,16 +216,17 @@ function defaultStyle(feature, highlighted, matched = false) {
     };
   }
   return {
-    color: dimmed ? GRAY : (highlighted ? "#e9efe9" : color),
-    weight: highlighted ? 2.5 : 1.5,
+    color: dimmed ? GRAY : (highlighted ? "#e9efe9" : (sym?.strokeColor ?? color)),
+    weight: highlighted ? 2.5 : (Number(sym?.strokeWidth) || 1.5),
     fillColor: dimmed ? GRAY : color,
-    fillOpacity: dimmed ? 0.08 : (highlighted ? 0.55 : 0.25),
-    opacity: dimmed ? 0.35 : (highlighted ? 1 : 0.8),
+    fillOpacity: dimmed ? 0.08 : (highlighted ? 0.55 : (Number(sym?.fillOpacity) ?? 0.25)),
+    opacity: dimmed ? 0.35 : (highlighted ? 1 : (Number(sym?.opacity) ?? 0.8)),
   };
 }
 
-function makePointIcon(color, highlighted, dimmed, isCenter = false, matched = false) {
-  const size = isCenter ? 20 : (matched ? 18 : (highlighted ? 16 : 10));
+function makePointIcon(color, highlighted, dimmed, isCenter = false, matched = false, sizeOverride = null) {
+  const base = Number(sizeOverride) >= 4 ? Math.min(28, Number(sizeOverride)) : 10;
+  const size = isCenter ? 20 : (matched ? 18 : (highlighted ? 16 : base));
   const bg = dimmed ? GRAY : (isCenter ? color : (matched ? MATCH_FILL : color))
   const border = dimmed ? "rgba(120,140,135,0.4)" : (isCenter ? "#fff" : (matched ? MATCH_BORDER : (highlighted ? "#e9efe9" : "rgba(12,18,16,0.6)")))
   const shadow = isCenter
@@ -384,8 +407,9 @@ function renderFeatures(fit = true) {
         if (isOk) return L.marker(latlng, { icon: makePointIcon(PREVIEW_OK_FILL, true, false) });
         if (isSrc) return L.marker(latlng, { icon: makePointIcon(PREVIEW_SRC, true, false) });
         if (isSel) return L.marker(latlng, { icon: makePointIcon("#f0a500", true, false) });
-        const color = isCenter ? "#e74c3c" : colorForId(feature.properties.id);
-        return L.marker(latlng, { icon: makePointIcon(color, highlighted, dimmed, isCenter, matched) });
+        const psym = symOf(feature);
+        const color = isCenter ? "#e74c3c" : (psym?.color ?? colorForId(feature.properties.id));
+        return L.marker(latlng, { icon: makePointIcon(color, highlighted, dimmed, isCenter, matched, psym?.size) });
       },
       onEachFeature: (feature, layer) => {
         const key = wellKey(feature);
@@ -428,10 +452,11 @@ function renderFeatures(fit = true) {
       const isSel = (selectedKey && (key === selectedKey || String(w.id) === selectedKey)) || isAny
       const previewColor = isFail ? PREVIEW_FAIL_FILL : isOk ? PREVIEW_OK_FILL : isSrc ? PREVIEW_SRC : null;
       const previewBorder = isFail ? PREVIEW_FAIL_BORDER : isOk ? PREVIEW_OK_BORDER : "#1a1a1a";
-      const baseColor = previewColor ?? (isSel ? "#f0a500" : (isCenter ? "#e74c3c" : colorForId(w.id)));
+      const wsym = symOf(w);
+      const baseColor = previewColor ?? (isSel ? "#f0a500" : (isCenter ? "#e74c3c" : (wsym?.color ?? colorForId(w.id))));
       const color = matched && !isSel && !isCenter && !isAny ? MATCH_FILL : baseColor;
       const marker = L.circleMarker([+w.lat, +w.lng], {
-        radius: isSel ? 9 : (isCenter ? 10 : (matched ? 9 : (highlighted ? 8 : (dimmed ? 4 : 5)))),
+        radius: isSel ? 9 : (isCenter ? 10 : (matched ? 9 : (highlighted ? 8 : (dimmed ? 4 : Math.max(3, Math.min(14, Math.round((Number(wsym?.size) || 5) / 1.4))))))),
         color: dimmed && !isSel ? GRAY : (matched && !isAny ? MATCH_BORDER : ((isSel || isAny) ? previewBorder : (isCenter ? "#fff" : (highlighted ? "#e9efe9" : color)))),
         weight: isSel || isCenter || matched ? 3 : 1.5,
         fillColor: dimmed && !isSel ? GRAY : color,
@@ -485,10 +510,11 @@ function addCoordMarkers(highlightSet, centerKey, selectedKey, psets) {
       const isSel = (selectedKey && (key === selectedKey || String(w.id) === selectedKey)) || isAny
       const previewColor = isFail ? PREVIEW_FAIL_FILL : isOk ? PREVIEW_OK_FILL : isSrc ? PREVIEW_SRC : null;
       const previewBorder = isFail ? PREVIEW_FAIL_BORDER : isOk ? PREVIEW_OK_BORDER : "#1a1a1a";
-      const baseColor = previewColor ?? (isSel ? "#f0a500" : (isCenter ? "#e74c3c" : colorForId(w.id)));
+      const wsym = symOf(w);
+      const baseColor = previewColor ?? (isSel ? "#f0a500" : (isCenter ? "#e74c3c" : (wsym?.color ?? colorForId(w.id))));
       const color = matched && !isSel && !isCenter && !isAny ? MATCH_FILL : baseColor;
       const marker = L.circleMarker([+w.lat, +w.lng], {
-        radius: isSel ? 9 : (isCenter ? 10 : (matched ? 9 : (highlighted ? 8 : (dimmed ? 4 : 5)))),
+        radius: isSel ? 9 : (isCenter ? 10 : (matched ? 9 : (highlighted ? 8 : (dimmed ? 4 : Math.max(3, Math.min(14, Math.round((Number(wsym?.size) || 5) / 1.4))))))),
         color: dimmed && !isSel ? GRAY : (matched && !isAny ? MATCH_BORDER : ((isSel || isAny) ? previewBorder : (isCenter ? "#fff" : (highlighted ? "#e9efe9" : color)))),
         weight: isSel || isCenter || matched ? 3 : 1.5,
         fillColor: dimmed && !isSel ? GRAY : color,
@@ -626,7 +652,9 @@ function styleSingleLayer(layer, highlightSet, centerKey, selectedKey, psets) {
     layer.setStyle(defaultStyle(layer.feature, hl, hl && props.hasFilter));
   } else if (layer.setIcon) {
     const dimmed = props.hasFilter && !hl;
-    layer.setIcon(makePointIcon(colorForId(plainId ?? ""), hl, dimmed, false, hl && props.hasFilter));
+    const w = key ? props.wells.find(x => wellKey(x) === key) : null;
+    const s = w ? symOf(w) : null;
+    layer.setIcon(makePointIcon(s?.color ?? colorForId(plainId ?? ""), hl, dimmed, false, hl && props.hasFilter, s?.size));
   }
 }
 
@@ -651,7 +679,9 @@ function updateHighlightStyles() {
   })
 }
 
-watch(() => props.wells, scheduleRender);
+watch(() => props.wells, () => scheduleRender());
+watch(() => props.symConfigs, () => scheduleRender(true), { deep: true });
+watch(() => props.symVersion, () => scheduleRender(true));
 watch(() => props.highlightedIds, scheduleHighlight);
 watch(() => props.hasFilter, scheduleHighlight);
 watch(() => props.radiusCenter, scheduleHighlight);

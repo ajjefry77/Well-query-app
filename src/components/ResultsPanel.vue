@@ -40,7 +40,8 @@
             class="active-layer-item"
             :class="{ 'active-layer-item--hidden': isLayerHidden(layer.uuid) }"
             @click="$emit('zoom-layer', layer.uuid)"
-            title="برای زوم روی لایه کلیک کنید"
+            @contextmenu.prevent="onCtx($event, layer.uuid)"
+            title="کلیک: زوم | کلیک‌راست: سیمبولوژی"
           >
             <div class="active-layer-info">
               <button
@@ -124,6 +125,15 @@
             <span>لایه‌ای انتخاب نشده</span>
           </li>
         </ul>
+        <!-- منوی راست‌کلیک لایه -->
+        <div v-if="ctx.uuid" class="ctx-overlay" @click="ctx.uuid = null" @contextmenu.prevent="ctx.uuid = null">
+          <div class="ctx-menu" :style="ctxStyle" @click.stop>
+            <button class="ctx-item ctx-item--main" @click="goCtx('sym')">سیمبولوژی</button>
+            <button class="ctx-item" @click="goCtx('zoom')">زوم به لایه</button>
+            <button class="ctx-item" @click="goCtx('toggle')">نمایش / پنهان</button>
+            <button class="ctx-item" @click="goCtx('data')">مشاهده داده‌ها</button>
+          </div>
+        </div>
       </div>
 
       <!-- خلاصه شرط‌های فعال (توصیفی + مکانی) -->
@@ -225,7 +235,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 const props = defineProps({
   open: { type: Boolean, default: true },
@@ -241,7 +251,28 @@ const props = defineProps({
   spatialRadius: { type: [Number, String], default: 0 },
   relationSummary: { type: Object, default: null },
 })
-defineEmits(['toggle', 'open-modal', 'remove-layer', 'zoom-layer', 'toggle-layer-visibility', 'remove-condition', 'clear-spatial', 'clear-relation', 'clear-all', 'view-layer-data'])
+const emit = defineEmits(['toggle', 'open-modal', 'remove-layer', 'zoom-layer', 'toggle-layer-visibility', 'remove-condition', 'clear-spatial', 'clear-relation', 'clear-all', 'view-layer-data', 'open-symbology'])
+
+// ── منوی راست‌کلیک (مثل ArcGIS: راست‌کلیک روی لایه در Table of Contents) ──
+const ctx = ref({ uuid: null, x: 0, y: 0 })
+const ctxStyle = computed(() => {
+  const pad = 8
+  const x = Math.min(ctx.value.x, window.innerWidth - 190 - pad)
+  const y = Math.min(ctx.value.y, window.innerHeight - 180 - pad)
+  return { top: Math.max(pad, y) + 'px', left: Math.max(pad, x) + 'px' }
+})
+function onCtx(e, uuid) {
+  ctx.value = { uuid, x: e.clientX, y: e.clientY }
+}
+function goCtx(action) {
+  const uuid = ctx.value.uuid
+  ctx.value.uuid = null
+  if (!uuid) return
+  if (action === 'sym') emit('open-symbology', uuid)
+  else if (action === 'zoom') emit('zoom-layer', uuid)
+  else if (action === 'toggle') emit('toggle-layer-visibility', uuid)
+  else if (action === 'data') emit('view-layer-data', uuid)
+}
 
 const OP_SYMBOLS = { '=':'=', '!=':'≠', '>':'>', '>=':'≥', '<':'<', '<=':'≤', contains:'شامل' }
 function opSymbol(op) { return OP_SYMBOLS[op] ?? op }
@@ -453,6 +484,12 @@ const hasAttributeSummary = computed(() => summariesWithConds.value.length > 0)
   background: var(--bg-panel);
   color: var(--accent-danger); border-color: var(--border-subtle);
 }
+/* منوی راست‌کلیک */
+.ctx-overlay { position: fixed; inset: 0; z-index: 1300; }
+.ctx-menu { position: fixed; z-index: 1301; min-width: 180px; background: var(--bg-panel); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow-md); padding: 5px; display: flex; flex-direction: column; gap: 2px; }
+.ctx-item { display: flex; align-items: center; gap: 8px; width: 100%; text-align: right; background: transparent; border: none; border-radius: 7px; padding: 8px 10px; font-family: inherit; font-size: 12.5px; color: var(--text-primary); cursor: pointer; }
+.ctx-item:hover { background: var(--bg-hover); }
+.ctx-item--main { font-weight: 800; color: var(--brand); }
 .no-layer-item {
   display: flex; flex-direction: column; align-items: center;
   gap: 10px; padding: 16px; color: var(--text-muted);
