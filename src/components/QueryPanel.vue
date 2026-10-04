@@ -59,7 +59,7 @@
           </template>
 
           <button class="btn-apply-attribute" @click="$emit('apply-attribute')">
-            اعمال کوئری
+            اجرای کوئری
           </button>
         </template>
       </div>
