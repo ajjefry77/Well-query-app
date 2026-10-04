@@ -29,6 +29,7 @@
         :loading-fields="loadingFields"
         :loading-features="loadingFeatures"
         :field-stats-map="layerFieldStats"
+        :field-values="layerFieldValues"
         :spatial-mode="spatialMode"
         :spatial-tool="spatialTool"
         :wells="allWells"
@@ -73,8 +74,9 @@
            :wells="mapWells"
            :wells-key="mapWellsKey"
            :highlighted-ids="highlightedIds"
-           :has-filter="hasAnyFilter"
-           :radius-center="showRadiusOnMap ? committedRadiusCenter : null"
+            :has-filter="hasAnyFilter"
+            :filtered-layer-uuids="filteredLayerUuids"
+            :radius-center="showRadiusOnMap ? committedRadiusCenter : null"
            :radius-km="committedRadiusKm"
              :selected-id="selectedWellId"
              :theme="theme"
@@ -738,6 +740,52 @@ const mapWellsKey = computed(() => {
   const f = w.length ? rowKey(w[0]) : ''
   const l = w.length > 1 ? rowKey(w[w.length - 1]) : ''
   return `${hasAnyFilter.value ? 'f' : 'a'}|${visibleWellsKey.value}|${mapCappedTotal.value}|${w.length}|${f}|${l}`
+})
+
+// لایه‌هایی که واقعاً فیلتر توصیفی فعال دارند (مبنای رنگ نقشه)
+// ── باگ قبلی: همه سطرهای لایه بدون فیلتر هم داخل highlightedIds می‌رفت و سبز می‌شد ──
+const attributeFilteredUuids = computed(() =>
+  activeLayers.value
+    .filter(layer => isLayerVisible(layer.uuid) && (layerDetails.value[layer.uuid]?.activeConds?.length ?? 0) > 0)
+    .map(layer => String(layer.uuid))
+)
+// لایه‌هایی که باید روی نقشه هایلایت/dim شوند:
+// اگر فیلتر مکانی فعال است همه لایه‌های نمایان (شعاع/رابطه سراسری است)،
+// وگرنه فقط لایه‌هایی که فیلتر توصیفی دارند؛ بقیه کاملاً دست‌نخورده می‌مانند.
+const filteredLayerUuids = computed(() => {
+  if (hasSpatialFilter.value) {
+    return activeLayers.value.filter(l => isLayerVisible(l.uuid)).map(l => String(l.uuid))
+  }
+  return attributeFilteredUuids.value
+})
+
+// مقادیر یکتای فیلدهای متنی لایه فعال (مبنای auto-search کوئری توصیفی)
+// فقط برای لایه فعال محاسبه می‌شود؛ سقف ۱۰۰۰ مقدار متمایز برای جلوگیری از سنگینی
+const layerFieldValues = computed(() => {
+  const out = {}
+  const uuid = activeQueryLayer.value
+  if (!uuid) return out
+  const rows = _layerFeaturesMap.value?.[uuid] ?? []
+  if (!rows.length) return out
+  const strFields = layerFields(uuid).filter(f => f.type === 'string')
+  if (!strFields.length) return out
+  const CAP_ROWS = 20000
+  const CAP_DISTINCT = 1000
+  const sample = rows.length > CAP_ROWS ? rows.slice(0, CAP_ROWS) : rows
+  for (const f of strFields) {
+    const set = new Set()
+    for (const r of sample) {
+      const v = r[f.key]
+      if (v == null || v === '') continue
+      const s = String(v)
+      if (!set.has(s)) {
+        set.add(s)
+        if (set.size >= CAP_DISTINCT) break
+      }
+    }
+    if (set.size) out[f.key] = [...set].sort((a, b) => a.localeCompare(b, 'fa'))
+  }
+  return out
 })
 
 // لایه‌های قابل انتخاب در کوئری‌ها (مخفی‌ها با چشم حذف می‌شوند)

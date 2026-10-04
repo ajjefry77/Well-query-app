@@ -362,6 +362,7 @@ const props = defineProps({
   wellsKey: { type: String, default: '' },
   highlightedIds: { type: Array, default: () => [] },
   hasFilter: { type: Boolean, default: false },
+  filteredLayerUuids: { type: Array, default: () => [] },
   radiusCenter: { type: Object, default: null },
   radiusKm: { type: Number, default: 0 },
   selectedId: { type: [String, Number], default: null },
@@ -878,6 +879,20 @@ function previewFlags(key, plainId, sets) {
   const isFail = inIdSet(key, plainId, sets.fail);
   return { isSrc, isOk, isFail, isAny: isSrc || isOk || isFail };
 }
+// لایه‌هایی که فیلتر توصیفی/مکانی روی آن‌ها اثر می‌کند؛ بقیه باید دست‌نخورده بمانند
+function filteredSet() {
+  const list = props.filteredLayerUuids
+  if (!Array.isArray(list) || !list.length) return null
+  return new Set(list.map(String))
+}
+function isNeutralLayer(layerUuid, fset) {
+  if (!fset || !fset.size) return false
+  if (layerUuid == null || layerUuid === '') return false
+  return !fset.has(String(layerUuid))
+}
+function layerUuidOfFeature(f) {
+  return f?._layerUuid ?? f?.properties?._layerUuid ?? null
+}
 
 function buildGeoJSON(wells) {
   // بدون spread کردن _geometry داخل properties (قبلاً کل هندسه هم در props کپی
@@ -1109,14 +1124,16 @@ function renderMarkers(fit = true) {
     clearMarkers();
     const geojson = buildGeoJSON(props.wells);
     wellsGeoJSON = geojson;
+    const fset = filteredSet();
     geojson.features.forEach((f) => {
       const key = wellKey(f);
-      const hl = inHighlightSet(key, highlightSet);
-      const match = props.hasFilter && hl;
+      const neutral = isNeutralLayer(layerUuidOfFeature(f), fset);
+      const hl = neutral ? false : inHighlightSet(key, highlightSet);
+      const match = props.hasFilter && hl && !neutral;
       const { isSrc, isOk, isFail, isAny } = previewFlags(key, f.properties.id, psets);
       f.properties._color = WELL_COLOR;
       f.properties._highlighted = hl ? 1 : 0;
-      f.properties._dimmed = props.hasFilter && !hl && !isAny ? 1 : 0;
+      f.properties._dimmed = (!neutral && props.hasFilter && !hl && !isAny) ? 1 : 0;
       f.properties._match = match ? 1 : 0;
       f.properties._psrc = isSrc && !isOk && !isFail ? 1 : 0;
       f.properties._pok = isOk ? 1 : 0;
@@ -1440,13 +1457,15 @@ function renderMarkers(fit = true) {
     // سقف مارکر DOM (لایه‌های بدون هندسه): هزاران مارکر صفحه را قفل می‌کند
     const MARKER_CAP = 3000;
     const list = props.wells.length > MARKER_CAP ? props.wells.slice(0, MARKER_CAP) : props.wells;
+    const fsetPt = filteredSet();
     list.forEach((w) => {
       if (!Number.isFinite(+w.lat) || !Number.isFinite(+w.lng)) return;
       const key = wellKey(w);
-      const isH = inHighlightSet(key, highlightSet);
+      const neutral = isNeutralLayer(w._layerUuid, fsetPt);
+      const isH = neutral ? false : inHighlightSet(key, highlightSet);
       const { isSrc, isOk, isFail, isAny } = previewFlags(key, w.id, psets);
-      const isDimmed = props.hasFilter && !isH && !isAny;
-      const isMatch = props.hasFilter && isH;
+      const isDimmed = !neutral && props.hasFilter && !isH && !isAny;
+      const isMatch = !neutral && props.hasFilter && isH;
       const isCenter = centerKey && key === centerKey;
       const isSel = (selectedKey && (key === selectedKey || String(w.id) === selectedKey)) || isAny;
       const sym = symStyleOf(w);
@@ -1616,13 +1635,15 @@ function updateHighlightData() {
   const psets = previewSets();
   const centerKey = wellKey(props.radiusCenter);
   const selectedKey = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null;
+  const fsetUp = filteredSet();
   wellsGeoJSON.features.forEach((f) => {
     const key = wellKey(f);
-    const hl = inHighlightSet(key, highlightSet);
+    const neutral = isNeutralLayer(layerUuidOfFeature(f), fsetUp);
+    const hl = neutral ? false : inHighlightSet(key, highlightSet);
     const { isSrc, isOk, isFail, isAny } = previewFlags(key, f.properties.id, psets);
     f.properties._highlighted = hl ? 1 : 0;
-    f.properties._dimmed = props.hasFilter && !hl && !isAny ? 1 : 0;
-    f.properties._match = (props.hasFilter && hl) ? 1 : 0;
+    f.properties._dimmed = (!neutral && props.hasFilter && !hl && !isAny) ? 1 : 0;
+    f.properties._match = (!neutral && props.hasFilter && hl) ? 1 : 0;
     f.properties._psrc = isSrc && !isOk && !isFail ? 1 : 0;
     f.properties._pok = isOk ? 1 : 0;
     f.properties._pfail = isFail ? 1 : 0;
@@ -1636,6 +1657,7 @@ function updateHighlightData() {
 
 watch(() => props.highlightedIds, scheduleHighlight);
 watch(() => props.hasFilter, scheduleHighlight);
+watch(() => props.filteredLayerUuids, scheduleHighlight);
 watch(() => props.selectedId, scheduleHighlight);
 function schedulePreviewRefresh() {
   // حالت نقطه‌ای (بدون wells-src) نیاز به رندر کامل مارکرها دارد

@@ -77,13 +77,39 @@
             />
             <span v-if="rangeHint(cond.field)" class="qb-range mono">{{ rangeHint(cond.field) }}</span>
           </template>
-          <input
-            v-else
-            v-model="cond.value"
-            type="text"
-            class="qb-input"
-            placeholder="مقدار متنی…"
-          />
+          <div v-else class="qb-autocomplete">
+            <input
+              :value="cond.value"
+              @input="onTextInput(cond, $event.target.value, index)"
+              @focus="onTextFocus(index, cond)"
+              @blur="onTextBlur()"
+              @keydown="onSuggestKeydown($event, index, cond)"
+              type="text"
+              class="qb-input qb-input--suggest"
+              placeholder="مقدار متنی… تایپ کنید برای جستجو"
+              autocomplete="off"
+            />
+            <div v-if="openSuggestIndex === index && suggestItems.length" class="qb-suggest" role="listbox">
+              <button
+                v-for="(s, si) in suggestItems"
+                :key="si"
+                type="button"
+                class="qb-suggest__item"
+                :class="{ 'qb-suggest__item--active': si === activeSuggestIndex }"
+                @mousedown.prevent="pickSuggestion(cond, s)"
+                @mouseenter="activeSuggestIndex = si"
+                :title="s"
+              >
+                <span class="qb-suggest__text">{{ s }}</span>
+              </button>
+            </div>
+            <div
+              v-else-if="openSuggestIndex === index && (cond.value ?? '') !== ''"
+              class="qb-suggest"
+            >
+              <div class="qb-suggest__empty">موردی یافت نشد</div>
+            </div>
+          </div>
 
           <button
             class="remove-btn"
@@ -127,6 +153,7 @@ const props = defineProps({
   conditions: { type: Array, required: true },
   fields: { type: Array, required: true },   // queryableFields از API
   fieldStats: { type: Object, default: () => ({}) }, // { fieldKey: { min, max } | null }
+  fieldValues: { type: Object, default: () => ({}) }, // { fieldKey: string[] } مقادیر یکتا برای auto-search
   resultCount: { type: Number, required: true },
   totalCount: { type: Number, default: 0 }
 })
@@ -195,6 +222,84 @@ function onFieldChange(cond, value) {
     cond.value = ''
   }
   cond._lastField = cond.field
+  closeSuggest()
+}
+
+// ─── auto-search فیلدهای متنی ───
+// لیست مقادیر یکتای هر فیلد از HomeView می‌آید؛ اینجا فقط فیلتر می‌شود (عین سرچ)
+const openSuggestIndex = ref(-1)
+const activeSuggestIndex = ref(-1)
+const suggestItems = ref([])
+let blurTimer = null
+
+function distinctFor(fieldKey) {
+  const arr = props.fieldValues?.[fieldKey]
+  return Array.isArray(arr) ? arr : []
+}
+
+function buildSuggest(fieldKey, text) {
+  const all = distinctFor(fieldKey)
+  if (!all.length) return []
+  const q = String(text ?? '').trim().toLowerCase()
+  if (!q) return all.slice(0, 20)
+  const out = []
+  for (const v of all) {
+    if (String(v).toLowerCase().includes(q)) {
+      out.push(v)
+      if (out.length >= 20) break
+    }
+  }
+  return out
+}
+
+function onTextInput(cond, val, index) {
+  cond.value = val
+  openSuggestIndex.value = index
+  activeSuggestIndex.value = -1
+  suggestItems.value = buildSuggest(cond.field, val)
+}
+
+function onTextFocus(index, cond) {
+  if (blurTimer) { clearTimeout(blurTimer); blurTimer = null }
+  openSuggestIndex.value = index
+  activeSuggestIndex.value = -1
+  suggestItems.value = buildSuggest(cond.field, cond.value)
+}
+
+function onTextBlur() {
+  if (blurTimer) clearTimeout(blurTimer)
+  blurTimer = setTimeout(() => {
+    openSuggestIndex.value = -1
+    activeSuggestIndex.value = -1
+  }, 150)
+}
+
+function closeSuggest() {
+  if (blurTimer) { clearTimeout(blurTimer); blurTimer = null }
+  openSuggestIndex.value = -1
+  activeSuggestIndex.value = -1
+}
+
+function pickSuggestion(cond, val) {
+  cond.value = val
+  closeSuggest()
+}
+
+function onSuggestKeydown(e, index, cond) {
+  if (openSuggestIndex.value !== index) return
+  const n = suggestItems.value.length
+  if (e.key === 'ArrowDown' && n) {
+    e.preventDefault()
+    activeSuggestIndex.value = activeSuggestIndex.value < n - 1 ? activeSuggestIndex.value + 1 : 0
+  } else if (e.key === 'ArrowUp' && n) {
+    e.preventDefault()
+    activeSuggestIndex.value = activeSuggestIndex.value > 0 ? activeSuggestIndex.value - 1 : n - 1
+  } else if (e.key === 'Enter' && activeSuggestIndex.value >= 0 && suggestItems.value[activeSuggestIndex.value] != null) {
+    e.preventDefault()
+    pickSuggestion(cond, suggestItems.value[activeSuggestIndex.value])
+  } else if (e.key === 'Escape') {
+    closeSuggest()
+  }
 }
 
 function handleSave() {
@@ -341,6 +446,68 @@ function handleSave() {
 .qb-input--full {
   flex: 1;
   width: 100%;
+}
+
+/* ─── auto-search فیلد متنی ─── */
+.qb-autocomplete {
+  position: relative;
+  flex: 1;
+  min-width: 80px;
+  display: flex;
+}
+.qb-input--suggest {
+  width: 100%;
+  flex: 1;
+}
+.qb-suggest {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  z-index: 50;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.qb-suggest__item {
+  display: flex;
+  align-items: center;
+  text-align: start;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text-secondary);
+  cursor: pointer;
+  width: 100%;
+}
+.qb-suggest__item:hover,
+.qb-suggest__item--active {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.qb-suggest__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+}
+.qb-suggest__empty {
+  padding: 8px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-muted);
 }
 
 .remove-btn {

@@ -49,6 +49,7 @@
               :conditions="layerDetails[layer.uuid]?.conditions ?? []"
               :fields="layerDetails[layer.uuid]?.fields ?? []"
               :field-stats="fieldStatsMap?.[layer.uuid] ?? {}"
+              :field-values="fieldValues"
               :result-count="layerDetails[layer.uuid]?.resultCount ?? 0"
               :total-count="layerDetails[layer.uuid]?.featureCount ?? 0"
               @add="$emit('add-condition', layer.uuid)"
@@ -123,6 +124,7 @@ const props = defineProps({
   layerDetails: { type: Object, default: () => ({}) },
   activeQueryLayer: { type: String, default: null },
   fieldStatsMap: { type: Object, default: () => ({}) },
+  fieldValues: { type: Object, default: () => ({}) },
   loadingFields: { type: Boolean, default: false },
   loadingFeatures: { type: Boolean, default: false },
   spatialMode: { type: String, required: true },

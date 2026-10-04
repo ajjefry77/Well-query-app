@@ -37,6 +37,7 @@ const props = defineProps({
   wellsKey: { type: String, default: '' },
   highlightedIds: { type: Array, default: () => [] },
   hasFilter: { type: Boolean, default: false },
+  filteredLayerUuids: { type: Array, default: () => [] },
   radiusCenter: { type: Object, default: null },
   radiusKm: { type: Number, default: 0 },
   selectedId: { type: [String, Number], default: null },
@@ -191,11 +192,25 @@ function inIdSet(key, plainId, set) {
   if (plainId != null && set.has(String(plainId))) return true;
   return false;
 }
+function filteredSetOf() {
+  const list = props.filteredLayerUuids
+  if (!Array.isArray(list) || !list.length) return null
+  return new Set(list.map(String))
+}
+function layerUuidFromKey(key, fallback) {
+  if (key && key.includes('::')) return key.slice(0, key.indexOf('::'))
+  return fallback ?? null
+}
+function isNeutralUuid(uuid, fset) {
+  if (!fset || !fset.size) return false
+  if (uuid == null || uuid === '') return false
+  return !fset.has(String(uuid))
+}
 
-function defaultStyle(feature, highlighted, matched = false) {
+function defaultStyle(feature, highlighted, matched = false, neutral = false) {
   const sym = symOf(feature);
   const color = sym?.color ?? colorForId(feature?.properties?.id ?? "");
-  const dimmed = props.hasFilter && !highlighted
+  const dimmed = !neutral && props.hasFilter && !highlighted
   if (matched) {
     return {
       color: MATCH_BORDER,
@@ -355,6 +370,11 @@ function renderFeatures(fit = true) {
   const centerKey = wellKey(props.radiusCenter);
   const selectedKey = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null;
   const hasGeometry = props.wells.some((w) => w._geometry);
+  const fset = filteredSetOf();
+  const neutralFor = (key, obj) => {
+    const uuid = obj?._layerUuid ?? obj?.properties?._layerUuid ?? layerUuidFromKey(key, null);
+    return isNeutralUuid(uuid, fset);
+  };
 
   if (hasGeometry) {
     const geojson = toGeoJSON(props.wells.filter((w) => w._geometry));
@@ -362,7 +382,8 @@ function renderFeatures(fit = true) {
     L.geoJSON(geojson, {
       style: (feature) => {
         const key = wellKey(feature);
-        const highlighted = inHighlightSet(key, highlightSet);
+        const neutral = neutralFor(key, feature);
+        const highlighted = neutral ? false : inHighlightSet(key, highlightSet);
         const isCenter = centerKey && key === centerKey;
         const { isSrc, isOk, isFail, isAny } = previewFlags(key, feature.properties.id);
         if (isFail) {
@@ -393,14 +414,15 @@ function renderFeatures(fit = true) {
             opacity: 1,
           };
         }
-        return defaultStyle(feature, highlighted, highlighted && props.hasFilter);
+        return defaultStyle(feature, highlighted, !neutral && highlighted && props.hasFilter, neutral);
       },
       pointToLayer: (feature, latlng) => {
         const key = wellKey(feature);
-        const highlighted = inHighlightSet(key, highlightSet);
+        const neutral = neutralFor(key, feature);
+        const highlighted = neutral ? false : inHighlightSet(key, highlightSet);
         const { isSrc, isOk, isFail, isAny } = previewFlags(key, feature.properties.id);
-        const dimmed = props.hasFilter && !highlighted && !isAny
-        const matched = highlighted && props.hasFilter
+        const dimmed = !neutral && props.hasFilter && !highlighted && !isAny
+        const matched = !neutral && highlighted && props.hasFilter
         const isCenter = centerKey && key === centerKey;
         const isSel = (selectedKey && (key === selectedKey || String(feature.properties.id) === selectedKey)) || isAny;
         if (isFail) return L.marker(latlng, { icon: makePointIcon(PREVIEW_FAIL_FILL, true, false) });
@@ -444,10 +466,11 @@ function renderFeatures(fit = true) {
     props.wells.forEach((w) => {
       if (!hasCoord(w)) return;
       const key = wellKey(w);
-      const highlighted = inHighlightSet(key, highlightSet);
+      const neutral = neutralFor(key, w);
+      const highlighted = neutral ? false : inHighlightSet(key, highlightSet);
       const { isSrc, isOk, isFail, isAny } = previewFlags(key, w.id);
-      const dimmed = props.hasFilter && !highlighted && !isAny
-      const matched = highlighted && props.hasFilter
+      const dimmed = !neutral && props.hasFilter && !highlighted && !isAny
+      const matched = !neutral && highlighted && props.hasFilter
       const isCenter = centerKey && key === centerKey
       const isSel = (selectedKey && (key === selectedKey || String(w.id) === selectedKey)) || isAny
       const previewColor = isFail ? PREVIEW_FAIL_FILL : isOk ? PREVIEW_OK_FILL : isSrc ? PREVIEW_SRC : null;
@@ -498,14 +521,16 @@ function addCoordMarkers(highlightSet, centerKey, selectedKey, psets) {
     const isFail = inIdSet(key, plainId, psets.fail);
     return { isSrc, isOk, isFail, isAny: isSrc || isOk || isFail };
   };
+  const fsetAdd = filteredSetOf();
   props.wells
     .filter((w) => !w._geometry && hasCoord(w))
     .forEach((w) => {
       const key = wellKey(w);
-      const highlighted = inHighlightSet(key, highlightSet);
+      const neutral = isNeutralUuid(w._layerUuid ?? layerUuidFromKey(key, null), fsetAdd);
+      const highlighted = neutral ? false : inHighlightSet(key, highlightSet);
       const { isSrc, isOk, isFail, isAny } = flagsOf(key, w.id);
-      const dimmed = props.hasFilter && !highlighted && !isAny
-      const matched = highlighted && props.hasFilter
+      const dimmed = !neutral && props.hasFilter && !highlighted && !isAny
+      const matched = !neutral && highlighted && props.hasFilter
       const isCenter = centerKey && key === centerKey
       const isSel = (selectedKey && (key === selectedKey || String(w.id) === selectedKey)) || isAny
       const previewColor = isFail ? PREVIEW_FAIL_FILL : isOk ? PREVIEW_OK_FILL : isSrc ? PREVIEW_SRC : null;
@@ -595,11 +620,13 @@ onBeforeUnmount(() => {
 
 watch(() => props.theme, syncTheme);
 
-function styleSingleLayer(layer, highlightSet, centerKey, selectedKey, psets) {
+function styleSingleLayer(layer, highlightSet, centerKey, selectedKey, psets, fset) {
   const key = layer.feature ? wellKey(layer.feature) : (layer._wellId || null);
   const plainId = layer.feature?.properties?.id ?? (layer._wellId && layer._wellId.includes('::') ? layer._wellId.slice(layer._wellId.indexOf('::') + 2) : layer._wellId);
   if (!key && !plainId) return;
-  const hl = inHighlightSet(key, highlightSet);
+  const uuid = layer.feature?._layerUuid ?? layer.feature?.properties?._layerUuid ?? layerUuidFromKey(key, null);
+  const neutral = isNeutralUuid(uuid, fset);
+  const hl = neutral ? false : inHighlightSet(key, highlightSet);
   const isCenter = centerKey && key === centerKey;
   const isSrc = psets && (inIdSet(key, plainId, psets.src) || inIdSet(key, plainId, psets.legacy));
   const isOk = psets && inIdSet(key, plainId, psets.ok);
@@ -649,12 +676,13 @@ function styleSingleLayer(layer, highlightSet, centerKey, selectedKey, psets) {
       layer.setIcon(makePointIcon("#e74c3c", true, false, true));
     }
   } else if (layer.setStyle) {
-    layer.setStyle(defaultStyle(layer.feature, hl, hl && props.hasFilter));
+    const effMatch = neutral ? false : (hl && props.hasFilter);
+    layer.setStyle(defaultStyle(layer.feature, hl, effMatch, neutral));
   } else if (layer.setIcon) {
-    const dimmed = props.hasFilter && !hl;
+    const dimmed = !neutral && props.hasFilter && !hl;
     const w = key ? props.wells.find(x => wellKey(x) === key) : null;
     const s = w ? symOf(w) : null;
-    layer.setIcon(makePointIcon(s?.color ?? colorForId(plainId ?? ""), hl, dimmed, false, hl && props.hasFilter, s?.size));
+    layer.setIcon(makePointIcon(s?.color ?? colorForId(plainId ?? ""), hl, dimmed, false, !neutral && hl && props.hasFilter, s?.size));
   }
 }
 
@@ -669,12 +697,13 @@ function updateHighlightStyles() {
   }
   const centerKey = wellKey(props.radiusCenter);
   const selectedKey = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null
+  const fset = filteredSetOf();
 
   geoLayer.eachLayer(layer => {
     if (typeof layer.eachLayer === "function" && !layer.feature && layer._wellId === undefined) {
-      layer.eachLayer(child => styleSingleLayer(child, highlightSet, centerKey, selectedKey, psets));
+      layer.eachLayer(child => styleSingleLayer(child, highlightSet, centerKey, selectedKey, psets, fset));
     } else {
-      styleSingleLayer(layer, highlightSet, centerKey, selectedKey, psets);
+      styleSingleLayer(layer, highlightSet, centerKey, selectedKey, psets, fset);
     }
   })
 }
@@ -684,6 +713,7 @@ watch(() => props.symConfigs, () => scheduleRender(true), { deep: true });
 watch(() => props.symVersion, () => scheduleRender(true));
 watch(() => props.highlightedIds, scheduleHighlight);
 watch(() => props.hasFilter, scheduleHighlight);
+watch(() => props.filteredLayerUuids, scheduleHighlight);
 watch(() => props.radiusCenter, scheduleHighlight);
 watch(() => props.selectedId, scheduleHighlight);
 watch(() => props.previewIds, scheduleHighlight);
