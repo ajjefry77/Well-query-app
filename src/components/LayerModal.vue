@@ -4,7 +4,7 @@
       <div v-if="open" class="modal-backdrop" @click.self="$emit('close')">
         <div class="layer-modal">
           <div class="modal-header">
-            <h3>انتخاب لایه‌ها</h3>
+            <h3>مدیریت لایه‌ها</h3>
             <button class="modal-close" @click="$emit('close')">×</button>
           </div>
 

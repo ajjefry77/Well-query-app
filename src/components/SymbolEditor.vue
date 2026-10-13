@@ -8,10 +8,14 @@
         <input type="color" :value="local.color" @input="set('color', $event.target.value)" />
         <span class="hex mono" dir="ltr">{{ local.color }}</span>
       </div>
-      <div class="se-item">
+      <div v-if="geomKind !== 'line'" class="se-item">
         <label>{{ geomKind === 'point' ? 'رنگ حاشیه' : 'رنگ خط مرزی' }}</label>
         <input type="color" :value="local.strokeColor" @input="set('strokeColor', $event.target.value)" />
         <span class="hex mono" dir="ltr">{{ local.strokeColor }}</span>
+      </div>
+      <div v-if="geomKind === 'point'" class="se-item">
+        <label>ضخامت حاشیه: {{ local.strokeWidth ?? 2 }}</label>
+        <input type="range" min="0" max="6" step="0.5" :value="local.strokeWidth ?? 2" @input="set('strokeWidth', Number($event.target.value))" />
       </div>
       <div class="se-item">
         <label>{{ geomKind === 'point' ? 'اندازه (px)' : geomKind === 'line' ? 'ضخامت خط' : 'ضخامت مرز' }}: {{ local[geomKind === 'point' ? 'size' : 'strokeWidth'] }}</label>
@@ -21,7 +25,10 @@
       </div>
       <div v-if="geomKind === 'polygon'" class="se-item">
         <label>شفافیت داخل: {{ Math.round((local.fillOpacity ?? 0.55) * 100) }}٪</label>
-        <input type="range" min="0" max="1" step="0.05" :value="local.fillOpacity ?? 0.55" @input="set('fillOpacity', Number($event.target.value))" />
+        <input type="range" min="0" max="1" step="0.05" :value="local.fillOpacity ?? 0.55" @input="set('fillOpacity', Number($event.target.value))" :disabled="isHollow" />
+      </div>
+      <div v-if="geomKind === 'polygon'" class="se-item">
+        <label class="chk"><input type="checkbox" :checked="isHollow" @change="set('fillOpacity', $event.target.checked ? 0 : 0.55)" /> بی‌رنگ (توخالی — فقط مرز)</label>
       </div>
       <div v-if="geomKind === 'point'" class="se-item">
         <label>شکل نشانگر</label>
@@ -53,15 +60,25 @@ const local = ref({ ...props.modelValue })
 watch(() => props.modelValue, (v) => { local.value = { ...v } }, { deep: true })
 function set(k, v) { local.value[k] = v; emit('update', { ...local.value }) }
 const geomKindLabel = computed(() => props.geomKind === 'polygon' ? 'پلیگان' : props.geomKind === 'line' ? 'خط' : 'نقطه')
+const isHollow = computed(() => (local.value.fillOpacity ?? 0.55) === 0)
+function hexA(hex, alpha) {
+  const m = String(hex ?? '#0f5c7e').trim().match(/^#?([0-9a-f]{6}|[0-9a-f]{3})$/i)
+  if (!m) return `rgba(128,128,128,${alpha})`
+  let h = m[1]
+  if (h.length === 3) h = h.split('').map(c => c + c).join('')
+  const n = parseInt(h, 16)
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`
+}
 const prevStyle = computed(() => {
   const c = local.value.color ?? '#0f5c7e'
   const s = local.value.strokeColor ?? '#fff'
   if (props.geomKind === 'line') {
     const w = Math.max(2, Math.min(10, local.value.strokeWidth ?? 2.5))
-    return { background: 'transparent', borderTop: `${w}px ${props.modelValue?.dash === 'dash' ? 'dashed' : props.modelValue?.dash === 'dot' ? 'dotted' : 'solid'} ${c}`, height: '0', borderRadius: '0', width: '120px' }
+    return { background: 'transparent', borderTop: `${w}px ${local.value?.dash === 'dash' ? 'dashed' : local.value?.dash === 'dot' ? 'dotted' : 'solid'} ${c}`, height: '0', borderRadius: '0', width: '120px' }
   }
   if (props.geomKind === 'polygon') {
-    return { background: c, opacity: local.value.fillOpacity ?? 0.55, border: `2px solid ${s}`, width: '72px', height: '48px', borderRadius: '8px' }
+    const fo = local.value.fillOpacity ?? 0.55
+    return { background: fo === 0 ? 'transparent' : hexA(c, fo), border: `2px solid ${s}`, width: '72px', height: '48px', borderRadius: '8px' }
   }
   const sz = Math.max(14, Math.min(44, (local.value.size ?? 7) * 2.4))
   const shapes = { circle: '50%', square: '6px', diamond: '6px', triangle: '6px', cross: '50%', star: '50%' }

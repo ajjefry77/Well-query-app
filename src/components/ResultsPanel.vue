@@ -24,7 +24,7 @@
         <div class="layers-header">
           <span class="layers-title">لایه‌ها</span>
           <button class="add-layer-btn" @click="$emit('open-modal')" :disabled="loadingLayers">
-            <span>+</span> افزودن لایه
+            <span>+</span> مدیریت لایه‌ها
           </button>
         </div>
 
@@ -109,8 +109,8 @@
               <button
                 class="layer-data-btn"
                 @click.stop="$emit('view-layer-data', layer.uuid)"
-                :title="`مشاهده اطلاعات تمام عارضه‌های ${layer.display_name || layer.name}`"
-                aria-label="مشاهده داده تمام عارضه‌ها"
+                :title="`داده‌های توصیفی ${layer.display_name || layer.name}`"
+                aria-label="داده‌های توصیفی"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -131,7 +131,7 @@
             <button class="ctx-item ctx-item--main" @click="goCtx('sym')">سیمبولوژی</button>
             <button class="ctx-item" @click="goCtx('zoom')">زوم به لایه</button>
             <button class="ctx-item" @click="goCtx('toggle')">نمایش / پنهان</button>
-            <button class="ctx-item" @click="goCtx('data')">مشاهده داده‌ها</button>
+            <button class="ctx-item" @click="goCtx('data')">داده‌های توصیفی</button>
           </div>
         </div>
       </div>

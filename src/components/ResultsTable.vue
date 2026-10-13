@@ -17,11 +17,35 @@
       </button>
     </div>
 
-    <div class="rt__table-wrap rt__table-wrap--single" v-if="effectiveRows.length">
+    <div class="rt__table-wrap rt__table-wrap--single" v-if="visibleRows.length">
+      <!-- نوار ابزار جدول: انتخاب، زوم و فیلتر انتخاب‌شده‌ها -->
+      <div class="rt__toolbar">
+        <div class="rt__tools">
+          <button class="rt__tool-btn" @click="selectAll" title="انتخاب همه ردیف‌ها">✓ انتخاب همه</button>
+          <button class="rt__tool-btn" @click="invertSelection" title="معکوس کردن انتخاب">⇄ معکوس انتخاب</button>
+          <button class="rt__tool-btn" @click="clearSelection" :disabled="!selected.size" title="پاک کردن انتخاب">✕ پاک کردن</button>
+          <button class="rt__tool-btn rt__tool-btn--primary" @click="zoomToSelection" :disabled="!selectedRows.length" title="زوم روی عارضه‌های انتخاب‌شده">
+            🔍 زوم به انتخاب<template v-if="selected.size"> ({{ selected.size.toLocaleString('fa-IR') }})</template>
+          </button>
+          <label class="rt__tool-check" :class="{ 'rt__tool-check--off': !selected.size }" title="فقط ردیف‌های انتخاب‌شده نمایش داده شوند">
+            <input type="checkbox" v-model="showSelectedOnly" :disabled="!selected.size" /> فقط انتخاب‌شده‌ها
+          </label>
+        </div>
+        <span class="rt__sel-info mono" v-if="selected.size">{{ selected.size.toLocaleString('fa-IR') }} انتخاب شده</span>
+      </div>
       <div class="rt__scroll">
         <table class="rt__table" :style="tableStyle(effectiveColumns)">
           <thead>
             <tr>
+              <th class="rt__th--sel" title="انتخاب صفحه جاری">
+                <input
+                  type="checkbox"
+                  :checked="pageChecked"
+                  :indeterminate="pageIndeterminate"
+                  @change="togglePage($event)"
+                  aria-label="انتخاب همه ردیف‌های صفحه"
+                />
+              </th>
               <th
                 v-for="col in effectiveColumns"
                 :key="col.key"
@@ -37,6 +61,7 @@
                   title="تغییر عرض ستون (دابل‌کلیک برای ریست)"
                 ></span>
               </th>
+              <th class="rt__th--act" title="زوم روی عارضه">زوم</th>
             </tr>
           </thead>
           <tbody>
@@ -44,10 +69,18 @@
               v-for="row in pagedRows"
               :key="rowKeyOf(row)"
               class="rt__row"
-              :class="{ 'rt__row--active': isActive(row) }"
+              :class="{ 'rt__row--active': isActive(row), 'rt__row--selected': isSelected(row) }"
               @click="$emit('select', row)"
               @mouseenter="$emit('hover', row)"
             >
+              <td class="rt__td--sel" @click.stop>
+                <input
+                  type="checkbox"
+                  :checked="isSelected(row)"
+                  @change="toggleRow(row)"
+                  aria-label="انتخاب ردیف"
+                />
+              </td>
               <td
                 v-for="col in effectiveColumns"
                 :key="col.key"
@@ -57,6 +90,16 @@
               >
                 {{ formatCell(row, col) }}
               </td>
+              <td class="rt__td--act" @click.stop>
+                <button
+                  class="rt__zoom-btn"
+                  @click="$emit('zoom', row)"
+                  title="زوم روی این عارضه (بدون بستن جدول)"
+                  aria-label="زوم روی عارضه"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                </button>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -64,7 +107,7 @@
       <!-- صفحه‌بندی پیشرفته -->
       <div v-if="totalPages > 1 || pageSizeOptions.length > 1" class="rt__pager">
         <div class="rt__pager-right">
-          <span class="rt__total-rows mono">{{ effectiveRows.length.toLocaleString('fa-IR') }} ردیف</span>
+          <span class="rt__total-rows mono">{{ visibleRows.length.toLocaleString('fa-IR') }} ردیف<template v-if="showSelectedOnly && selected.size"> (از {{ effectiveRows.length.toLocaleString('fa-IR') }})</template></span>
           <div v-if="pageSizeOptions.length > 1" class="rt__page-size">
             <label class="rt__page-size-label">ردیف در صفحه:</label>
             <select class="rt__page-size-select" :value="pageSize" @change="onPageSizeChange">
@@ -128,13 +171,66 @@ const props = defineProps({
   activeId:  { type: String, default: null },
   layerMeta: { type: Array,  default: () => [] },
 })
-defineEmits(['select', 'hover', 'export'])
+const emit = defineEmits(['select', 'hover', 'export', 'zoom'])
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200]
 const pageSize = ref(100)
 const pageSizeOptions = PAGE_SIZE_OPTIONS
 const page = ref(1)
 const activeTab = ref('')
+
+/* ---------- انتخاب ردیف‌ها (مثل جدول ArcGIS) ---------- */
+const selected = ref(new Set())
+const showSelectedOnly = ref(false)
+
+function rowKeyOf(row) {
+  return row._layerUuid ? `${row._layerUuid}::${row.id}` : String(row.id ?? '')
+}
+function isSelected(row) {
+  return selected.value.has(String(rowKeyOf(row)))
+}
+function toggleRow(row) {
+  const k = String(rowKeyOf(row))
+  const next = new Set(selected.value)
+  if (next.has(k)) next.delete(k)
+  else next.add(k)
+  selected.value = next
+}
+function selectAll() {
+  selected.value = new Set(effectiveRows.value.map(r => String(rowKeyOf(r))))
+}
+function invertSelection() {
+  const next = new Set(selected.value)
+  for (const r of effectiveRows.value) {
+    const k = String(rowKeyOf(r))
+    if (next.has(k)) next.delete(k)
+    else next.add(k)
+  }
+  selected.value = next
+}
+function clearSelection() {
+  selected.value = new Set()
+  showSelectedOnly.value = false
+}
+function togglePage(e) {
+  const checked = e?.target?.checked
+  const next = new Set(selected.value)
+  for (const r of pagedRows.value) {
+    const k = String(rowKeyOf(r))
+    if (checked) next.add(k)
+    else next.delete(k)
+  }
+  selected.value = next
+}
+const selectedRows = computed(() => {
+  const set = selected.value
+  if (!set.size) return []
+  return effectiveRows.value.filter(r => set.has(String(rowKeyOf(r))))
+})
+function zoomToSelection() {
+  const rows = selectedRows.value
+  if (rows.length) emit('zoom', rows)
+}
 
 const layerGroups = computed(() => {
   if (!props.layerMeta.length) return []
@@ -166,6 +262,18 @@ const effectiveRows = computed(() =>
 const effectiveColumns = computed(() =>
   isMulti.value ? (activeGroup.value?.columns ?? []) : props.columns
 )
+/* ردیف‌های قابل مشاهده: با فعال بودن «فقط انتخاب‌شده‌ها» فقط منتخب‌ها */
+const visibleRows = computed(() => {
+  if (!showSelectedOnly.value || !selected.value.size) return effectiveRows.value
+  const set = selected.value
+  return effectiveRows.value.filter(r => set.has(String(rowKeyOf(r))))
+})
+const pageChecked = computed(() =>
+  pagedRows.value.length > 0 && pagedRows.value.every(r => selected.value.has(String(rowKeyOf(r))))
+)
+const pageIndeterminate = computed(() =>
+  !pageChecked.value && pagedRows.value.some(r => selected.value.has(String(rowKeyOf(r))))
+)
 
 function selectTab(uuid) {
   activeTab.value = uuid
@@ -184,12 +292,19 @@ watch(() => props.layerMeta, () => {
 watch(activeTab, () => {
   page.value = 1
 })
+watch(showSelectedOnly, () => {
+  page.value = 1
+})
+watch(visibleRows, (rows) => {
+  const tp = Math.max(1, Math.ceil(rows.length / pageSize.value))
+  if (page.value > tp) page.value = tp
+})
 
 const totalPages = computed(() =>
-  Math.max(1, Math.ceil(effectiveRows.value.length / pageSize.value))
+  Math.max(1, Math.ceil(visibleRows.value.length / pageSize.value))
 )
 const pagedRows = computed(() =>
-  effectiveRows.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value)
+  visibleRows.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value)
 )
 function nextPage() { if (page.value < totalPages.value) page.value++ }
 function prevPage() { if (page.value > 1) page.value-- }
@@ -318,9 +433,6 @@ function cellTitle(row, col) {
   try { return String(formatCell(row, col)) } catch { return '' }
 }
 
-function rowKeyOf(row) {
-  return row._layerUuid ? `${row._layerUuid}::${row.id}` : String(row.id ?? '')
-}
 function isActive(row) {
   if (props.activeId == null || props.activeId === '') return false
   if (String(rowKeyOf(row)) === String(props.activeId)) return true
@@ -679,6 +791,111 @@ function isActive(row) {
   outline: none;
   box-shadow: 0 0 0 2px var(--ring-color);
 }
+
+/* ---------- نوار ابزار جدول (انتخاب / زوم) ---------- */
+.rt__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.rt__tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rt__tool-btn {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-family: inherit;
+  font-weight: 600;
+  padding: 5px 11px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    border-color 0.15s var(--ease-out),
+    color 0.15s var(--ease-out),
+    background-color 0.15s var(--ease-out);
+}
+.rt__tool-btn:hover:not(:disabled) {
+  border-color: var(--brand);
+  color: var(--brand);
+  background: var(--brand-soft);
+}
+.rt__tool-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.rt__tool-btn--primary {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.rt__tool-check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rt__tool-check--off { opacity: 0.5; }
+.rt__sel-info {
+  font-size: 11px;
+  color: var(--brand-strong);
+  background: var(--brand-soft);
+  border-radius: var(--radius-full);
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+/* ستون چک‌باکس و زوم */
+.rt__th--sel, .rt__td--sel {
+  width: 36px !important;
+  min-width: 36px !important;
+  max-width: 36px !important;
+  text-align: center !important;
+  padding: 7px 4px !important;
+}
+.rt__th--act, .rt__td--act {
+  width: 52px !important;
+  min-width: 52px !important;
+  max-width: 52px !important;
+  text-align: center !important;
+  padding: 5px 4px !important;
+}
+.rt__td--sel input[type="checkbox"],
+.rt__th--sel input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--brand);
+  cursor: pointer;
+  vertical-align: middle;
+}
+.rt__zoom-btn {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+}
+.rt__zoom-btn:hover {
+  color: var(--brand);
+  background: var(--brand-soft);
+  border-color: var(--border-subtle);
+}
+.rt__row--selected { background: rgba(33, 150, 243, 0.09); }
+.rt__row--selected:hover { background: rgba(33, 150, 243, 0.16); }
+.rt__row--selected td:first-child { box-shadow: inset 3px 0 0 #2196f3; }
+.rt__row--active.rt__row--selected td:first-child { box-shadow: inset 3px 0 0 var(--brand), inset 6px 0 0 #2196f3; }
 
 @media (max-width: 760px) {
   .rt__tab-label { max-width: 120px; }

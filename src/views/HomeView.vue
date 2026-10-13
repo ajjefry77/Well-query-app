@@ -192,6 +192,7 @@
       @select="onSelectFromTable"
       @hover="onHoverRow"
       @export="handleExport"
+      @zoom="onZoomFromTable"
     />
 
     <!-- مودال داده تمام عارضه‌های یک لایه -->
@@ -206,6 +207,7 @@
       @select="onSelectFromTable"
       @hover="onHoverRow"
       @export="handleLayerDataExport"
+      @zoom="onZoomFromTable"
     />
   </div>
 </template>
@@ -969,6 +971,18 @@ function onSelectFromTable(row) {
   selectedWellId.value = rowKey(row)
   showResultsModal.value = false
   mapRef.value?.zoomToFeature(rowKey(row))
+}
+// زوم از داخل جدول بدون بستن مودال (دکمه 🔍 هر ردیف یا «زوم به انتخاب»)
+function onZoomFromTable(payload) {
+  const rows = Array.isArray(payload) ? payload : [payload]
+  if (!rows.length) return
+  if (rows.length === 1) {
+    activeWellId.value = rowKey(rows[0])
+    selectedWellId.value = rowKey(rows[0])
+    mapRef.value?.zoomToFeature(rowKey(rows[0]))
+  } else {
+    mapRef.value?.zoomToResults?.(rows)
+  }
 }
 function onZoomToLayer(uuid) {
   mapRef.value?.zoomToLayer?.(uuid)

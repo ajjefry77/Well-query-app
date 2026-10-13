@@ -29,6 +29,7 @@
               @select="$emit('select', $event)"
               @hover="$emit('hover', $event)"
               @export="$emit('export', $event)"
+              @zoom="$emit('zoom', $event)"
             />
           </div>
         </div>
@@ -50,7 +51,7 @@ defineProps({
   layerMeta: { type: Array, default: () => [] },
   activeId: { type: [String, Number], default: null },
 })
-const emit = defineEmits(['close', 'select', 'hover', 'export'])
+const emit = defineEmits(['close', 'select', 'hover', 'export', 'zoom'])
 
 function onKey(e) {
   if (e.key === 'Escape') emit('close')

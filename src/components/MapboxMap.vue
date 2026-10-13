@@ -245,6 +245,23 @@ function heatColorExpr(rampId) {
 const SYM_HEAT_PREFIX = 'sym-heat-'
 const SYM_DOT_SRC = 'sym-dot-src'
 const SYM_DOT_LAYER = 'sym-dot-layer'
+// ─── لایه‌های عارضه (شکل نقطه + سبک خط per-layer) ───
+// line-dasharray در Mapbox داده‌محور نیست؛ پس برای هر سبک خط یک لایه جدا با فیلتر
+// روی _sym_dash می‌سازیم. شکل‌های نقطه‌ای غیر‌دایره هم با لایه symbol رندر می‌شوند.
+const POINT_SHAPES = [
+  { id: 'square', char: '■' },
+  { id: 'triangle', char: '▲' },
+  { id: 'diamond', char: '◆' },
+  { id: 'cross', char: '✕' },
+  { id: 'star', char: '★' },
+]
+const WELL_LAYER_IDS = [
+  'wells-fill',
+  'wells-line', 'wells-line-dash', 'wells-line-dot',
+  'wells-polyline', 'wells-polyline-dash', 'wells-polyline-dot',
+  'wells-point',
+  ...POINT_SHAPES.map(s => 'wells-pt-' + s.id),
+]
 function clearSymLayers() {
   if (!map) return
   try {
@@ -918,6 +935,8 @@ function buildGeoJSON(wells) {
       fp._sym_size = sym.size
       fp._sym_fillop = sym.fillOpacity
       fp._sym_op = sym.opacity
+      fp._sym_shape = sym.shape ?? 'circle'
+      fp._sym_dash = sym.dash ?? 'solid'
     }
     features.push({ type: "Feature", geometry: geomRaw, properties: fp })
   }
@@ -930,7 +949,7 @@ function clearMarkers() {
 }
 
 function clearWellLayers() {
-  ["wells-fill", "wells-line", "wells-polyline", "wells-point"].forEach(
+  WELL_LAYER_IDS.forEach(
     (id) => {
       if (map.getLayer(id)) map.removeLayer(id);
     },
@@ -1025,7 +1044,7 @@ function collectStackedFeatures(e) {
   const seen = new Set();
   const items = [];
   try {
-    const layerIds = ["wells-fill", "wells-line", "wells-polyline", "wells-point"].filter((id) => {
+    const layerIds = WELL_LAYER_IDS.filter((id) => {
       try { return map.getLayer(id); } catch { return false; }
     });
     const rendered = map.queryRenderedFeatures(e.point, { layers: layerIds });
@@ -1065,8 +1084,9 @@ let wellsEventsBound = false;
 function bindWellEventsOnce() {
   if (wellsEventsBound) return;
   wellsEventsBound = true;
-  ["wells-fill", "wells-line", "wells-polyline", "wells-point"].forEach(
+  WELL_LAYER_IDS.forEach(
     (layerId) => {
+      if (!map.getLayer(layerId)) return;
       map.on("click", layerId, (e) => {
         if (activeMode.value) return;
         // در حالت انتخاب هوشمند، هندلر کلیک نقشه تصمیم می‌گیرد (جلوگیری از دابل‌فایر)
@@ -1110,6 +1130,186 @@ function fitGeoJSON(geojson) {
     if (!bounds.isEmpty())
       map.fitBounds(bounds, { padding: 48, maxZoom: 14, duration: 800 });
   } catch {}
+}
+
+// ─── لایه‌های سبک خط (dash/dot) و شکل نقطه (symbol) ───
+// line-dasharray داده‌محور نیست؛ هر سبک یک لایه جدا با فیلتر _sym_dash دارد.
+function _statusColorExpr(failC, okC) {
+  return [
+    "case",
+    ["==", ["get", "_pfail"], 1], failC,
+    ["==", ["get", "_pok"], 1], okC,
+    ["==", ["get", "_psrc"], 1], PREVIEW_SRC_COLOR,
+    ["==", ["get", "_selected"], 1], "#f0a500",
+    ["==", ["get", "_isCenter"], 1], "#e74c3c",
+  ];
+}
+function _polyOutlineColor() {
+  return [..._statusColorExpr(PREVIEW_FAIL_BORDER, PREVIEW_OK_BORDER),
+    ["!=", ["get", "_sym_color"], null],
+    ["coalesce", ["get", "_sym_stroke"], ["get", "_sym_color"]],
+    ["==", ["get", "_match"], 1], "#14532d",
+    ["==", ["get", "_highlighted"], 1], "#4a9b8e",
+    "#8a9490",
+  ];
+}
+function _polylineColor() {
+  return [..._statusColorExpr(PREVIEW_FAIL_COLOR, PREVIEW_OK_COLOR),
+    ["!=", ["get", "_sym_color"], null], ["get", "_sym_color"],
+    ["==", ["get", "_match"], 1], "#22c55e",
+    ["==", ["get", "_highlighted"], 1], "#4a9b8e",
+    "#8a9490",
+  ];
+}
+function _lineWidthPoly() {
+  return [
+    "case",
+    ["==", ["get", "_pfail"], 1], 4,
+    ["==", ["get", "_pok"], 1], 4,
+    ["==", ["get", "_psrc"], 1], 4,
+    ["==", ["get", "_selected"], 1], 4,
+    ["==", ["get", "_isCenter"], 1], 4,
+    ["!=", ["get", "_sym_strokew"], null], ["get", "_sym_strokew"],
+    ["!=", ["get", "_sym_size"], null], ["get", "_sym_size"],
+    ["==", ["get", "_match"], 1], 3.5,
+    ["==", ["get", "_highlighted"], 1], 3,
+    1.5,
+  ];
+}
+function _lineWidthLine() {
+  return [
+    "case",
+    ["==", ["get", "_pfail"], 1], 4,
+    ["==", ["get", "_pok"], 1], 4,
+    ["==", ["get", "_psrc"], 1], 4,
+    ["==", ["get", "_selected"], 1], 4,
+    ["==", ["get", "_isCenter"], 1], 4,
+    ["!=", ["get", "_sym_size"], null], ["get", "_sym_size"],
+    ["!=", ["get", "_sym_strokew"], null], ["get", "_sym_strokew"],
+    ["==", ["get", "_match"], 1], 3.5,
+    ["==", ["get", "_highlighted"], 1], 3,
+    ["==", ["get", "_dimmed"], 1], 1,
+    1.5,
+  ];
+}
+function _lineOpacity(dimmedVal) {
+  return [
+    "case",
+    ["==", ["get", "_pfail"], 1], 1,
+    ["==", ["get", "_pok"], 1], 1,
+    ["==", ["get", "_psrc"], 1], 1,
+    ["==", ["get", "_selected"], 1], 1,
+    ["==", ["get", "_highlighted"], 1], 1,
+    ["==", ["get", "_dimmed"], 1], dimmedVal,
+    ["coalesce", ["get", "_sym_op"], 1],
+  ];
+}
+function _pointColor() {
+  return [..._statusColorExpr(PREVIEW_FAIL_COLOR, PREVIEW_OK_COLOR),
+    ["!=", ["get", "_sym_color"], null], ["get", "_sym_color"],
+    ["==", ["get", "_match"], 1], "#22c55e",
+    ["==", ["get", "_dimmed"], 1], "#8a9490",
+    ["get", "_color"],
+  ];
+}
+function _pointHalo() {
+  return [
+    "case",
+    ["==", ["get", "_pfail"], 1], PREVIEW_FAIL_BORDER,
+    ["==", ["get", "_pok"], 1], PREVIEW_OK_BORDER,
+    ["==", ["get", "_psrc"], 1], "#1a1a1a",
+    ["==", ["get", "_selected"], 1], "#1a1a1a",
+    ["==", ["get", "_isCenter"], 1], "#fff",
+    ["==", ["get", "_match"], 1], "#14532d",
+    ["==", ["get", "_highlighted"], 1], "#1a1a1a",
+    ["==", ["get", "_dimmed"], 1], "#666",
+    ["!=", ["get", "_sym_stroke"], null], ["get", "_sym_stroke"],
+    "#ffffff",
+  ];
+}
+function _pointOpacity() {
+  return [
+    "case",
+    ["==", ["get", "_pfail"], 1], 1,
+    ["==", ["get", "_pok"], 1], 1,
+    ["==", ["get", "_psrc"], 1], 1,
+    ["==", ["get", "_selected"], 1], 1,
+    ["==", ["get", "_isCenter"], 1], 1,
+    ["==", ["get", "_dimmed"], 1], 0.3,
+    ["coalesce", ["get", "_sym_op"], 1],
+  ];
+}
+function _pointTextSize() {
+  return [
+    "case",
+    ["==", ["get", "_pfail"], 1], 26,
+    ["==", ["get", "_pok"], 1], 26,
+    ["==", ["get", "_psrc"], 1], 26,
+    ["==", ["get", "_selected"], 1], 26,
+    ["==", ["get", "_isCenter"], 1], 26,
+    ["*", ["coalesce", ["get", "_sym_size"], 6], 2.4],
+  ];
+}
+function addDashAndShapeLayers() {
+  if (!map || !map.getSource("wells-src")) return;
+  const polyGeoms = ["literal", ["Polygon", "MultiPolygon"]];
+  const lineGeoms = ["literal", ["LineString", "MultiLineString"]];
+  const ptGeoms = ["literal", ["Point", "MultiPoint"]];
+  const dashStyles = [
+    { suffix: "dash", dash: "dash", array: ["literal", [2.5, 2]] },
+    { suffix: "dot", dash: "dot", array: ["literal", [1, 2.5]] },
+  ];
+  for (const d of dashStyles) {
+    const lid = "wells-line-" + d.suffix;
+    if (!map.getLayer(lid)) {
+      map.addLayer({
+        id: lid, type: "line", source: "wells-src",
+        filter: ["all", ["in", ["geometry-type"], polyGeoms], ["==", ["get", "_sym_dash"], d.dash]],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": _polyOutlineColor(),
+          "line-width": _lineWidthPoly(),
+          "line-opacity": _lineOpacity(0.15),
+          "line-dasharray": d.array,
+        },
+      });
+    }
+    const plid = "wells-polyline-" + d.suffix;
+    if (!map.getLayer(plid)) {
+      map.addLayer({
+        id: plid, type: "line", source: "wells-src",
+        filter: ["all", ["in", ["geometry-type"], lineGeoms], ["==", ["get", "_sym_dash"], d.dash]],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": _polylineColor(),
+          "line-width": _lineWidthLine(),
+          "line-opacity": _lineOpacity(0.25),
+          "line-dasharray": d.array,
+        },
+      });
+    }
+  }
+  for (const s of POINT_SHAPES) {
+    const lid = "wells-pt-" + s.id;
+    if (map.getLayer(lid)) continue;
+    map.addLayer({
+      id: lid, type: "symbol", source: "wells-src",
+      filter: ["all", ["in", ["geometry-type"], ptGeoms], ["==", ["get", "_sym_shape"], s.id]],
+      layout: {
+        "text-field": s.char,
+        "text-size": _pointTextSize(),
+        "text-allow-overlap": true,
+        "text-ignore-placement": true,
+        "text-anchor": "center",
+      },
+      paint: {
+        "text-color": _pointColor(),
+        "text-halo-color": _pointHalo(),
+        "text-halo-width": ["coalesce", ["get", "_sym_strokew"], 1.5],
+        "text-opacity": _pointOpacity(),
+      },
+    });
+  }
 }
 
 function renderMarkers(fit = true) {
@@ -1206,10 +1406,11 @@ function renderMarkers(fit = true) {
       type: "line",
       source: "wells-src",
       filter: [
-        "in",
-        ["geometry-type"],
-        ["literal", ["Polygon", "MultiPolygon"]],
+        "all",
+        ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
+        ["!", ["in", ["get", "_sym_dash"], ["literal", ["dash", "dot"]]]],
       ],
+      layout: { "line-cap": "round", "line-join": "round" },
       paint: {
         "line-color": [
           "case",
@@ -1276,9 +1477,9 @@ function renderMarkers(fit = true) {
       type: "line",
       source: "wells-src",
       filter: [
-        "in",
-        ["geometry-type"],
-        ["literal", ["LineString", "MultiLineString"]],
+        "all",
+        ["in", ["geometry-type"], ["literal", ["LineString", "MultiLineString"]]],
+        ["!", ["in", ["get", "_sym_dash"], ["literal", ["dash", "dot"]]]],
       ],
       layout: { "line-cap": "round", "line-join": "round" },
       paint: {
@@ -1333,7 +1534,7 @@ function renderMarkers(fit = true) {
       id: "wells-point",
       type: "circle",
       source: "wells-src",
-      filter: ["in", ["geometry-type"], ["literal", ["Point", "MultiPoint"]]],
+      filter: ["all", ["in", ["geometry-type"], ["literal", ["Point", "MultiPoint"]]], ["!", ["in", ["get", "_sym_shape"], ["literal", ["square", "triangle", "diamond", "cross", "star"]]]]],
       paint: {
         "circle-radius": [
           "case",
@@ -1447,6 +1648,7 @@ function renderMarkers(fit = true) {
         ],
       },
     });
+    addDashAndShapeLayers();
     bindWellEventsOnce();
     }
     if (fit) fitGeoJSON(geojson);
@@ -1486,6 +1688,8 @@ function renderMarkers(fit = true) {
                     ? "#4a9b8e"
                     : "#8a9490"));
       const opacity = isSel || isCenter || isMatch ? "1" : isDimmed ? "0.25" : String(sym?.opacity ?? 1);
+      const strokeW = isSel || isCenter || isMatch ? 3 : Math.max(0, Math.min(6, Number(sym?.strokeWidth) ?? 2));
+      const strokeC = sym?.strokeColor ?? "rgba(255,255,255,0.4)";
       const border = isFail
         ? `3px solid ${PREVIEW_FAIL_BORDER}`
         : isOk
@@ -1498,16 +1702,28 @@ function renderMarkers(fit = true) {
                 ? "3px solid #14532d"
                 : isH
                   ? "3px solid #fff"
-                  : "2px solid rgba(255,255,255,0.4)";
+                  : `${strokeW}px solid ${strokeC}`;
       const symSize = Math.max(4, Math.min(30, Number(sym?.size) || 12));
       const hasSym = sym?.size != null;
       const size = isSel ? 22 : isCenter ? 22 : isDimmed ? 8 : hasSym ? symSize : isMatch ? 20 : isH ? 18 : symSize;
+      const shape = sym?.shape ?? 'circle';
+      const shapeCss = shape === 'square'
+        ? 'border-radius:4px;'
+        : shape === 'diamond'
+          ? 'border-radius:4px;transform:rotate(45deg);'
+          : shape === 'triangle'
+            ? `clip-path:polygon(50% 4%, 96% 94%, 4% 94%);border-radius:0;`
+            : shape === 'cross' || shape === 'star'
+              ? `border-radius:50%;`
+              : 'border-radius:50%;';
       const el = document.createElement("div");
+      el.title = shape === 'star' ? '★' : shape === 'cross' ? '✕' : '';
       el.style.cssText = `
-      width:${size}px;height:${size}px;border-radius:50%;
+      width:${size}px;height:${size}px;${shapeCss}
       background:${color};border:${border};
       box-shadow:0 2px 6px rgba(0,0,0,0.4);cursor:pointer;
       opacity:${opacity};
+      ${shape === 'cross' ? `background:linear-gradient(${color},${color}) center/60% 18% no-repeat, linear-gradient(${color},${color}) center/18% 60% no-repeat;` : ''}
       ${isSel || isCenter || isMatch ? "outline:3px solid rgba(34,197,94,0.45);outline-offset:3px;" : (isH ? "outline:3px solid rgba(240,165,0,0.4);outline-offset:3px;" : "")}`;
       // عارضه‌های هم‌مختصات (دو لایه روی هم) → تب در یک پاپ‌آپ
       const stacked = props.wells.filter(
@@ -1601,7 +1817,7 @@ onMounted(async () => {
     if (picking) return;
     try {
       const layerIds = [
-        "wells-fill", "wells-line", "wells-polyline", "wells-point",
+        ...WELL_LAYER_IDS,
         "drawn-polygon-fill", "drawn-polygon-stroke", "drawn-line", "drawn-point",
       ].filter((id) => map.getLayer(id));
       const feats = layerIds.length ? map.queryRenderedFeatures(e.point, { layers: layerIds }) : [];
@@ -1702,6 +1918,8 @@ function updateSymData() {
     delete f.properties._sym_size
     delete f.properties._sym_fillop
     delete f.properties._sym_op
+    delete f.properties._sym_shape
+    delete f.properties._sym_dash
     const sym = w ? symStyleOf(w) : null
     if (sym) {
       f.properties._sym_color = sym.color
@@ -1710,6 +1928,8 @@ function updateSymData() {
       f.properties._sym_size = sym.size
       f.properties._sym_fillop = sym.fillOpacity
       f.properties._sym_op = sym.opacity
+      f.properties._sym_shape = sym.shape ?? 'circle'
+      f.properties._sym_dash = sym.dash ?? 'solid'
     }
   }
   try { map.getSource("wells-src").setData(wellsGeoJSON) } catch {}
@@ -1839,7 +2059,7 @@ defineExpose({
       if (!picking) return;
       let well = null;
       try {
-        const layerIds = ["wells-fill", "wells-line", "wells-polyline", "wells-point"]
+        const layerIds = WELL_LAYER_IDS
           .filter((id) => map.getLayer(id));
         const feats = layerIds.length ? map.queryRenderedFeatures(e.point, { layers: layerIds }) : [];
         if (feats && feats.length) {
