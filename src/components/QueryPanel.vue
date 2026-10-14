@@ -29,6 +29,26 @@
         </div>
 
         <template v-else>
+          <!-- محدوده کوئری: همه عوارض یا فقط انتخاب‌شده‌ها (قابلیت فراتر از ArcGIS) -->
+          <div class="scope-toggle">
+            <button
+              class="scope-toggle__btn"
+              :class="{ 'scope-toggle__btn--active': attributeScope !== 'selected' }"
+              @click="$emit('update:attribute-scope', 'all')"
+            >
+              همه عوارض
+            </button>
+            <button
+              class="scope-toggle__btn"
+              :class="{ 'scope-toggle__btn--active': attributeScope === 'selected' }"
+              :disabled="!selectionCount"
+              :title="selectionCount ? 'اجرای کوئری فقط روی عوارض انتخاب‌شده' : 'ابتدا از روی نقشه عارضه انتخاب کنید'"
+              @click="$emit('update:attribute-scope', 'selected')"
+            >
+              فقط انتخاب‌شده‌ها ({{ selectionCount.toLocaleString('fa-IR') }})
+            </button>
+          </div>
+
           <div class="layer-dropdown-wrap">
             <label class="layer-dropdown-label">لایه انتخابی</label>
             <div class="layer-dropdown-select-wrap">
@@ -66,35 +86,24 @@
 
       <SpatialQueryPanel
         v-else-if="queryKind === 'spatial'"
-        :mode="spatialMode"
-        :tool="spatialTool"
-        :wells="wells"
         :layers="layers"
-        :active-layer="activeQueryLayer"
-        :active-layer-color="activeLayerColor"
-        :radius-center="radiusCenter"
-        :radius-km="radiusKm"
-        :fields="spatialGroupFields"
-        :layer-fields="layerDetails[activeQueryLayer]?.fields ?? []"
-        :custom-point="customPoint"
-        :is-picking="isPickingPoint"
-        :spatial-loading="spatialLoading"
+        :wells="wells"
+        :selection-count="selectionCount"
+        :source-mode="sourceMode"
         :source-layer="relationSourceLayer"
         :target-layer="relationTargetLayer"
         :operator="relationOperator"
+        :radius-km="relationRadiusKm"
+        :target-only-selected="targetOnlySelected"
         :relation-loading="relationLoading"
-        @update:mode="$emit('update:spatial-mode', $event)"
-        @update:tool="$emit('update:spatial-tool', $event)"
-        @update:active-layer="$emit('update:active-query-layer', $event)"
-        @update:radius-center="$emit('update:radius-center', $event)"
-        @update:radius-km="$emit('update:radius-km', $event)"
-        @pick-point="$emit('pick-point')"
-        @clear-point="$emit('clear-point')"
-        @clear-spatial="$emit('clear-spatial')"
-        @apply-spatial="$emit('apply-spatial')"
+        @clear-selection="$emit('clear-selection')"
+        @zoom-selection="$emit('zoom-selection')"
+        @update:source-mode="$emit('update:source-mode', $event)"
         @update:source-layer="$emit('update:relation-source-layer', $event)"
         @update:target-layer="$emit('update:relation-target-layer', $event)"
         @update:operator="$emit('update:relation-operator', $event)"
+        @update:radius-km="$emit('update:radius-km', $event)"
+        @update:target-only-selected="$emit('update:target-only-selected', $event)"
         @apply-relation="$emit('apply-relation')"
       />
       <div class="side-divider"></div>
@@ -127,19 +136,18 @@ const props = defineProps({
   fieldValues: { type: Object, default: () => ({}) },
   loadingFields: { type: Boolean, default: false },
   loadingFeatures: { type: Boolean, default: false },
-  spatialMode: { type: String, required: true },
-  spatialTool: { type: String, default: 'radius' },
   wells: { type: Array, default: () => [] },
-  radiusCenter: { type: Object, default: null },
-  radiusKm: { type: Number, required: true },
-  spatialGroupFields: { type: Array, default: () => [] },
-  customPoint: { type: Object, default: null },
-  isPickingPoint: { type: Boolean, default: false },
-  spatialLoading: { type: Boolean, default: false },
   savedQueries: { type: Array, default: () => [] },
+  // ── انتخاب عارضه (فقط شمارش؛ ابزارها در تولبار نقشه‌اند) ──
+  selectionCount: { type: Number, default: 0 },
+  attributeScope: { type: String, default: 'all' },
+  // ── رابطه مکانی ──
+  sourceMode: { type: String, default: 'selected' },
   relationSourceLayer: { type: String, default: null },
   relationTargetLayer: { type: String, default: null },
   relationOperator: { type: String, default: 'within' },
+  relationRadiusKm: { type: Number, default: 3 },
+  targetOnlySelected: { type: Boolean, default: false },
   relationLoading: { type: Boolean, default: false },
 })
 defineEmits([
@@ -149,17 +157,15 @@ defineEmits([
   'remove-condition',
   'save-query',
   'apply-attribute',
-  'update:spatial-mode',
-  'update:spatial-tool',
-  'update:radius-center',
+  'update:attribute-scope',
+  'clear-selection',
+  'zoom-selection',
+  'update:source-mode',
   'update:radius-km',
-  'pick-point',
-  'clear-point',
-  'clear-spatial',
-  'apply-spatial',
   'update:relation-source-layer',
   'update:relation-target-layer',
   'update:relation-operator',
+  'update:target-only-selected',
   'apply-relation',
   'load-query',
   'delete-query',
@@ -230,6 +236,42 @@ const layerOptions = computed(() =>
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* ---------- محدوده کوئری (همه / فقط انتخاب‌شده‌ها) ---------- */
+.scope-toggle {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-panel-raised);
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+.scope-toggle__btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  padding: 7px 6px;
+  border-radius: 5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.scope-toggle__btn:hover:not(:disabled):not(.scope-toggle__btn--active) {
+  color: var(--text-primary);
+}
+.scope-toggle__btn--active {
+  background: var(--bg-panel);
+  color: #0891b2;
+  font-weight: 700;
+  box-shadow: var(--shadow-xs), inset 0 0 0 1px var(--border-subtle);
+}
+.scope-toggle__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* ---------- دراپ‌داون لایه ---------- */

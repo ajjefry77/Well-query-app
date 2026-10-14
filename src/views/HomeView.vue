@@ -30,18 +30,15 @@
         :loading-features="loadingFeatures"
         :field-stats-map="layerFieldStats"
         :field-values="layerFieldValues"
-        :spatial-mode="spatialMode"
-        :spatial-tool="spatialTool"
         :wells="allWells"
-        :radius-center="radiusCenter"
-        :radius-km="radiusKm"
-        :spatial-group-fields="spatialGroupFields"
-        :custom-point="customPoint"
-        :is-picking-point="isPickingPoint"
-        :spatial-loading="spatialLoading"
+        :selection-count="selectionCount"
+        :attribute-scope="attributeScope"
+        :source-mode="relationSourceMode"
         :relation-source-layer="relationSourceLayer"
         :relation-target-layer="relationTargetLayer"
         :relation-operator="relationOperator"
+        :relation-radius-km="relationRadiusKm"
+        :target-only-selected="spatialTargetOnlySelected"
         :relation-loading="spatialLoading"
         :saved-queries="savedQueries"
         @toggle="toggleQueryPanel"
@@ -50,17 +47,15 @@
         @remove-condition="removeLayerCondition"
         @save-query="saveCurrentQuery"
         @apply-attribute="onApplyAttribute"
-        @update:spatial-mode="spatialMode = $event"
-        @update:spatial-tool="spatialTool = $event"
-        @update:radius-center="onUpdateRadiusCenter"
-        @update:radius-km="radiusKm = $event"
-        @pick-point="onPickPoint"
-        @clear-point="onClearPoint"
-        @clear-spatial="onClearSpatial"
-        @apply-spatial="onApplySpatial"
+        @update:attribute-scope="attributeScope = $event"
+        @clear-selection="onClearSelection"
+        @zoom-selection="zoomToSelection"
+        @update:source-mode="relationSourceMode = $event"
+        @update:radius-km="relationRadiusKm = $event"
         @update:relation-source-layer="relationSourceLayer = $event"
         @update:relation-target-layer="relationTargetLayer = $event"
         @update:relation-operator="relationOperator = $event"
+        @update:target-only-selected="spatialTargetOnlySelected = $event"
         @apply-relation="onApplyRelation"
         @load-query="onLoadQuery"
         @delete-query="deleteSavedQuery"
@@ -79,11 +74,20 @@
             :radius-center="showRadiusOnMap ? committedRadiusCenter : null"
            :radius-km="committedRadiusKm"
              :selected-id="selectedWellId"
+             :selection-tool="selectionTool"
+             :selection-mode="selectionMode"
+             :selection-ids="selectedIds"
+             :selection-count="selectionCount"
              :theme="theme"
              :sym-configs="symConfigs"
              :sym-version="symVersion"
             @select-well="onSelectFromMap"
             @map-empty-click="onMapEmptyClick"
+            @update:selection-tool="selectionTool = $event"
+            @update:selection-mode="selectionMode = $event"
+            @selection-change="onSelectionChange"
+            @selection-clear="onClearSelection"
+            @zoom-to-selection="zoomToSelection"
           />
           <!-- لجند سیمبولوژی -->
           <MapLegend :entries="legendEntries" />
@@ -253,7 +257,10 @@ const {
   radiusCenter, radiusKm,
   committedRadiusCenter, committedRadiusKm,
   spatialLoading, commitSpatialFilter,
-  relationSourceLayer, relationTargetLayer, relationOperator,
+  relationSourceLayer, relationTargetLayer, relationOperator, relationRadiusKm,
+  relationSourceMode, spatialTargetOnlySelected,
+  selectedIds, selectionCount, attributeScope,
+  applySelectionKeys, clearSelection,
   relationCommitted, relationResults, relationProgress,
   commitRelationFilter, clearRelation,
   savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
@@ -282,6 +289,9 @@ function viewFromUrl() {
 const queryKind        = ref(viewFromUrl())
 const spatialMode      = ref('map')
 const spatialTool      = ref('radius')
+// ── انتخاب عارضه (ابزارهای ArcGIS-like؛ state در useWellQuery) ──
+const selectionTool    = ref(null)
+const selectionMode    = ref('new')
 const mapRef           = shallowRef(null)
 const activeWellId     = ref(null)
 const selectedWellId   = ref(null)
@@ -556,16 +566,25 @@ const spatialSummaryLabel = computed(() => {
   return 'مرکز نامشخص'
 })
 
-// ── خلاصه رابطه مکانی برای پنل «شرط‌های فعال» (همیشه کل لایه) ──
+// ── خلاصه رابطه مکانی برای پنل «شرط‌های فعال» ──
 const relationSummary = computed(() => {
   const c = relationCommitted.value
   if (!c) return null
   const layerNameOf = (uuid) =>
     activeLayers.value.find(l => String(l.uuid) === String(uuid))?.display_name ?? ''
+  const srcName = c.sourceLayerUuid ? layerNameOf(c.sourceLayerUuid) : ''
+  const sourceText = c.sourceMode === 'selected'
+    ? (srcName ? `مبدأ: ${selectionCount.value} عارضه انتخاب‌شده (${srcName})` : `مبدأ: ${selectionCount.value} عارضه انتخاب‌شده`)
+    : `مبدأ: ${srcName} کل لایه`
+  const targetText = c.targetOnlySelected
+    ? `هدف: ${layerNameOf(c.targetLayerUuid)} (فقط انتخاب‌شده‌ها)`
+    : `هدف: ${layerNameOf(c.targetLayerUuid)} کل لایه`
   return {
-    opLabel: relationLabel(c.operator),
-    sourceText: `مبدأ: ${layerNameOf(c.sourceLayerUuid)} کل لایه`,
-    targetText: `هدف: ${layerNameOf(c.targetLayerUuid)} کل لایه`,
+    opLabel: c.operator === 'within-distance' && Number.isFinite(+c.radiusKm)
+      ? `${relationLabel(c.operator)} (${(+c.radiusKm).toLocaleString('fa-IR')} km)`
+      : relationLabel(c.operator),
+    sourceText,
+    targetText,
     count: relationResults.value.length,
   }
 })
@@ -911,8 +930,27 @@ function onClearSpatial() {
 // پاک کردن تمام کوئری‌های فعال (توصیفی همه لایه‌ها + مکانی شعاعی و رابطه‌ای)
 function onClearAllQueries() {
   clearAllConditions()
+  attributeScope.value = 'all'
   onClearSpatial()
   onClearRelation()
+  onClearSelection()
+}
+// ── انتخاب عارضه (ArcGIS-like) ──
+// incoming: آرایه کلیدها از ابزار نقشه؛ mode: new/add/remove/subset
+function onSelectionChange(keys, mode) {
+  applySelectionKeys(keys ?? [], mode || selectionMode.value || 'new')
+}
+function onClearSelection() {
+  clearSelection()
+}
+// زوم روی عوارض انتخاب‌شده
+function zoomToSelection() {
+  const set = new Set(selectedIds.value.map(String))
+  const rows = allWells.value.filter(r => {
+    const k = r._layerUuid ? `${r._layerUuid}::${r.id}` : String(r.id ?? '')
+    return set.has(k)
+  })
+  if (rows.length) mapRef.value?.zoomToResults?.(rows)
 }
 async function onApplySpatial() {
   await commitSpatialFilter()
@@ -959,10 +997,6 @@ function onSelectFromMap(well) {
     customPoint.value = null
     isPickingPoint.value = false
     mapRef.value?.disablePointPicker()
-  } else if (queryKind.value === 'spatial') {
-    // راحتی: کلیک عادی روی عارضه در تب مکانی هم آن را مرکز می‌کند
-    radiusCenter.value = well
-    customPoint.value = null
   }
   mapRef.value?.zoomToFeature(rowKey(well))
 }

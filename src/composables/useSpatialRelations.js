@@ -6,6 +6,8 @@ import booleanEqual from '@turf/boolean-equal'
 import booleanTouches from '@turf/boolean-touches'
 import booleanIntersects from '@turf/boolean-intersects'
 import booleanOverlap from '@turf/boolean-overlap'
+import centroid from '@turf/centroid'
+import distance from '@turf/distance'
 
 export const RELATION_OPERATORS = [
   {
@@ -37,6 +39,11 @@ export const RELATION_OPERATORS = [
     value: 'overlaps',
     label: 'با عارضه مبدأ هم‌پوشانی داشته باشند',
     hint: 'عارضه‌های هدف بخشی از عارضه مبدأ را بپوشانند، بدون آنکه کاملاً داخل آن باشند یا آن را دربر بگیرند.',
+  },
+  {
+    value: 'within-distance',
+    label: 'در فاصله مشخص از عارضه مبدأ باشند',
+    hint: 'عارضه‌های هدف که فاصله‌شان (تا مرکز عارضه) از شعاع واردشده کمتر است. همان جستجوی شعاعی، ولی روی همه عارضه‌های مبدأ انتخاب‌شده.',
   },
 ]
 
@@ -127,12 +134,109 @@ export function findMatchingRows(sourceRow, targetRows, operator) {
   return findMatchingRowsMulti(sourceRow ? [sourceRow] : [], targetRows, operator)
 }
 
+// ─── فاصله (جستجوی شعاعی چندمبدأیی) ───
+// فاصله مرکزوار (centroid) هدف تا نزدیک‌ترین مبدأ؛ برحسب کیلومتر
+function centroidOf(feature) {
+  try {
+    const c = centroid(feature)
+    return c?.geometry?.coordinates ?? null
+  } catch { return null }
+}
+
+function minDistanceToSources(targetFeature, sourceCentroids) {
+  let tc = null
+  try {
+    tc = centroid(targetFeature)?.geometry?.coordinates ?? null
+  } catch { tc = null }
+  if (!tc) return Infinity
+  let best = Infinity
+  for (const sc of sourceCentroids) {
+    if (!sc) continue
+    try {
+      const d = distance(tc, sc, { units: 'kilometers' })
+      if (Number.isFinite(d) && d < best) best = d
+    } catch {}
+  }
+  return best
+}
+
+// همه سطرهای هدف که در فاصله radiusKm از حداقل یک مبدأ باشند
+export function findWithinDistanceMulti(sourceRows, targetRows, radiusKm) {
+  const r = Number(radiusKm)
+  if (!Array.isArray(sourceRows) || !Array.isArray(targetRows) || !sourceRows.length) return []
+  if (!Number.isFinite(r) || r <= 0) return []
+  const keyOf = (row) => (row._layerUuid ? `${row._layerUuid}::${row.id}` : String(row.id ?? ''))
+  const sourceCentroids = []
+  const sourceKeys = new Set()
+  for (const s of sourceRows) {
+    const f = rowToFeature(s)
+    if (!f?.geometry) continue
+    const c = centroidOf(f)
+    if (!c) continue
+    sourceCentroids.push(c)
+    sourceKeys.add(keyOf(s))
+  }
+  if (!sourceCentroids.length) return []
+  const rClamped = Math.min(r, 20000)
+  const out = []
+  for (const row of targetRows) {
+    const key = keyOf(row)
+    if (key && sourceKeys.has(key)) continue
+    const tf = rowToFeature(row)
+    if (!tf) continue
+    if (minDistanceToSources(tf, sourceCentroids) <= rClamped) out.push(row)
+  }
+  return out
+}
+
+export async function findWithinDistanceMultiAsync(sourceRows, targetRows, radiusKm, opts = {}) {
+  const { chunkTargets = 400, yieldEveryMs = 0, signal = null, onProgress = null } = opts
+  const r = Number(radiusKm)
+  if (!Array.isArray(sourceRows) || !Array.isArray(targetRows) || !sourceRows.length) return []
+  if (!Number.isFinite(r) || r <= 0) return []
+  const keyOf = (row) => (row._layerUuid ? `${row._layerUuid}::${row.id}` : String(row.id ?? ''))
+  const sourceCentroids = []
+  const sourceKeys = new Set()
+  for (const s of sourceRows) {
+    if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
+    const f = rowToFeature(s)
+    if (!f?.geometry) continue
+    const c = centroidOf(f)
+    if (!c) continue
+    sourceCentroids.push(c)
+    sourceKeys.add(keyOf(s))
+  }
+  if (!sourceCentroids.length) return []
+  const rClamped = Math.min(r, 20000)
+  const out = []
+  const total = targetRows.length
+  const yieldTick = () => new Promise(res => setTimeout(res, yieldEveryMs))
+  for (let t = 0; t < targetRows.length; t++) {
+    if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
+    const row = targetRows[t]
+    const key = keyOf(row)
+    if (!key || !sourceKeys.has(key)) {
+      const tf = rowToFeature(row)
+      if (tf && minDistanceToSources(tf, sourceCentroids) <= rClamped) out.push(row)
+    }
+    if ((t + 1) % chunkTargets === 0) {
+      try { onProgress?.(t + 1, total) } catch {}
+      await yieldTick()
+    }
+  }
+  try { onProgress?.(total, total) } catch {}
+  return out
+}
+
 // حالت چند مبدأ (مبدأ = کل لایه): اجتماع نتایج هر عارضه مبدأ
 // اگر هر دو تک‌عارضه باشند همان رفتار قبلی حفظ می‌شود
 // بهینه‌سازی: bbox همه هندسه‌ها فقط یک بار محاسبه و کش می‌شود.
 // قبلاً evaluateRelation داخل حلقه تودرتو برای هر جفت، bbox مبدأ و هدف را
 // از نو روی همه مختصات راه می‌رفت (O(S*T*N)) که روی لایه‌های بزرگ مرورگر را فریز می‌کرد.
-export function findMatchingRowsMulti(sourceRows, targetRows, operator) {
+export function findMatchingRowsMulti(sourceRows, targetRows, operator, opts = {}) {
+  if (operator === 'within-distance') {
+    return findWithinDistanceMulti(sourceRows, targetRows, opts.radiusKm)
+  }
   if (!Array.isArray(sourceRows) || !Array.isArray(targetRows) || !sourceRows.length) return []
   const keyOf = (r) => (r._layerUuid ? `${r._layerUuid}::${r.id}` : String(r.id ?? ''))
   const sourceGeoms = []
@@ -187,6 +291,9 @@ function evaluateRelationFast(sourceGeom, targetGeom, operator) {
 // فرصت می‌دهد تا دیالوگ "long script / wait" مرورگر ظاهر نشود و
 // بتوان پیشرفت و لغو (AbortSignal) را گزارش کرد.
 export async function findMatchingRowsMultiAsync(sourceRows, targetRows, operator, opts = {}) {
+  if (operator === 'within-distance') {
+    return findWithinDistanceMultiAsync(sourceRows, targetRows, opts.radiusKm, opts)
+  }
   if (!Array.isArray(sourceRows) || !Array.isArray(targetRows) || !sourceRows.length) return []
   const {
     chunkTargets = 400,

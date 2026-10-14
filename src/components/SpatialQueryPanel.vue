@@ -1,323 +1,178 @@
 <template>
   <div class="sq">
-    <!-- ابزار کوئری مکانی: شعاعی یا رابطه مکانی -->
-    <div class="sq__tabs">
-      <button
-        class="sq__tab"
-        :class="{ 'sq__tab--active': tool === 'radius' }"
-        @click="$emit('update:tool', 'radius')"
-      >
-        جستجوی شعاعی
-      </button>
-      <button
-        class="sq__tab"
-        :class="{ 'sq__tab--active': tool === 'relation' }"
-        @click="$emit('update:tool', 'relation')"
-      >
-        رابطه مکانی
-      </button>
-    </div>
+    <!-- ─── گام ۱: عوارض مبدأ (انتخاب‌شده‌های روی نقشه) ─── -->
+    <!-- نکته: ابزارهای انتخاب فقط در تولبار «ابزارها» روی نقشه‌اند؛ اینجا فقط وضعیت نمایش داده می‌شود -->
+    <div class="sq__step">
+      <div class="sq__step-title">
+        <span class="sq__step-num">۱</span>
+        <span>عوارض مبدأ</span>
+      </div>
 
-    <!-- ─── رابطه مکانی (مبدأ/هدف + عملگر) ─── -->
-    <template v-if="tool === 'relation'">
+      <div class="sel-status">
+        <span class="sel-count" :class="{ 'sel-count--empty': !selectionCount }">
+          {{ selectionCount.toLocaleString('fa-IR') }} عارضه انتخاب شده
+        </span>
+        <div class="sel-actions">
+          <button class="sel-clear" :disabled="!selectionCount" @click="$emit('zoom-selection')" title="زوم روی عوارض انتخاب‌شده">
+            زوم
+          </button>
+          <button class="sel-clear sel-clear--danger" :disabled="!selectionCount" @click="$emit('clear-selection')">
+            پاک کردن
+          </button>
+        </div>
+      </div>
+      <p class="sq__hint sq__hint--tiny">انتخاب عارضه با ابزارهای تب «انتخاب» در تولبار نقشه انجام می‌شود (مستطیل، چندضلعی، کمند، دایره، خط).</p>
+
+      <!-- حالت مبدأ: انتخاب‌شده‌ها یا کل لایه -->
+      <div class="src-mode">
+        <button
+          class="src-mode__btn"
+          :class="{ 'src-mode__btn--active': sourceMode === 'selected' }"
+          @click="$emit('update:source-mode', 'selected')"
+        >
+          از عوارض انتخاب‌شده
+        </button>
+        <button
+          class="src-mode__btn"
+          :class="{ 'src-mode__btn--active': sourceMode === 'layer' }"
+          @click="$emit('update:source-mode', 'layer')"
+        >
+          از کل لایه
+        </button>
+      </div>
+
       <div class="layer-dropdown-wrap">
-        <label class="layer-dropdown-label">لایه مبدأ </label>
+        <label class="layer-dropdown-label">
+          {{ sourceMode === 'layer' ? 'لایه مبدأ (کل لایه)' : 'محدود به لایه (اختیاری)' }}
+        </label>
         <AppSelect
           class="layer-dropdown-select"
           :model-value="sourceLayer"
           :options="layerOptions"
-          placeholder="انتخاب لایه مبدأ…"
+          :placeholder="sourceMode === 'layer' ? 'انتخاب لایه مبدأ…' : 'همه لایه‌ها…'"
           @update:model-value="$emit('update:source-layer', $event)"
         />
       </div>
+      <p v-if="sourceMode === 'selected' && !selectionCount" class="sq__warn">
+        هنوز عارضه‌ای انتخاب نشده — ابتدا از تولبار «ابزارها» روی نقشه انتخاب کنید.
+      </p>
+    </div>
 
-      <p class="sq__hint sq__hint--tiny">همه عارضه‌های لایه مبدأ به‌عنوان مبدأ در نظر گرفته می‌شوند.</p>
-
+    <!-- ─── گام ۲: لایه هدف ─── -->
+    <div class="sq__step" :class="{ 'sq__step--disabled': !sourceReady }">
+      <div class="sq__step-title">
+        <span class="sq__step-num">۲</span>
+        <span>لایه هدف</span>
+      </div>
       <div class="layer-dropdown-wrap">
-        <label class="layer-dropdown-label">لایه هدف </label>
         <AppSelect
           class="layer-dropdown-select"
           :model-value="targetLayer"
           :options="layerOptions"
           placeholder="انتخاب لایه هدف…"
+          :disabled="!sourceReady"
           @update:model-value="$emit('update:target-layer', $event)"
         />
       </div>
+      <label class="scope-check" :class="{ 'scope-check--disabled': !sourceReady }">
+        <input
+          type="checkbox"
+          :checked="targetOnlySelected"
+          :disabled="!sourceReady || !selectionCount"
+          @change="$emit('update:target-only-selected', $event.target.checked)"
+        />
+        <span>جستجو فقط در میان عوارض انتخاب‌شده <template v-if="selectionCount">({{ selectionCount.toLocaleString('fa-IR') }})</template></span>
+      </label>
+    </div>
 
-      <p class="sq__hint sq__hint--tiny">همه عارضه‌های لایه هدف بررسی می‌شوند.</p>
-
+    <!-- ─── گام ۳: نوع رابطه ─── -->
+    <div class="sq__step" :class="{ 'sq__step--disabled': !sourceReady || !targetLayer }">
+      <div class="sq__step-title">
+        <span class="sq__step-num">۳</span>
+        <span>نوع رابطه</span>
+      </div>
       <div class="field-group">
-        <label>نوع رابطه</label>
         <AppSelect
           class="qb-select qb-select--full"
           :model-value="operator"
           :options="operatorOptions"
+          :disabled="!sourceReady || !targetLayer"
           @update:model-value="$emit('update:operator', $event)"
         />
       </div>
       <p class="sq__hint">{{ operatorHint }}</p>
 
-      <button
-        v-if="canApplyRelation"
-        class="btn-apply-spatial"
-        :disabled="relationLoading"
-        @click="$emit('apply-relation')"
-      >
-        {{ relationLoading ? 'در حال اجرا…' : 'اجرای کوئری' }}
-      </button>
-      <p v-else class="sq__hint sq__hint--tiny">ابتدا لایه مبدأ و لایه هدف را انتخاب کنید.</p>
-    </template>
-
-    <!-- ─── جستجوی شعاعی ─── -->
-    <template v-else>
-    <!-- دراپ‌داون انتخاب لایه (مثل کوئری توصیفی) -->
-    <div class="layer-dropdown-wrap">
-      <label class="layer-dropdown-label">لایه انتخابی</label>
-      <div class="layer-dropdown-select-wrap">
-        <span class="layer-dropdown-dot" :style="{ background: activeLayerColor }"></span>
-        <AppSelect
-          class="layer-dropdown-select"
-          :model-value="activeLayer"
-          :options="layerOptions"
-          placeholder="انتخاب لایه…"
-          @update:model-value="$emit('update:active-layer', $event)"
-        />
-      </div>
-    </div>
-
-    <!-- حالت انتخاب مرکز: از روی نقشه یا از لیست عارضه‌ها -->
-    <div class="sq__tabs">
-      <button
-        class="sq__tab"
-        :class="{ 'sq__tab--active': mode === 'map' }"
-        @click="$emit('update:mode', 'map')"
-      >
-        انتخاب از روی نقشه
-      </button>
-      <button
-        class="sq__tab"
-        :class="{ 'sq__tab--active': mode === 'list' }"
-        @click="$emit('update:mode', 'list')"
-      >
-        انتخاب از لیست عارضه‌ها
-      </button>
-    </div>
-
-    <Transition name="sq-slide" mode="out-in">
-      <!-- حالت: انتخاب از لیست -->
-      <div v-if="mode === 'list'" key="list" class="sq__panel">
-        <p class="sq__hint">
-          یک عارضه از لایه انتخابی را به‌عنوان مرکز انتخاب کنید و شعاع جستجو را تنظیم نمایید
-        </p>
-
-        <div class="field-group">
-          <label>عارضه مرجع</label>
-          <AppSelect
-            class="qb-select qb-select--full"
-            :model-value="radiusCenter?.id != null && !isCustomPoint ? String(radiusCenter.id) : ''"
-            :options="centerOptions"
-            placeholder="یک عارضه انتخاب کنید…"
-            @update:model-value="onCenterChange"
+      <!-- شعاع (فقط برای عملگر فاصله) -->
+      <div v-if="operator === 'within-distance'" class="field-group">
+        <label>شعاع جستجو: <span class="mono accent">{{ displayRadius }} کیلومتر</span></label>
+        <div class="radius-control">
+          <input
+            type="range"
+            :min="sliderCfg.min"
+            :max="sliderCfg.max"
+            :step="sliderCfg.step"
+            :value="Math.min(displayRadius, sliderCfg.max)"
+            @input="onSliderRadius($event)"
+            class="slider"
           />
-          <p v-if="centerOptionsCapped" class="sq__hint">
-            فقط {{ CENTER_OPTIONS_CAP.toLocaleString('fa-IR') }} عارضه اول در لیست است؛ برای بقیه از «انتخاب از روی نقشه» استفاده کنید.
-          </p>
-        </div>
-
-        <div class="sq__info mono" v-if="radiusCenter && !isCustomPoint && radiusCenter.id != null">
-          <span class="sq__center-id">#{{ radiusCenter.id }}</span><template v-if="centerLabel"> — {{ centerLabel }}</template><br />
-          مرکز: {{ centerLatLng?.lat?.toFixed(5) }},
-          {{ centerLatLng?.lng?.toFixed(5) }}
-        </div>
-      </div>
-      <!-- حالت: انتخاب از روی نقشه -->
-      <div v-else key="map" class="sq__panel">
-        <p class="sq__hint">
-          روی نقشه کلیک کنید؛ اگر روی فضای خالی بزنید نقطه دلخواه و اگر روی یک عارضه بزنید همان عارضه به‌عنوان مرکز انتخاب می‌شود
-        </p>
-
-        <div class="field-group">
-          <label>نقطه مرکزی</label>
-          <button
-            class="btn-pick"
-            :class="{ 'btn-pick--active': isPicking }"
-            @click="$emit('pick-point')"
-          >
-            {{
-              isPicking
-                ? "در انتظار کلیک روی نقشه…"
-                : hasCenter
-                  ? "تغییر نقطه مرکزی"
-                  : "انتخاب نقطه از نقشه"
-            }}
-          </button>
+          <input
+            type="number"
+            :min="numberCfg.min"
+            :step="numberCfg.step"
+            :value="displayRadius"
+            @input="onManualRadius($event)"
+            class="radius-input"
+            aria-label="شعاع جستجو (کیلومتر)"
+          />
+          <span class="radius-unit">کیلومتر</span>
         </div>
       </div>
-    </Transition>
-
-    <!-- شعاع جستجو (مشترک) -->
-    <div class="field-group">
-      <label>شعاع جستجو: <span class="mono accent">{{ displayRadius }} کیلومتر</span></label>
-      <div class="radius-control">
-        <input
-          type="range"
-          :min="sliderCfg.min"
-          :max="sliderCfg.max"
-          :step="sliderCfg.step"
-          :value="Math.min(displayRadius, sliderCfg.max)"
-          @input="onSliderRadius($event)"
-          class="slider"
-        />
-        <input
-          type="number"
-          :min="numberCfg.min"
-          :step="numberCfg.step"
-          :value="displayRadius"
-          @input="onManualRadius($event)"
-          class="radius-input"
-          aria-label="شعاع جستجو (کیلومتر)"
-        />
-        <span class="radius-unit">کیلومتر</span>
-      </div>
-      <p class="sq__hint sq__hint--tiny">اسلایدر تا {{ sliderCfg.max }} کیلومتر است؛ برای مقادیر بزرگ‌تر عدد را دستی وارد کنید (بدون سقف).</p>
     </div>
 
+    <!-- ─── اجرا (نام یکسان با کوئری توصیفی) ─── -->
     <button
-      v-if="(radiusCenter || customPoint)"
+      v-if="canApply"
       class="btn-apply-spatial"
-      :disabled="spatialLoading"
-      @click="$emit('apply-spatial')"
+      :disabled="relationLoading"
+      @click="$emit('apply-relation')"
     >
-      {{ spatialLoading ? 'در حال اجرا…' : 'اجرای کوئری' }}
+      {{ relationLoading ? 'در حال اجرا…' : 'اجرای کوئری' }}
     </button>
-    </template>
-
-    <!-- مودال انتخاب فیلد نام -->
-    <Transition name="modal">
-      <div v-if="showNameFieldModal" class="modal-backdrop" @click.self="dismissNameFieldModal">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h3>انتخاب فیلد نام عارضه</h3>
-            <button class="modal-close" @click="dismissNameFieldModal">×</button>
-          </div>
-          <p class="modal-hint">هیچ فیلی با واژه "name" در ویژگی‌های لایه یافت نشد. لطفاً فیلد نام را از لیست زیر انتخاب کنید:</p>
-          <div class="modal-body">
-            <AppSelect
-              :model-value="selectedNameField"
-              :options="nameFieldOptions"
-              placeholder="فیلد نام را انتخاب کنید…"
-              @update:model-value="selectedNameField = $event"
-            />
-          </div>
-          <div class="modal-footer">
-            <button class="btn-cancel" @click="dismissNameFieldModal">انصراف</button>
-            <button class="btn-apply" :disabled="!selectedNameField" @click="confirmNameField">تأیید</button>
-          </div>
-        </div>
-      </div>
-    </Transition>
+    <p v-else class="sq__hint sq__hint--tiny">{{ applyHint }}</p>
   </div>
 </template>
 
 <script setup>
-import { computed, ref, watch, nextTick } from "vue";
+import { computed } from "vue";
 import AppSelect from "./AppSelect.vue";
 import { RELATION_OPERATORS } from "../composables/useSpatialRelations.js";
 
 const props = defineProps({
-  mode: { type: String, required: true },
-  // ابزار فعال کوئری مکانی: شعاعی یا رابطه مکانی
-  tool: { type: String, default: "radius" },
-  wells: { type: Array, required: true },
   layers: { type: Array, default: () => [] },
-  activeLayer: { type: String, default: null },
-  activeLayerColor: { type: String, default: "#2a9d8f" },
-  radiusCenter: { type: Object, default: null },
-  radiusKm: { type: Number, required: true },
-  // نگهداشته‌شده برای سازگاری با نسخه‌های قدیمی؛ دیگر استفاده نمی‌شود (فقط کیلومتر)
-  radiusUnit: { type: String, default: "km" },
-  fields: { type: Array, default: () => [] },
-  // فیلدهای لایه فعال (برای جستجوی فیلد name)
-  layerFields: { type: Array, default: () => [] },
-  customPoint: { type: Object, default: null },
-  isPicking: { type: Boolean, default: false },
-  spatialLoading: { type: Boolean, default: false },
-  // ── رابطه مکانی (همیشه کل لایه مبدأ با کل لایه هدف) ──
+  wells: { type: Array, default: () => [] },
+  // ── وضعیت انتخاب عارضه (انتخاب فقط با تولبار نقشه انجام می‌شود) ──
+  selectionCount: { type: Number, default: 0 },
+  // ── مبدأ/هدف + عملگر ──
+  sourceMode: { type: String, default: "selected" },
   sourceLayer: { type: String, default: null },
   targetLayer: { type: String, default: null },
   operator: { type: String, default: "within" },
+  radiusKm: { type: Number, default: 3 },
+  targetOnlySelected: { type: Boolean, default: false },
   relationLoading: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
-  "update:mode",
-  "update:tool",
-  "update:active-layer",
-  "update:radius-center",
-  "update:radius-km",
-  "update:radius-unit",
-  "pick-point",
-  "clear-point",
-  "clear-spatial",
-  "apply-spatial",
+  "clear-selection",
+  "zoom-selection",
+  "update:source-mode",
   "update:source-layer",
   "update:target-layer",
   "update:operator",
+  "update:radius-km",
+  "update:target-only-selected",
   "apply-relation",
 ]);
-
-// مودال انتخاب دستی فیلد نام
-const showNameFieldModal = ref(false)
-const selectedNameField = ref('')
-
-// جستجوی فیلدی که key-ش شامل "name" باشد (بدون حساسیت به حروف بزرگ/کوچک)
-function findNameField() {
-  for (const f of props.layerFields) {
-    if (f.key && f.key.toLowerCase().includes('name')) {
-      return f.key
-    }
-  }
-  for (const key of props.fields) {
-    if (key && key.toLowerCase().includes('name')) {
-      return key
-    }
-  }
-  return null
-}
-
-const labelField = computed(() => {
-  return findNameField() || (selectedNameField.value || null)
-})
-
-// نمایش گزینه‌های فیلد برای مودال
-const nameFieldOptions = computed(() =>
-  props.layerFields.map((f) => ({
-    value: f.key,
-    label: `${f.label || f.key} (${f.key})`,
-  })),
-)
-
-// وقتی لایه فعال یا فیلدهایش تغییر کرد، بررسی کن آیا مودال نیاز دارد
-watch([() => props.activeLayer, () => props.layerFields], () => {
-  selectedNameField.value = ''
-  showNameFieldModal.value = false
-  nextTick(() => {
-    if (!findNameField() && props.layerFields.length > 0) {
-      showNameFieldModal.value = true
-    }
-  })
-})
-
-function confirmNameField() {
-  if (selectedNameField.value) {
-    showNameFieldModal.value = false
-  }
-}
-
-function dismissNameFieldModal() {
-  showNameFieldModal.value = false
-  selectedNameField.value = ''
-}
 
 const layerOptions = computed(() =>
   props.layers.map((layer) => ({
@@ -326,7 +181,6 @@ const layerOptions = computed(() =>
   })),
 );
 
-// ─── رابطه مکانی ───
 const operatorOptions = computed(() =>
   RELATION_OPERATORS.map((o) => ({ value: o.value, label: o.label })),
 );
@@ -334,85 +188,35 @@ const operatorHint = computed(
   () => RELATION_OPERATORS.find((o) => o.value === props.operator)?.hint ?? "",
 );
 
-// اعمال فقط وقتی ممکن است که هر دو لایه انتخاب شده و حداقل یک هندسه در هر لایه باشد
-// همیشه کل لایه مبدأ با کل لایه هدف مقایسه می‌شود
-// حلقه با خروج زودهنگام: قبلاً دو filter کامل روی کل wells اجرا می‌شد
-const canApplyRelation = computed(() => {
-  if (!props.sourceLayer || !props.targetLayer) return false;
-  let hasS = false, hasT = false;
-  for (const w of props.wells) {
-    const lu = String(w._layerUuid);
-    if (!hasS && lu === String(props.sourceLayer)) {
-      if (w._geometry || (Number.isFinite(+w.lat) && Number.isFinite(+w.lng))) hasS = true;
-    } else if (!hasT && lu === String(props.targetLayer)) {
-      if (w._geometry || (Number.isFinite(+w.lat) && Number.isFinite(+w.lng))) hasT = true;
-    }
-    if (hasS && hasT) return true;
+// گام ۱ آماده است اگر: حالت انتخاب‌شده + حداقل یک انتخاب، یا حالت کل‌لایه + لایه مبدأ
+const sourceReady = computed(() => {
+  if (props.sourceMode === "layer") return !!props.sourceLayer;
+  return props.selectionCount > 0;
+});
+
+// دکمه اجرا فقط وقتی که مبدأ و هدف مشخص باشند
+const canApply = computed(() => {
+  if (!sourceReady.value || !props.targetLayer) return false;
+  if (props.operator === "within-distance") {
+    const r = Number(props.radiusKm);
+    if (!Number.isFinite(r) || r <= 0) return false;
   }
-  return false;
+  return true;
 });
 
-// عارضه‌های لایه فعال (فیلتر برای لیست) — اگر لایه‌ای انتخاب نشده همه
-const scopedWells = computed(() => {
-  if (!props.activeLayer) return props.wells;
-  return props.wells.filter((w) => String(w._layerUuid) === String(props.activeLayer));
-});
-
-const wellsWithCoords = computed(() =>
-  scopedWells.value.filter((w) => Number.isFinite(+w.lat) && Number.isFinite(+w.lng)),
-);
-
-// نقطه دلخواه = مرکزی که شناسه عارضه ندارد ولی مختصات دارد
-const isCustomPoint = computed(() => {
-  const c = props.radiusCenter;
-  if (!c) return false;
-  if (c.id != null) return false;
-  return Number.isFinite(+c.lat) && Number.isFinite(+c.lng);
-});
-
-const hasCenter = computed(() => !!(props.radiusCenter || props.customPoint));
-
-const centerLatLng = computed(() => {
-  const c = props.radiusCenter;
-  if (!c) return null;
-  if (Number.isFinite(+c.lat) && Number.isFinite(+c.lng))
-    return { lat: +c.lat, lng: +c.lng };
-  return null;
-});
-
-const centerLabel = computed(() => {
-  const c = props.radiusCenter;
-  if (!c || !labelField.value) return '';
-  return c[labelField.value] ?? '';
-});
-
-// سقف گزینه‌های دراپ‌داون مرکز: ساخت ده‌ها هزار آبجکت آپشن روی هر رندر
-// مرورگر را فریز می‌کرد. کاربر می‌تواند از نقشه انتخاب کند (دقیق‌تر و سریع‌تر).
-const CENTER_OPTIONS_CAP = 2000;
-const centerOptions = computed(() => {
-  const src = wellsWithCoords.value;
-  const n = Math.min(src.length, CENTER_OPTIONS_CAP);
-  const out = new Array(n);
-  for (let i = 0; i < n; i++) {
-    const w = src[i];
-    out[i] = {
-      value: String(w.id),
-      label: labelField.value ? `#${w.id} — ${w[labelField.value]}` : `#${w.id}`,
-    };
+const applyHint = computed(() => {
+  if (!sourceReady.value) {
+    return props.sourceMode === "layer"
+      ? "ابتدا لایه مبدأ را انتخاب کنید."
+      : "ابتدا با ابزارهای انتخاب، عارضه‌هایی از روی نقشه انتخاب کنید.";
   }
-  return out;
+  if (!props.targetLayer) return "حالا لایه هدف را انتخاب کنید.";
+  return "";
 });
-const centerOptionsCapped = computed(() => wellsWithCoords.value.length > CENTER_OPTIONS_CAP);
-
-function onCenterChange(id) {
-  const well = scopedWells.value.find((w) => String(w.id) === String(id));
-  emit("update:radius-center", well || null);
-}
 
 function onManualRadius(e) {
   let val = parseFloat(e.target.value);
   if (Number.isNaN(val)) return;
-  // فقط کیلومتر، بدون سقف؛ فقط کف ۰٫۱ کیلومتر
   if (val < 0.1) val = 0.1;
   emit("update:radius-km", val);
 }
@@ -423,14 +227,12 @@ function onSliderRadius(e) {
   emit("update:radius-km", val);
 }
 
-// فقط کیلومتر — اسلایدر صرفاً برای راحتی است، ورودی دستی سقفی ندارد
 const displayRadius = computed(() => {
   if (!Number.isFinite(props.radiusKm)) return 0;
   return Math.round(props.radiusKm * 10) / 10;
 });
 
 const sliderCfg = { min: 0.5, max: 500, step: 0.5 };
-
 const numberCfg = { min: 0.1, step: 0.1 };
 </script>
 
@@ -440,55 +242,122 @@ const numberCfg = { min: 0.1, step: 0.1 };
   flex-direction: column;
   gap: 14px;
 }
+.sq__step {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+.sq__step--disabled {
+  opacity: 0.55;
+}
+.sq__step-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.sq__step-num {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--brand);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  border-radius: 50%;
+}
+.sq__step--disabled .sq__step-num {
+  background: var(--text-muted);
+}
 .layer-dropdown-wrap { display: flex; flex-direction: column; gap: 5px; }
 .layer-dropdown-label {
   font-size: 11px; font-weight: 700;
   color: var(--text-muted);
   letter-spacing: 0.02em;
 }
-.layer-dropdown-select-wrap {
-  display: flex; align-items: center; gap: 8px;
-}
-.layer-dropdown-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .layer-dropdown-select {
-  flex: 1; min-width: 0;
+  width: 100%;
 }
-.sq__tabs {
+/* وضعیت انتخاب (ابزارها فقط در تولبار نقشه‌اند) */
+.sel-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sel-actions {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.sel-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0891b2;
+}
+.sel-count--empty {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.sel-clear {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-family: inherit;
+  font-weight: 600;
+  padding: 5px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sel-clear:hover:not(:disabled) {
+  border-color: #06b6d4;
+  color: #0891b2;
+}
+.sel-clear--danger:hover:not(:disabled) {
+  color: var(--accent-danger);
+  border-color: var(--accent-danger);
+}
+.sel-clear:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+/* حالت مبدأ */
+.src-mode {
   display: flex;
   gap: 2px;
-  background: var(--bg-panel-raised);
+  background: var(--bg-panel);
   padding: 3px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
 }
-.sq__tab {
+.src-mode__btn {
   flex: 1;
   background: transparent;
   border: none;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 11.5px;
   padding: 7px 6px;
   border-radius: 5px;
   font-weight: 600;
+  font-family: inherit;
   cursor: pointer;
-  transition:
-    background-color 0.28s var(--ease-smooth),
-    color 0.28s var(--ease-smooth),
-    box-shadow 0.28s var(--ease-smooth);
 }
-.sq__tab:hover:not(.sq__tab--active) {
-  color: var(--text-primary);
-}
-.sq__tab--active {
-  background: var(--bg-panel);
+.src-mode__btn--active {
+  background: var(--brand-soft);
   color: var(--brand);
   font-weight: 700;
   box-shadow: var(--shadow-xs), inset 0 0 0 1px var(--border-subtle);
-}
-.sq__panel {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
 }
 .sq__hint {
   margin: 0;
@@ -500,35 +369,30 @@ const numberCfg = { min: 0.1, step: 0.1 };
   font-size: 11px;
   opacity: 0.85;
 }
-.sq__legend {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 0 7px;
-  border-radius: var(--radius-xs);
-  line-height: 18px;
+.sq__warn {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--accent-amber, #b45309);
+  line-height: 1.7;
 }
-.sq__legend--source {
-  color: #1d6fd1;
-  background: rgba(29, 111, 209, 0.12);
-  border: 1px solid rgba(29, 111, 209, 0.4);
-}
-.sq__legend--target {
-  color: #d13b3b;
-  background: rgba(209, 59, 59, 0.1);
-  border: 1px solid rgba(209, 59, 59, 0.4);
-}
-.sq__info {
-  font-size: 11px;
+.scope-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
   color: var(--text-secondary);
-  background: var(--bg-panel-raised);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  direction: ltr;
+  cursor: pointer;
+  line-height: 1.7;
 }
-.sq__center-id {
-  color: var(--text-primary);
-  font-weight: 700;
+.scope-check input {
+  accent-color: #06b6d4;
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+.scope-check--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .field-group {
   display: flex;
@@ -590,53 +454,6 @@ const numberCfg = { min: 0.1, step: 0.1 };
   color: var(--text-muted);
   font-family: var(--font-mono);
 }
-
-.btn-pick {
-  width: 100%;
-  padding: 9px 14px;
-  background: var(--bg-panel);
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  font-size: 12.5px;
-  font-weight: 600;
-  text-align: center;
-  cursor: pointer;
-}
-.btn-pick:hover:not(.btn-pick--active) {
-  border-color: var(--brand);
-  color: var(--brand);
-}
-.btn-pick--active {
-  border-color: var(--brand);
-  border-style: solid;
-  color: var(--brand);
-  background: var(--brand-soft);
-}
-
-.point-info {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 10px;
-  background: var(--bg-input);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  font-size: 11px;
-  color: var(--text-muted);
-  direction: ltr;
-}
-.btn-clear-point {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 12px;
-  padding: 0 4px;
-}
-.btn-clear-point:hover {
-  color: var(--accent-danger);
-}
 .btn-apply-spatial {
   width: 100%;
   padding: 9px 14px;
@@ -656,89 +473,5 @@ const numberCfg = { min: 0.1, step: 0.1 };
 .btn-apply-spatial:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-/* ─── انیمیشن سوییچ تب‌ها ─── */
-.sq-slide-enter-active {
-  transition: opacity 0.22s var(--ease-out), transform 0.28s var(--ease-smooth);
-}
-.sq-slide-leave-active {
-  transition: opacity 0.14s var(--ease-out), transform 0.14s var(--ease-out);
-}
-.sq-slide-enter-from {
-  opacity: 0;
-  transform: translateY(12px);
-}
-.sq-slide-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
-}
-
-/* ─── مودال ─── */
-.modal-backdrop {
-  position: fixed; inset: 0;
-  background: rgba(15, 25, 33, 0.5);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 2000;
-}
-.modal-content {
-  background: var(--bg-panel);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  width: 420px; max-width: calc(100vw - 32px);
-  box-shadow: var(--shadow-lg);
-  overflow: hidden;
-}
-.modal-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 16px 12px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-.modal-header h3 { margin: 0; font-size: 13.5px; font-weight: 700; }
-.modal-close {
-  background: transparent; border: 1px solid transparent; color: var(--text-muted);
-  font-size: 18px; cursor: pointer;
-  width: 28px; height: 28px;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: var(--radius-xs);
-}
-.modal-close:hover { background: var(--bg-panel-raised); color: var(--text-primary); }
-.modal-hint {
-  margin: 12px 16px 0; font-size: 12px; color: var(--text-muted); line-height: 1.7;
-}
-.modal-body { padding: 12px 16px; }
-.modal-footer {
-  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--border-subtle);
-  background: var(--bg-panel-raised);
-}
-.btn-cancel {
-  padding: 7px 16px; border-radius: var(--radius-sm);
-  border: 1px solid var(--border-strong);
-  background: var(--bg-panel); color: var(--text-primary);
-  font-size: 12.5px; font-family: inherit; cursor: pointer;
-}
-.btn-cancel:hover { background: var(--bg-hover); }
-.btn-apply {
-  padding: 7px 20px; border-radius: var(--radius-sm);
-  border: 1px solid var(--brand-strong); background: var(--brand); color: #fff;
-  font-size: 12.5px; font-family: inherit; font-weight: 700;
-  cursor: pointer;
-}
-.btn-apply:hover:not(:disabled) { background: var(--brand-strong); }
-.btn-apply:disabled { opacity: 0.5; cursor: not-allowed; }
-.modal-enter-active, .modal-leave-active {
-  transition: opacity 0.2s var(--ease-out);
-}
-.modal-enter-from, .modal-leave-to {
-  opacity: 0;
-}
-.modal-content-enter-active, .modal-content-leave-active {
-  transition: transform 0.25s var(--ease-out), opacity 0.2s var(--ease-out);
-}
-.modal-content-enter-from, .modal-content-leave-to {
-  transform: translateY(-12px);
-  opacity: 0;
 }
 </style>

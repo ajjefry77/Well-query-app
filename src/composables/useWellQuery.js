@@ -97,6 +97,54 @@ export function useWellQuery() {
     maybeRecomputeRelation()
   }
 
+  // ── انتخاب عارضه (Selection Set به سبک ArcGIS) ──
+  // کلید یکتا: `${layerUuid}::${id}` — شناسه‌ها ممکن است بین لایه‌ها تکراری باشند
+  const selectedKeys = ref(new Set())
+  // محدوده کوئری توصیفی: همه عوارض یا فقط انتخاب‌شده‌ها
+  const attributeScope = ref('all')
+  // حالت مبدأ رابطه مکانی: عوارض انتخاب‌شده یا کل لایه مبدأ
+  const relationSourceMode = ref('selected')
+  // محدود کردن نامزدهای هدف رابطه به عوارض انتخاب‌شده
+  const spatialTargetOnlySelected = ref(false)
+
+  function rowKeyOf(r) {
+    if (!r) return ''
+    return r._layerUuid ? `${r._layerUuid}::${r.id}` : String(r.id ?? '')
+  }
+  function isSelectedRow(r) {
+    const k = rowKeyOf(r)
+    return !!k && selectedKeys.value.has(k)
+  }
+  // ترکیب نتیجه ابزار انتخاب با انتخاب فعلی (مثل ArcGIS):
+  // new = جایگزینی، add = افزودن، remove = حذف، subset = اشتراک (انتخاب از میان انتخاب‌شده)
+  function applySelectionKeys(incoming, mode = 'new') {
+    const next = new Set(mode === 'new' ? [] : selectedKeys.value)
+    if (mode === 'subset') {
+      const inc = new Set((incoming ?? []).map(String))
+      for (const k of [...next]) {
+        if (!inc.has(k)) next.delete(k)
+      }
+    } else if (mode === 'remove') {
+      for (const k of (incoming ?? []).map(String)) next.delete(k)
+    } else if (mode === 'add') {
+      for (const k of (incoming ?? []).map(String)) next.add(k)
+    } else {
+      for (const k of (incoming ?? []).map(String)) next.add(k)
+    }
+    selectedKeys.value = next
+    return next.size
+  }
+  function clearSelection() {
+    selectedKeys.value = new Set()
+  }
+  const selectionCount = computed(() => selectedKeys.value.size)
+  const selectedIds = computed(() => [...selectedKeys.value])
+  const selectedRows = computed(() => {
+    if (!selectedKeys.value.size) return []
+    const set = selectedKeys.value
+    return allFeatures.value.filter(r => set.has(rowKeyOf(r)))
+  })
+
   const layerFieldsMap   = ref({})
   const layerFeaturesMap = ref({})
 
@@ -231,6 +279,13 @@ export function useWellQuery() {
     activeLayers.value = activeLayers.value.filter(l => String(l.uuid) !== String(uuid))
     delete layerFeaturesMap.value[uuid]
     delete layerFieldsMap.value[uuid]
+    // کلیدهای انتخاب‌شده این لایه هم پاک می‌شوند
+    if (selectedKeys.value.size) {
+      const prefix = `${uuid}::`
+      const next = new Set([...selectedKeys.value].filter(k => !String(k).startsWith(prefix)))
+      // کلیدهای بدون پیشوند لایه (قدیمی) را نگه می‌داریم
+      selectedKeys.value = next
+    }
     // اگر لایه حذف‌شده مبدأ/هدف رابطه مکانی بود، رابطه پاک می‌شود
     const rc = relationCommitted.value
     if (rc && (String(rc.sourceLayerUuid) === String(uuid) || String(rc.targetLayerUuid) === String(uuid))) {
@@ -380,11 +435,16 @@ export function useWellQuery() {
   const _countCache = new Map()
   function getLayerResultCount(uuid) {
     if (!isLayerVisible(uuid)) return 0
-    const rows = layerFeaturesMap.value[uuid] ?? []
+    let rows = layerFeaturesMap.value[uuid] ?? []
+    // محدوده «فقط انتخاب‌شده‌ها»: شمارش زنده هم فقط روی انتخاب‌شده‌ها
+    if (attributeScope.value === 'selected' && selectedKeys.value.size) {
+      const set = selectedKeys.value
+      rows = rows.filter(r => set.has(rowKeyOf(r)))
+    }
     const conds = layerConditions.value[uuid] ?? []
     const active = conds.filter(c => c.value !== '' && c.value !== null && c.value !== undefined)
     if (!active.length) return rows.length
-    const sig = JSON.stringify(active.map(c => [c.field, c.operator, c.value, c.logic, !!c.not]))
+    const sig = JSON.stringify([attributeScope.value, selectedKeys.value.size, active.map(c => [c.field, c.operator, c.value, c.logic, !!c.not])])
     const cached = _countCache.get(uuid)
     if (cached && cached.sig === sig && cached.rowsLen === rows.length) return cached.count
     const count = rows.filter(row => evaluateGroup(row, active)).length
@@ -395,12 +455,16 @@ export function useWellQuery() {
   }
 
   // نتایج نهایی: فقط بر اساس شرط‌های تأییدشده
+  // اگر محدوده «فقط انتخاب‌شده‌ها» فعال باشد، نامزدهای هر لایه به انتخاب‌شده‌ها محدود می‌شود
   const attributeResults = computed(() => {
     if (!activeLayers.value.length) return allFeatures.value
+    const onlySel = attributeScope.value === 'selected' && selectedKeys.value.size > 0
+    const selSet = selectedKeys.value
     const results = []
     for (const layer of activeLayers.value) {
       if (!isLayerVisible(layer.uuid)) continue
-      const rows  = layerFeaturesMap.value[layer.uuid] ?? []
+      let rows  = layerFeaturesMap.value[layer.uuid] ?? []
+      if (onlySel) rows = rows.filter(r => selSet.has(rowKeyOf(r)))
       const conds = appliedConditions.value[layer.uuid] ?? []
       const active = conds.filter(c => c.value !== '' && c.value !== null && c.value !== undefined)
       results.push(...(active.length ? rows.filter(row => evaluateGroup(row, active)) : rows))
@@ -476,11 +540,12 @@ export function useWellQuery() {
     spatialLoading.value = false
   }
 
-  // ── رابطه مکانی (کل لایه مبدأ با کل لایه هدف + عملگر) ──
-  // پیش‌نویس فرم و مقادیر تأییدشده (فقط بعد از «اعمال رابطه مکانی» اثر می‌کنند)
+  // ── رابطه مکانی (مبدأ = انتخاب‌شده‌ها یا کل لایه + لایه هدف + عملگر) ──
+  // پیش‌نویس فرم و مقادیر تأییدشده (فقط بعد از «اجرای کوئری» اثر می‌کنند)
   const relationSourceLayer = ref(null)
   const relationTargetLayer = ref(null)
   const relationOperator    = ref('within')
+  const relationRadiusKm    = ref(3)
   const relationCommitted   = ref(null)
 
   function findRelationRows(layerUuid) {
@@ -488,6 +553,17 @@ export function useWellQuery() {
     return allFeatures.value.filter(r =>
       String(r._layerUuid) === String(layerUuid)
     )
+  }
+
+  // سطرهای مبدأ: در حالت selected فقط انتخاب‌شده‌های لایه مبدأ، وگرنه کل لایه
+  function getRelationSourceRows(layerUuid, mode) {
+    const rows = findRelationRows(layerUuid)
+    if (mode === 'selected') {
+      if (!selectedKeys.value.size) return []
+      const set = selectedKeys.value
+      return rows.filter(r => set.has(rowKeyOf(r)))
+    }
+    return rows
   }
 
   // نتایج رابطه مکانی — عمداً ref (نه computed) تا محاسبات سنگین O(S*T)
@@ -513,7 +589,7 @@ export function useWellQuery() {
       relationProgress.value = { done: 0, total: 0 }
       return []
     }
-    const sourceRows = findRelationRows(c.sourceLayerUuid)
+    const sourceRows = getRelationSourceRows(c.sourceLayerUuid, c.sourceMode || 'layer')
     if (!sourceRows.length) {
       if (myId === relationReqId) {
         relationResults.value = []
@@ -521,9 +597,14 @@ export function useWellQuery() {
       }
       return []
     }
-    const targets = allFeatures.value.filter(r =>
+    let targets = allFeatures.value.filter(r =>
       String(r._layerUuid) === String(c.targetLayerUuid)
     )
+    // محدود کردن نامزدهای هدف به عوارض انتخاب‌شده (کوئری از روی انتخاب‌شده‌ها)
+    if (c.targetOnlySelected && selectedKeys.value.size) {
+      const set = selectedKeys.value
+      targets = targets.filter(r => set.has(rowKeyOf(r)))
+    }
     if (!targets.length) {
       if (myId === relationReqId) {
         relationResults.value = []
@@ -532,16 +613,18 @@ export function useWellQuery() {
       return []
     }
     const pairs = sourceRows.length * targets.length
+    const relOpts = { radiusKm: c.radiusKm }
     try {
       let out
       if (pairs <= SYNC_PAIR_LIMIT) {
         // فرصت یک فریم تا اسپینر لودینگ واقعاً رندر شود، بعد محاسبه سریع
         await new Promise(r => setTimeout(r, 30))
         if (ctrl.signal.aborted || myId !== relationReqId) return relationResults.value
-        out = findMatchingRowsMulti(sourceRows, targets, c.operator)
+        out = findMatchingRowsMulti(sourceRows, targets, c.operator, relOpts)
       } else {
         relationProgress.value = { done: 0, total: targets.length }
         out = await findMatchingRowsMultiAsync(sourceRows, targets, c.operator, {
+          ...relOpts,
           signal: ctrl.signal,
           chunkTargets: 300,
           onProgress: (done, total) => {
@@ -577,17 +660,36 @@ export function useWellQuery() {
   const hasRelationFilter = computed(() => relationCommitted.value !== null)
 
   // اعمال رابطه مکانی (با لودینگ؛ محاسبات سنگین تکه‌تکه بعد از رندر لودینگ انجام می‌شود)
-  // همیشه کل لایه مبدأ با کل لایه هدف مقایسه می‌شود
+  // مبدأ = عوارض انتخاب‌شده (حالت selected) یا کل لایه مبدأ (حالت layer)
   async function commitRelationFilter() {
-    if (!relationSourceLayer.value || !relationTargetLayer.value) return false
+    if (!relationTargetLayer.value) return false
+    const mode = relationSourceMode.value || 'selected'
+    if (mode === 'selected') {
+      if (!selectedKeys.value.size) return false
+      // حداقل یک عارضه انتخاب‌شده باید در لایه مبدأ باشد
+      const hasInSource = relationSourceLayer.value
+        ? getRelationSourceRows(relationSourceLayer.value, 'selected').length > 0
+        : selectedRows.value.length > 0
+      if (!hasInSource) return false
+    } else if (!relationSourceLayer.value) {
+      return false
+    }
     spatialLoading.value = true
     relationProgress.value = { done: 0, total: 0 }
     // اجازه بده اسپینر یک فریم رندر شود، بعد محاسبه سنگین شروع شود
     await new Promise(r => setTimeout(r, 60))
+    // در حالت selected اگر لایه مبدأ مشخص نشده، از لایه اولین انتخاب‌شده استفاده می‌شود
+    let srcUuid = relationSourceLayer.value
+    if (mode === 'selected' && !srcUuid) {
+      srcUuid = selectedRows.value[0]?._layerUuid ?? null
+    }
     relationCommitted.value = {
-      sourceLayerUuid: relationSourceLayer.value,
+      sourceLayerUuid: srcUuid,
       targetLayerUuid: relationTargetLayer.value,
       operator: relationOperator.value || 'within',
+      radiusKm: Number(relationRadiusKm.value) || 3,
+      sourceMode: mode,
+      targetOnlySelected: !!spatialTargetOnlySelected.value,
     }
     relationResults.value = []
     try {
@@ -604,6 +706,9 @@ export function useWellQuery() {
     relationSourceLayer.value = null
     relationTargetLayer.value = null
     relationOperator.value    = 'within'
+    relationRadiusKm.value    = 3
+    relationSourceMode.value  = 'selected'
+    spatialTargetOnlySelected.value = false
     relationCommitted.value   = null
     relationResults.value = []
     relationProgress.value = { done: 0, total: 0 }
@@ -677,6 +782,10 @@ export function useWellQuery() {
     committedRadiusCenter.value = null
     committedRadiusKm.value = DEFAULT_RADIUS_KM
     clearRelation()
+    clearSelection()
+    attributeScope.value = 'all'
+    relationSourceMode.value = 'selected'
+    spatialTargetOnlySelected.value = false
     _countCache.clear()
     rebuildAggregated()
   }
@@ -696,7 +805,10 @@ export function useWellQuery() {
     radiusCenter, radiusKm,
     committedRadiusCenter, committedRadiusKm,
     spatialLoading, commitSpatialFilter,
-    relationSourceLayer, relationTargetLayer, relationOperator,
+    relationSourceLayer, relationTargetLayer, relationOperator, relationRadiusKm,
+    relationSourceMode, spatialTargetOnlySelected,
+    selectedKeys, selectedIds, selectedRows, selectionCount,
+    attributeScope, applySelectionKeys, clearSelection, isSelectedRow, rowKeyOf,
     relationCommitted, relationResults, relationProgress, relationError, hasRelationFilter,
     commitRelationFilter, clearRelation,
     savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
