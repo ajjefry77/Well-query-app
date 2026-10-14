@@ -89,6 +89,7 @@
         :layers="layers"
         :wells="wells"
         :selection-count="selectionCount"
+        :selection-layers="selectionLayers"
         :source-mode="sourceMode"
         :source-layer="relationSourceLayer"
         :target-layer="relationTargetLayer"
@@ -96,6 +97,7 @@
         :radius-km="relationRadiusKm"
         :target-only-selected="targetOnlySelected"
         :relation-loading="relationLoading"
+        :relation-error="relationError"
         @clear-selection="$emit('clear-selection')"
         @zoom-selection="$emit('zoom-selection')"
         @update:source-mode="$emit('update:source-mode', $event)"
@@ -140,6 +142,7 @@ const props = defineProps({
   savedQueries: { type: Array, default: () => [] },
   // ── انتخاب عارضه (فقط شمارش؛ ابزارها در تولبار نقشه‌اند) ──
   selectionCount: { type: Number, default: 0 },
+  selectionLayers: { type: Array, default: () => [] },
   attributeScope: { type: String, default: 'all' },
   // ── رابطه مکانی ──
   sourceMode: { type: String, default: 'selected' },
@@ -149,6 +152,7 @@ const props = defineProps({
   relationRadiusKm: { type: Number, default: 3 },
   targetOnlySelected: { type: Boolean, default: false },
   relationLoading: { type: Boolean, default: false },
+  relationError: { type: String, default: null },
 })
 defineEmits([
   'toggle',

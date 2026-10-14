@@ -48,6 +48,11 @@
 
           <!-- ── تب انتخاب عارضه (به سبک ArcGIS) ── -->
           <div v-if="toolTab === 'select'" class="tool-tab-body" role="tabpanel">
+            <div class="tool-steps">
+              <div class="tool-steps__item"><span>۱</span> ابزار را بزنید</div>
+              <div class="tool-steps__item"><span>۲</span> روی نقشه بکشید یا کلیک کنید</div>
+              <div class="tool-steps__item"><span>۳</span> عارضه‌ها زرد می‌شوند</div>
+            </div>
             <div class="tool-section-label">ابزار انتخاب</div>
             <div class="sel-grid">
               <button
@@ -101,6 +106,7 @@
             </div>
             <div class="tool-tip-box">
               <p>کلیک روی ابزار، آن را فعال می‌کند؛ کلیک دوباره غیرفعال.</p>
+              <p>کلیک ساده روی نقشه هم انتخاب نقطه‌ای می‌کند.</p>
               <p><b>Shift</b>: افزودن &nbsp;|&nbsp; <b>Ctrl</b>: حذف &nbsp;|&nbsp; <b>Esc</b>: انصراف</p>
             </div>
           </div>
@@ -241,13 +247,11 @@ import pointToLineDistance from "@turf/point-to-line-distance";
 import turfCircle from "@turf/circle";
 import turfBuffer from "@turf/buffer";
 
-// ─── ابزارهای انتخاب عارضه (دقیقاً مثل منوی Select در ArcMap) ───
+// ─── ابزارهای انتخاب عارضه ───
 const SELECT_TOOLS = [
   { id: "rectangle", label: "مستطیل", icon: "▭", hint: "انتخاب با کشیدن مستطیل (کلیک ساده = انتخاب نقطه‌ای)" },
-  { id: "polygon", label: "چندضلعی", icon: "⬠", hint: "کلیک‌های متوالی + دابل‌کلیک برای پایان" },
-  { id: "lasso", label: "کمند", icon: "〰", hint: "ماوس را نگه دارید و مسیر آزاد بکشید؛ با رها کردن انتخاب می‌شود" },
   { id: "circle", label: "دایره", icon: "○", hint: "انتخاب با کشیدن دایره از مرکز (کلیک ساده = انتخاب نقطه‌ای)" },
-  { id: "line", label: "خط", icon: "╱", hint: "انتخاب عوارض متقاطع با خط (کلیک + دابل‌کلیک)" },
+  { id: "point", label: "دستی", icon: "●", hint: "انتخاب تکی با کلیک روی عارضه" },
 ];
 // روش ترکیب با انتخاب فعلی (Selection Combination Modes در ArcGIS)
 const SELECT_MODES = [
@@ -269,10 +273,8 @@ const TOOL_TABS = [
 // راهنمای متنی هر ابزار انتخاب (نوار شناور ابزار فعال)
 const SELECT_INSTRUCTIONS = {
   rectangle: "با ماوس یک مستطیل روی نقشه بکشید (کلیک ساده = انتخاب نقطه‌ای)",
-  polygon: "نقاط چندضلعی را کلیک کنید — دابل‌کلیک یا Enter برای پایان",
-  lasso: "دکمه ماوس را نگه دارید و مسیر آزاد بکشید — با رها کردن انتخاب می‌شود",
   circle: "از مرکز، دایره را با ماوس بکشید (کلیک ساده = انتخاب نقطه‌ای)",
-  line: "مسیر خط را کلیک کنید — دابل‌کلیک یا Enter برای پایان",
+  point: "روی یک عارضه کلیک کنید",
 };
 
 // ─── سیمبولوژی (ArcGIS-style): استایل پایه هر عارضه از کانفیگ لایه‌اش ───
@@ -552,8 +554,6 @@ const panelOpen = ref(false);
 const toolTab = ref("select");
 const activeMode = ref(null);
 const drawSubTool = ref(null);
-// تعداد رئوس ترسیم جاری انتخاب (نمایش در نوار ابزار فعال)
-const sketchCount = ref(0);
 
 const selectedColor = ref("#3498db");
 
@@ -570,9 +570,7 @@ let pickerCb = null;
 
 // ─── موتور انتخاب عارضه (ArcGIS-like) ───
 let selecting = false;          // ابزار انتخاب فعال است؟
-let selDrag = null;             // { type:'box'|'circle', startX, startY, startLngLat, el }
-let selSketch = null;           // رئوس چندضلعی/خط در حال ترسیم (آرایه [lng,lat])
-let selSketchHandler = null;
+let selDrag = null;             // درگ جاری مستطیل/دایره
 
 function toggleSelectionTool(id) {
   emit("update:selection-tool", props.selectionTool === id ? null : id);
@@ -582,10 +580,7 @@ function toggleSelectionTool(id) {
 const activeToolChip = computed(() => {
   if (props.selectionTool) {
     const t = SELECT_TOOLS.find((x) => x.id === props.selectionTool);
-    let txt = `انتخاب با ${t?.label ?? props.selectionTool} — ${SELECT_INSTRUCTIONS[props.selectionTool] ?? ""}`;
-    if ((props.selectionTool === "polygon" || props.selectionTool === "line") && sketchCount.value > 0)
-      txt += ` (${sketchCount.value.toLocaleString("fa-IR")} نقطه)`;
-    return txt;
+    return `انتخاب با ${t?.label ?? props.selectionTool} — ${SELECT_INSTRUCTIONS[props.selectionTool] ?? ""}`;
   }
   if (activeMode.value === "draw") {
     const sub = drawSubTool.value === "point" ? "نقطه" : drawSubTool.value === "line" ? "خط" : "پلیگان";
@@ -609,6 +604,17 @@ function resolveSelMode(e) {
     if (e?.originalEvent?.ctrlKey || e?.originalEvent?.metaKey) return "remove";
   } catch {}
   return props.selectionMode || "new";
+}
+
+// ─── سرکوب کلیک دنباله‌دار ───
+// بعد از mouseup درگ (مستطیل/دایره)، مرورگر یک رویداد click هم شلیک می‌کند
+// که اگر مهار نشود، انتخابِ تازه‌اعمال‌شده را با انتخاب نقطه‌ای بازنویسی یا پاک می‌کند.
+let selSuppressClickUntil = 0;
+function suppressTrailingClick(ms = 700) {
+  selSuppressClickUntil = Date.now() + ms;
+}
+function isTrailingClick() {
+  return Date.now() < selSuppressClickUntil;
 }
 
 function applySelection(geom, kind, mode) {
@@ -701,56 +707,7 @@ function selectKeysInGeom(geom, kind) {
   return out;
 }
 
-// ─── پیش‌نمایش ترسیم انتخاب (منبع موقت select-src) ───
-const SELECT_SRC = "select-src";
-function ensureSelectSource() {
-  if (!map || map.getSource(SELECT_SRC)) return;
-  map.addSource(SELECT_SRC, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-  map.addLayer({
-    id: "select-fill", type: "fill", source: SELECT_SRC,
-    filter: ["==", ["geometry-type"], "Polygon"],
-    paint: { "fill-color": SEL_COLOR, "fill-opacity": 0.18 },
-  });
-  map.addLayer({
-    id: "select-stroke", type: "line", source: SELECT_SRC,
-    paint: { "line-color": SEL_COLOR, "line-width": 2, "line-dasharray": ["literal", [4, 2]] },
-  });
-  map.addLayer({
-    id: "select-vertex", type: "circle", source: SELECT_SRC,
-    filter: ["==", ["geometry-type"], "Point"],
-    paint: { "circle-radius": 5, "circle-color": SEL_COLOR, "circle-stroke-color": "#fff", "circle-stroke-width": 2 },
-  });
-}
-function setSelectPreview(features) {
-  if (!map) return;
-  ensureSelectSource();
-  try { map.getSource(SELECT_SRC)?.setData({ type: "FeatureCollection", features: features || [] }); } catch {}
-}
-function clearSelectPreview() {
-  selSketch = null;
-  sketchCount.value = 0;
-  try { map.getSource(SELECT_SRC)?.setData({ type: "FeatureCollection", features: [] }); } catch {}
-}
-function refreshSketchPreview(closed) {
-  sketchCount.value = selSketch ? selSketch.length : 0;
-  if (!selSketch || !selSketch.length) { setSelectPreview([]); return; }
-  const feats = [];
-  if ((closed || selSketch.length >= 3) && selSketch.length >= 2) {
-    const ring = [...selSketch];
-    if (closed) {
-      const f = ring[0], l = ring[ring.length - 1];
-      if (f[0] !== l[0] || f[1] !== l[1]) ring.push([...f]);
-      if (ring.length >= 4) feats.push({ type: "Feature", geometry: { type: "Polygon", coordinates: [ring] }, properties: {} });
-    }
-  }
-  if (!closed && selSketch.length >= 2)
-    feats.push({ type: "Feature", geometry: { type: "LineString", coordinates: [...selSketch] }, properties: {} });
-  for (const v of selSketch)
-    feats.push({ type: "Feature", geometry: { type: "Point", coordinates: v }, properties: {} });
-  setSelectPreview(feats);
-}
-
-// فعال/غیرفعال‌سازی ابزار انتخاب
+// فعال/غیرفعال‌سازی ابزار انتخاب (مستطیل/دایره/دستی)
 function setSelectionToolActive(tool) {
   selecting = !!tool;
   // تعارض با ترسیم/اندازه‌گیری و پیکر نقطه: فقط یکی فعال باشد
@@ -764,24 +721,9 @@ function setSelectionToolActive(tool) {
       map.getCanvas().style.cursor = "";
     }
   }
-  clearSelectPreview();
-  if (selSketchHandler && map) {
-    try { map.off("click", selSketchHandler); } catch {}
-    selSketchHandler = null;
-  }
   if (!map) return;
   try {
-    if (tool === "polygon" || tool === "line") {
-      map.doubleClickZoom.disable();
-      map.getCanvas().style.cursor = "crosshair";
-      selSketch = [];
-      selSketchHandler = (e) => {
-        if (!selecting || (props.selectionTool !== "polygon" && props.selectionTool !== "line")) return;
-        selSketch.push([e.lngLat.lng, e.lngLat.lat]);
-        refreshSketchPreview(false);
-      };
-      map.on("click", selSketchHandler);
-    } else if (tool) {
+    if (tool) {
       map.doubleClickZoom.enable();
       map.getCanvas().style.cursor = "crosshair";
     } else {
@@ -791,46 +733,10 @@ function setSelectionToolActive(tool) {
   } catch {}
 }
 
-function finishSketch(e) {
-  if (!selSketch || selSketch.length < (props.selectionTool === "line" ? 2 : 3)) return;
-  if (e) { try { e.preventDefault(); e.stopPropagation(); } catch {} }
-  const tool = props.selectionTool;
-  // حذف رئوس تکراری متوالی (دابل‌کلیک دو کلیک ثبت می‌کند)
-  const verts = selSketch.filter((v, i) =>
-    i === 0 || v[0] !== selSketch[i - 1][0] || v[1] !== selSketch[i - 1][1],
-  );
-  if (verts.length < (tool === "line" ? 2 : 3)) return;
-  clearSelectPreview();
-  setSelectionToolActive(tool); // ترسیم تازه برای انتخاب بعدی
-  selSketch = [];
-  // handler دوباره ساخته شد؛ همان ابزار فعال می‌ماند
-  if (tool === "polygon") {
-    const ring = [...verts];
-    const f = ring[0], l = ring[ring.length - 1];
-    if (f[0] !== l[0] || f[1] !== l[1]) ring.push([...f]);
-    applySelection({ type: "Polygon", coordinates: [ring] }, "polygon", resolveSelMode(e));
-  } else if (tool === "line") {
-    applySelection({ type: "LineString", coordinates: verts }, "line", resolveSelMode(e));
-  }
-}
-
 function onSelKeyDown(e) {
   if (!selecting) return;
-  // تایپ داخل اینپوت‌ها (مثل شعاع) نباید ترسیم را تمام کند
-  try {
-    const tag = e.target?.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || e.target?.isContentEditable) return;
-  } catch {}
   if (e.key === "Escape") {
-    if (selSketch?.length) {
-      clearSelectPreview();
-      const tool = props.selectionTool;
-      setSelectionToolActive(tool);
-    } else {
-      emit("update:selection-tool", null);
-    }
-  } else if (e.key === "Enter") {
-    if (props.selectionTool === "polygon" || props.selectionTool === "line") finishSketch(e);
+    emit("update:selection-tool", null);
   }
 }
 
@@ -850,26 +756,11 @@ function selectAtPixel(px, py, mode, tolPx = 6) {
   );
 }
 
-let selPreviewRaf = null;
-function queueLassoPreview(path) {
-  if (selPreviewRaf) return;
-  selPreviewRaf = requestAnimationFrame(() => {
-    selPreviewRaf = null;
-    if (!path || path.length < 2) return;
-    const feats = [{ type: "Feature", geometry: { type: "LineString", coordinates: [...path] }, properties: {} }];
-    if (path.length >= 3) {
-      const ring = [...path, [...path[0]]];
-      feats.unshift({ type: "Feature", geometry: { type: "Polygon", coordinates: [ring] }, properties: {} });
-    }
-    setSelectPreview(feats);
-  });
-}
-
-// شروع درگ ابزارهای انتخاب روی canvas (مستطیل/دایره/کمند)
+// شروع درگ ابزارهای انتخاب روی canvas (مستطیل/دایره)
 function onSelMouseDown(e) {
   if (!selecting || !map) return;
   const tool = props.selectionTool;
-  if (tool !== "rectangle" && tool !== "circle" && tool !== "lasso") return;
+  if (tool !== "rectangle" && tool !== "circle") return;
   if (e.button !== 0) return;
   try { map.dragPan.disable(); } catch {}
   const container = map.getContainer();
@@ -879,28 +770,13 @@ function onSelMouseDown(e) {
   const el = document.createElement("div");
   el.className = "sel-drag-box";
   if (tool === "circle") el.classList.add("is-circle");
-  if (tool === "lasso") el.style.display = "none";
   el.style.left = startX + "px";
   el.style.top = startY + "px";
   container.appendChild(el);
-  selDrag = { type: tool, startX, startY, startLngLat, el, curX: startX, curY: startY, path: tool === "lasso" ? [[startLngLat.lng, startLngLat.lat]] : null, lastPX: startX, lastPY: startY };
+  selDrag = { type: tool, startX, startY, startLngLat, el };
   const onMove = (ev) => {
     if (!selDrag) return;
     const x = ev.clientX - rect.left, y = ev.clientY - rect.top;
-    selDrag.curX = x; selDrag.curY = y;
-    if (selDrag.type === "lasso") {
-      // نمونه‌برداری مسیر آزاد (حداقل ۳ پیکسل بین نمونه‌ها)
-      const dx = x - selDrag.lastPX, dy = y - selDrag.lastPY;
-      if (dx * dx + dy * dy >= 9) {
-        selDrag.lastPX = x; selDrag.lastPY = y;
-        try {
-          const ll = map.unproject([x, y]);
-          selDrag.path.push([ll.lng, ll.lat]);
-          queueLassoPreview(selDrag.path);
-        } catch {}
-      }
-      return;
-    }
     const x0 = Math.min(selDrag.startX, x), y0 = Math.min(selDrag.startY, y);
     if (selDrag.type === "rectangle") {
       el.style.left = x0 + "px"; el.style.top = y0 + "px";
@@ -918,31 +794,14 @@ function onSelMouseDown(e) {
     window.removeEventListener("mouseup", onUp);
     window.removeEventListener("pointercancel", onCancel);
     try { map.dragPan.enable(); } catch {}
-    if (selPreviewRaf) { cancelAnimationFrame(selPreviewRaf); selPreviewRaf = null; }
     if (!selDrag) return;
     const d = selDrag;
     selDrag = null;
     try { el.remove(); } catch {}
     const endX = ev.clientX - rect.left, endY = ev.clientY - rect.top;
     const mode = (ev.shiftKey && "add") || (ev.ctrlKey || ev.metaKey ? "remove" : null) || props.selectionMode || "new";
-    if (d.type === "lasso") {
-      const path = d.path || [];
-      const moved = Math.abs(endX - d.startX) + Math.abs(endY - d.startY);
-      clearSelectPreview();
-      // کلیک ساده با کمند = انتخاب نقطه‌ای
-      if (path.length < 8 || moved < 6) {
-        selectAtPixel(endX, endY, mode);
-        return;
-      }
-      // بستن حلقه و حذف نقاط تکراری متوالی
-      const ring = path.filter((v, i) => i === 0 || v[0] !== path[i - 1][0] || v[1] !== path[i - 1][1]);
-      const f = ring[0], l = ring[ring.length - 1];
-      if (f[0] !== l[0] || f[1] !== l[1]) ring.push([...f]);
-      if (ring.length >= 4) {
-        applySelection({ type: "Polygon", coordinates: [ring] }, "lasso", mode);
-      }
-      return;
-    }
+    // کلیکِ دنباله‌دار بعد از mouseup نباید انتخاب را خراب کند
+    suppressTrailingClick();
     const moved = Math.abs(endX - d.startX) + Math.abs(endY - d.startY);
     // کلیک ساده با مستطیل/دایره = انتخاب نقطه‌ای (مثل ArcMap)
     if (moved < 5) {
@@ -970,10 +829,8 @@ function onSelMouseDown(e) {
     window.removeEventListener("mousemove", onMove);
     window.removeEventListener("mouseup", onUp);
     try { map.dragPan.enable(); } catch {}
-    if (selPreviewRaf) { cancelAnimationFrame(selPreviewRaf); selPreviewRaf = null; }
     if (selDrag && selDrag.el) { try { selDrag.el.remove(); } catch {} }
     selDrag = null;
-    clearSelectPreview();
   };
   window.addEventListener("pointercancel", onCancel);
 }
@@ -1657,14 +1514,12 @@ function bindWellEventsOnce() {
         if (activeMode.value) return;
         // در حالت انتخاب هوشمند، هندلر کلیک نقشه تصمیم می‌گیرد (جلوگیری از دابل‌فایر)
         if (picking) return;
-        // ── ابزار انتخاب عارضه (مثل ArcMap: کلیک ساده با هر ابزار = انتخاب نقطه‌ای) ──
-        // استثنا: در چندضلعی/خط، کلیک‌ها رئوس ترسیم‌اند و نباید انتخاب نقطه‌ای کنند
+        // ── ابزار انتخاب عارضه: کلیک ساده با هر ابزار = انتخاب نقطه‌ای ──
         if (selecting && props.selectionTool) {
-          if (props.selectionTool !== "polygon" && props.selectionTool !== "line") {
-            try {
-              if (e.point) selectAtPixel(e.point.x, e.point.y, resolveSelMode(e));
-            } catch {}
-          }
+          if (isTrailingClick()) return; // کلیک دنباله‌دار بعد از درگ؛ نادیده
+          try {
+            if (e.point) selectAtPixel(e.point.x, e.point.y, resolveSelMode(e));
+          } catch {}
           return;
         }
         const items = collectStackedFeatures(e);
@@ -1932,8 +1787,9 @@ function renderMarkers(fit = true) {
       f.properties._pfail = isFail ? 1 : 0;
       f.properties._isCenter =
         centerKey && key === centerKey ? 1 : 0;
+      // مجموعه انتخاب هم دقیقاً مسیر کلیک عادی (_selected زرد) را می‌گیرد تا حتماً دیده شود
       f.properties._selected =
-        (selectedKey && (key === selectedKey || String(f.properties.id) === selectedKey)) || isAny ? 1 : 0;
+        ((selectedKey && (key === selectedKey || String(f.properties.id) === selectedKey)) || isAny || isSel) ? 1 : 0;
     });
     // استفاده مجدد از source/layer (بدون بازسازی و بدون fit اضافه)
     if (map.getSource("wells-src")) {
@@ -2287,7 +2143,7 @@ function renderMarkers(fit = true) {
       const isDimmed = !neutral && props.hasFilter && !isH && !isAny && !inSelSet;
       const isMatch = !neutral && props.hasFilter && isH;
       const isCenter = centerKey && key === centerKey;
-      const isSel = (selectedKey && (key === selectedKey || String(w.id) === selectedKey)) || isAny;
+      const isSel = (selectedKey && (key === selectedKey || String(w.id) === selectedKey)) || isAny || inSelSet;
       const sym = symStyleOf(w);
       const symColor = sym?.color ?? null;
       const color = inSelSet
@@ -2369,15 +2225,13 @@ function renderMarkers(fit = true) {
         }
         if (selecting && props.selectionTool) {
           e.stopPropagation();
-          // در چندضلعی/خط، کلیک روی عارضه هم فقط رأس ترسیم است (هندلر نقشه اضافه‌اش می‌کند)
-          if (props.selectionTool !== "polygon" && props.selectionTool !== "line") {
-            // کلیک ساده با ابزارهای دیگر = انتخاب نقطه‌ای (مثل ArcMap)
-            try {
-              const rect = map.getContainer().getBoundingClientRect();
-              const mode = (e.shiftKey && "add") || (e.ctrlKey || e.metaKey ? "remove" : null) || props.selectionMode || "new";
-              selectAtPixel(e.clientX - rect.left, e.clientY - rect.top, mode);
-            } catch {}
-          }
+          if (isTrailingClick()) return; // کلیک دنباله‌دار بعد از درگ؛ نادیده
+          // کلیک ساده با هر ابزار انتخاب = انتخاب نقطه‌ای
+          try {
+            const rect = map.getContainer().getBoundingClientRect();
+            const mode = (e.shiftKey && "add") || (e.ctrlKey || e.metaKey ? "remove" : null) || props.selectionMode || "new";
+            selectAtPixel(e.clientX - rect.left, e.clientY - rect.top, mode);
+          } catch {}
           return;
         }
         emit("select-well", w);
@@ -2450,10 +2304,9 @@ onMounted(async () => {
   // کلیک روی فضای خالی → deselect عارضه (فقط وقتی به عارضه/شکل رسم‌شده نخورده)
   map.on("click", (e) => {
     if (picking) return;
-    // کلیک‌ها در ابزار چندضلعی/خط، رئوس ترسیم‌اند نه انتخاب
-    if (selecting && props.selectionTool && (props.selectionTool === "polygon" || props.selectionTool === "line")) return;
     if (selecting && props.selectionTool) {
       // کلیک روی فضای خالی در حالت «جدید» → پاک شدن انتخاب (مثل ArcGIS)
+      if (isTrailingClick()) return; // کلیک دنباله‌دار بعد از درگ؛ نادیده
       if ((props.selectionMode || "new") === "new") {
         try {
           const layerIds = [...WELL_LAYER_IDS].filter((id) => map.getLayer(id));
@@ -2476,12 +2329,9 @@ onMounted(async () => {
   });
   map.on("load", () => {
     initDrawnSource();
-    ensureSelectSource();
     map.on("mousemove", onMouseMove);
     // درگ مستطیل/دایره انتخاب روی canvas
     try { map.getCanvas().addEventListener("mousedown", onSelMouseDown); } catch {}
-    // پایان ترسیم چندضلعی/خط انتخاب با دابل‌کلیک
-    try { map.on("dblclick", finishSketch); } catch {}
     window.addEventListener("keydown", onSelKeyDown);
     setSelectionToolActive(props.selectionTool);
     renderMarkers();
@@ -2526,8 +2376,9 @@ function updateHighlightData() {
     f.properties._pfail = isFail ? 1 : 0;
     f.properties._isCenter =
       centerKey && key === centerKey ? 1 : 0;
+    // مجموعه انتخاب هم دقیقاً مسیر کلیک عادی (_selected زرد) را می‌گیرد تا حتماً دیده شود
     f.properties._selected =
-      ((selectedKey && (key === selectedKey || String(f.properties.id) === selectedKey)) || isAny) ? 1 : 0;
+      (((selectedKey && (key === selectedKey || String(f.properties.id) === selectedKey)) || isAny) || isSelUp) ? 1 : 0;
   });
   map.getSource("wells-src").setData(wellsGeoJSON);
 }
@@ -2557,9 +2408,11 @@ watch(activeMode, (m) => {
   if (m === "draw") toolTab.value = "draw";
   else if (m === "measure") toolTab.value = "measure";
 });
-// تغییر مجموعه انتخاب → فقط استایل‌ها به‌روز شوند (هایلایت فیروزه‌ای)
+// تغییر مجموعه انتخاب → فقط استایل‌ها به‌روز شوند (هایلایت زرد)
+// نکته: در حالت مارکری (لایه بدون هندسه) باید رندر کامل اجباری شود، چون
+// scheduleRender عادی با wellsKey بدون‌تغییر هیچ کاری نمی‌کند و رنگ عوض نمی‌شد
 watch(() => props.selectionIds, () => {
-  if (!wellsGeoJSON || !map?.getSource?.("wells-src")) scheduleRender();
+  if (!wellsGeoJSON || !map?.getSource?.("wells-src")) scheduleRender(true);
   else scheduleHighlight();
 });
 
@@ -2640,7 +2493,6 @@ function applyMapTheme(t) {
   map.once("style.load", () => {
     initDrawnSource();
     refreshDrawnSource();
-    ensureSelectSource();
     renderMarkers(false);
     updateLabels();
     if (wasActive) {
@@ -2968,10 +2820,42 @@ defineExpose({
   gap: 8px;
 }
 
-/* ─── کارت‌های ابزار انتخاب (ArcGIS-like) ─── */
+/* ─── راهنمای سه‌مرحله‌ای تب انتخاب ─── */
+.tool-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(240, 165, 0, 0.08);
+  border: 1px solid rgba(240, 165, 0, 0.35);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+.tool-steps__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+.tool-steps__item span {
+  width: 19px;
+  height: 19px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0a500;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  border-radius: 50%;
+}
+
+/* ─── کارت‌های ابزار انتخاب ─── */
 .sel-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 5px;
 }
 .sel-card {

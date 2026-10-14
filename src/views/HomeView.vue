@@ -32,6 +32,7 @@
         :field-values="layerFieldValues"
         :wells="allWells"
         :selection-count="selectionCount"
+        :selection-layers="selectionLayerUuids"
         :attribute-scope="attributeScope"
         :source-mode="relationSourceMode"
         :relation-source-layer="relationSourceLayer"
@@ -40,6 +41,7 @@
         :relation-radius-km="relationRadiusKm"
         :target-only-selected="spatialTargetOnlySelected"
         :relation-loading="spatialLoading"
+        :relation-error="relationError"
         :saved-queries="savedQueries"
         @toggle="toggleQueryPanel"
         @update:active-query-layer="activeQueryLayer = $event"
@@ -261,7 +263,7 @@ const {
   relationSourceMode, spatialTargetOnlySelected,
   selectedIds, selectionCount, attributeScope,
   applySelectionKeys, clearSelection,
-  relationCommitted, relationResults, relationProgress,
+  relationCommitted, relationResults, relationProgress, relationError,
   commitRelationFilter, clearRelation,
   savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
   clearAllLocalData,
@@ -813,6 +815,18 @@ const layerFieldValues = computed(() => {
 const visibleActiveLayers = computed(() =>
   activeLayers.value.filter(layer => isLayerVisible(layer.uuid))
 )
+
+// لایه‌هایی که عارضه انتخاب‌شده دارند (اعتبارسنجی مبدأ در پنل مکانی)
+const selectionLayerUuids = computed(() => {
+  const set = new Set((selectedIds.value ?? []).map(String))
+  if (!set.size) return []
+  const layers = new Set()
+  for (const r of allWells.value) {
+    const k = r._layerUuid ? `${r._layerUuid}::${r.id}` : String(r.id ?? '')
+    if (set.has(k) && r._layerUuid != null) layers.add(String(r._layerUuid))
+  }
+  return [...layers]
+})
 
 // ── سیمبولوژی به سبک ArcGIS (کلیک‌راست روی لایه) ──
 const {

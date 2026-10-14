@@ -139,6 +139,7 @@
       {{ relationLoading ? 'در حال اجرا…' : 'اجرای کوئری' }}
     </button>
     <p v-else class="sq__hint sq__hint--tiny">{{ applyHint }}</p>
+    <p v-if="relationError" class="sq__error" role="alert">{{ relationError }}</p>
   </div>
 </template>
 
@@ -152,6 +153,7 @@ const props = defineProps({
   wells: { type: Array, default: () => [] },
   // ── وضعیت انتخاب عارضه (انتخاب فقط با تولبار نقشه انجام می‌شود) ──
   selectionCount: { type: Number, default: 0 },
+  selectionLayers: { type: Array, default: () => [] },
   // ── مبدأ/هدف + عملگر ──
   sourceMode: { type: String, default: "selected" },
   sourceLayer: { type: String, default: null },
@@ -160,6 +162,7 @@ const props = defineProps({
   radiusKm: { type: Number, default: 3 },
   targetOnlySelected: { type: Boolean, default: false },
   relationLoading: { type: Boolean, default: false },
+  relationError: { type: String, default: null },
 });
 
 const emit = defineEmits([
@@ -195,8 +198,17 @@ const sourceReady = computed(() => {
 });
 
 // دکمه اجرا فقط وقتی که مبدأ و هدف مشخص باشند
+// در حالت «از عوارض انتخاب‌شده» اگر لایه مبدأ هم مشخص شده، باید انتخابی در همان لایه باشد
+// (وگرنه اجرا بی‌صدا هیچ کاری نمی‌کرد)
+const selectionInSource = computed(() => {
+  if (props.sourceMode !== "selected") return true;
+  if (!props.sourceLayer) return props.selectionCount > 0;
+  return props.selectionLayers.map(String).includes(String(props.sourceLayer));
+});
+
 const canApply = computed(() => {
   if (!sourceReady.value || !props.targetLayer) return false;
+  if (!selectionInSource.value) return false;
   if (props.operator === "within-distance") {
     const r = Number(props.radiusKm);
     if (!Number.isFinite(r) || r <= 0) return false;
@@ -208,8 +220,10 @@ const applyHint = computed(() => {
   if (!sourceReady.value) {
     return props.sourceMode === "layer"
       ? "ابتدا لایه مبدأ را انتخاب کنید."
-      : "ابتدا با ابزارهای انتخاب، عارضه‌هایی از روی نقشه انتخاب کنید.";
+      : "ابتدا با ابزارهای تب «انتخاب» تولبار نقشه، عارضه انتخاب کنید.";
   }
+  if (!selectionInSource.value)
+    return "عارضه‌های انتخاب‌شده در لایه مبدأ نیستند — لایه مبدأ را عوض کنید یا انتخاب جدید بکنید.";
   if (!props.targetLayer) return "حالا لایه هدف را انتخاب کنید.";
   return "";
 });
@@ -374,6 +388,16 @@ const numberCfg = { min: 0.1, step: 0.1 };
   font-size: 11.5px;
   color: var(--accent-amber, #b45309);
   line-height: 1.7;
+}
+.sq__error {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--accent-danger, #b91c1c);
+  background: rgba(185, 28, 28, 0.07);
+  border: 1px solid rgba(185, 28, 28, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  line-height: 1.8;
 }
 .scope-check {
   display: flex;

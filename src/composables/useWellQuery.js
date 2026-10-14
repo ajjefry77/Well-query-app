@@ -1,6 +1,6 @@
 import { ref, computed, watch } from 'vue'
 import { findWithinRadius } from './useGeoUtils.js'
-import { findMatchingRowsMulti, findMatchingRowsMultiAsync } from './useSpatialRelations.js'
+import { findMatchingRowsMulti, findMatchingRowsMultiAsync, lastRelationStats } from './useSpatialRelations.js'
 import {
   fetchVectorLayers,
   fetchLayerFields,
@@ -635,6 +635,13 @@ export function useWellQuery() {
       if (myId === relationReqId && !ctrl.signal.aborted) {
         relationResults.value = out
         relationProgress.value = { done: targets.length, total: targets.length }
+        // اگر زوج‌های زیادی به‌خاطر هندسه نامعتبر رد شدند و نتیجه‌ای نیست، هشدار بده
+        try {
+          const st = lastRelationStats
+          if ((!out || !out.length) && st && st.errors > 0) {
+            relationError.value = `${st.errors.toLocaleString('fa-IR')} زوج هندسه نامعتبر نادیده گرفته شد؛ اگر عارضه‌ای باید در نتیجه می‌بود، هندسه لایه را بررسی کنید.`
+          }
+        } catch {}
       }
       return myId === relationReqId ? out : relationResults.value
     } catch (e) {
