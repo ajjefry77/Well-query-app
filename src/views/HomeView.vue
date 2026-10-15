@@ -201,19 +201,23 @@
       @zoom="onZoomFromTable"
     />
 
-    <!-- مودال داده تمام عارضه‌های یک لایه -->
+    <!-- مودال جدول داده‌های توصیفی یک لایه (جدا از نتایج؛ تنها جدول دارای انتخاب) -->
     <ResultsModal
       v-if="showLayerDataModal"
       :open="showLayerDataModal"
+      :title="layerDataTitle"
       :rows="layerDataRows"
       :columns="layerDataColumns"
       :layer-meta="layerDataMeta"
       :active-id="activeWellId"
+      :selectable="true"
+      :selected-ids="selectedIds"
       @close="showLayerDataModal = false"
       @select="onSelectFromTable"
       @hover="onHoverRow"
       @export="handleLayerDataExport"
       @zoom="onZoomFromTable"
+      @update:selected-ids="onAttributeTableSelection"
     />
   </div>
 </template>
@@ -262,7 +266,7 @@ const {
   relationSourceLayer, relationTargetLayer, relationOperator, relationRadiusKm,
   relationSourceMode, spatialTargetOnlySelected,
   selectedIds, selectionCount, attributeScope,
-  applySelectionKeys, clearSelection,
+  applySelectionKeys, setSelectionKeys, clearSelection,
   relationCommitted, relationResults, relationProgress, relationError,
   commitRelationFilter, clearRelation,
   savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
@@ -670,6 +674,16 @@ const layerDataMeta = computed(() => {
     fields: layerDataFields.value,
   }]
 })
+const layerDataTitle = computed(() => {
+  const uuid = layerDataUuid.value
+  const layer = activeLayers.value.find(l => String(l.uuid) === String(uuid))
+  const name = layer?.display_name || layer?.name || ''
+  return name ? `جدول داده‌های توصیفی — ${name}` : 'جدول داده‌های توصیفی'
+})
+// انتخاب از جدول توصیفی ↔ نقشه (دوسویه؛ جدول آرایه کامل را می‌فرستد)
+function onAttributeTableSelection(keys) {
+  setSelectionKeys(keys ?? [])
+}
 async function handleLayerDataExport(format) {
   const { exportData } = await import('../composables/useExport.js')
   exportData(format, layerDataRows.value, convertFeature, { crs: crs.value })

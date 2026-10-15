@@ -134,6 +134,11 @@ export function useWellQuery() {
     selectedKeys.value = next
     return next.size
   }
+  // جایگزینی کامل مجموعه انتخاب (مثلاً از جدول داده‌های توصیفی؛ دوسویه با نقشه)
+  function setSelectionKeys(keys) {
+    selectedKeys.value = new Set((keys ?? []).map(String))
+    return selectedKeys.value.size
+  }
   function clearSelection() {
     selectedKeys.value = new Set()
   }
@@ -815,7 +820,7 @@ export function useWellQuery() {
     relationSourceLayer, relationTargetLayer, relationOperator, relationRadiusKm,
     relationSourceMode, spatialTargetOnlySelected,
     selectedKeys, selectedIds, selectedRows, selectionCount,
-    attributeScope, applySelectionKeys, clearSelection, isSelectedRow, rowKeyOf,
+    attributeScope, applySelectionKeys, setSelectionKeys, clearSelection, isSelectedRow, rowKeyOf,
     relationCommitted, relationResults, relationProgress, relationError, hasRelationFilter,
     commitRelationFilter, clearRelation,
     savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,

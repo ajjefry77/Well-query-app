@@ -5,7 +5,7 @@
         <div class="results-modal" role="dialog" aria-modal="true" aria-label="نتایج">
           <div class="results-modal__header">
           <div class="results-modal__title">
-               نتایج
+               {{ title }}
                <span class="results-modal__count mono">{{ rows.length.toLocaleString('fa-IR') }} رکورد</span>
              </div>
              <div class="results-modal__exports" role="group" aria-label="خروجی">
@@ -26,10 +26,13 @@
               :columns="columns"
               :layer-meta="layerMeta"
               :active-id="activeId"
+              :selectable="selectable"
+              :selected-ids="selectedIds"
               @select="$emit('select', $event)"
               @hover="$emit('hover', $event)"
               @export="$emit('export', $event)"
               @zoom="$emit('zoom', $event)"
+              @update:selected-ids="$emit('update:selected-ids', $event)"
             />
           </div>
         </div>
@@ -46,12 +49,15 @@ const EXPORT_FORMATS = ['geojson', 'csv', 'kml', 'kmz', 'shp', 'dxf']
 
 defineProps({
   open: { type: Boolean, default: false },
+  title: { type: String, default: 'نتایج' },
   rows: { type: Array, default: () => [] },
   columns: { type: Array, default: () => [] },
   layerMeta: { type: Array, default: () => [] },
   activeId: { type: [String, Number], default: null },
+  selectable: { type: Boolean, default: false },
+  selectedIds: { type: Array, default: () => [] },
 })
-const emit = defineEmits(['close', 'select', 'hover', 'export', 'zoom'])
+const emit = defineEmits(['close', 'select', 'hover', 'export', 'zoom', 'update:selected-ids'])
 
 function onKey(e) {
   if (e.key === 'Escape') emit('close')

@@ -18,26 +18,26 @@
     </div>
 
     <div class="rt__table-wrap rt__table-wrap--single" v-if="visibleRows.length">
-      <!-- نوار ابزار جدول: انتخاب، زوم و فیلتر انتخاب‌شده‌ها -->
-      <div class="rt__toolbar">
+      <!-- نوار ابزار جدول: انتخاب، زوم و فیلتر انتخاب‌شده‌ها (فقط جدول داده‌های توصیفی) -->
+      <div class="rt__toolbar" v-if="selectable">
         <div class="rt__tools">
           <button class="rt__tool-btn" @click="selectAll" title="انتخاب همه ردیف‌ها">✓ انتخاب همه</button>
           <button class="rt__tool-btn" @click="invertSelection" title="معکوس کردن انتخاب">⇄ معکوس انتخاب</button>
-          <button class="rt__tool-btn" @click="clearSelection" :disabled="!selected.size" title="پاک کردن انتخاب">✕ پاک کردن</button>
+          <button class="rt__tool-btn" @click="clearSelection" :disabled="!globalSet.size" title="پاک کردن انتخاب">✕ پاک کردن</button>
           <button class="rt__tool-btn rt__tool-btn--primary" @click="zoomToSelection" :disabled="!selectedRows.length" title="زوم روی عارضه‌های انتخاب‌شده">
-            🔍 زوم به انتخاب<template v-if="selected.size"> ({{ selected.size.toLocaleString('fa-IR') }})</template>
+            🔍 زوم به انتخاب<template v-if="globalSet.size"> ({{ globalSet.size.toLocaleString('fa-IR') }})</template>
           </button>
-          <label class="rt__tool-check" :class="{ 'rt__tool-check--off': !selected.size }" title="فقط ردیف‌های انتخاب‌شده نمایش داده شوند">
-            <input type="checkbox" v-model="showSelectedOnly" :disabled="!selected.size" /> فقط انتخاب‌شده‌ها
+          <label class="rt__tool-check" :class="{ 'rt__tool-check--off': !globalSet.size }" title="فقط ردیف‌های انتخاب‌شده نمایش داده شوند">
+            <input type="checkbox" v-model="showSelectedOnly" :disabled="!globalSet.size" /> فقط انتخاب‌شده‌ها
           </label>
         </div>
-        <span class="rt__sel-info mono" v-if="selected.size">{{ selected.size.toLocaleString('fa-IR') }} انتخاب شده</span>
+        <span class="rt__sel-info mono" v-if="globalSet.size">{{ globalSet.size.toLocaleString('fa-IR') }} انتخاب شده</span>
       </div>
       <div class="rt__scroll">
         <table class="rt__table" :style="tableStyle(effectiveColumns)">
           <thead>
             <tr>
-              <th class="rt__th--sel" title="انتخاب صفحه جاری">
+              <th v-if="selectable" class="rt__th--sel" title="انتخاب صفحه جاری">
                 <input
                   type="checkbox"
                   :checked="pageChecked"
@@ -73,7 +73,7 @@
               @click="$emit('select', row)"
               @mouseenter="$emit('hover', row)"
             >
-              <td class="rt__td--sel" @click.stop>
+              <td v-if="selectable" class="rt__td--sel" @click.stop>
                 <input
                   type="checkbox"
                   :checked="isSelected(row)"
@@ -107,7 +107,7 @@
       <!-- صفحه‌بندی پیشرفته -->
       <div v-if="totalPages > 1 || pageSizeOptions.length > 1" class="rt__pager">
         <div class="rt__pager-right">
-          <span class="rt__total-rows mono">{{ visibleRows.length.toLocaleString('fa-IR') }} ردیف<template v-if="showSelectedOnly && selected.size"> (از {{ effectiveRows.length.toLocaleString('fa-IR') }})</template></span>
+          <span class="rt__total-rows mono">{{ visibleRows.length.toLocaleString('fa-IR') }} ردیف<template v-if="showSelectedOnly && globalSet.size"> (از {{ effectiveRows.length.toLocaleString('fa-IR') }})</template></span>
           <div v-if="pageSizeOptions.length > 1" class="rt__page-size">
             <label class="rt__page-size-label">ردیف در صفحه:</label>
             <select class="rt__page-size-select" :value="pageSize" @change="onPageSizeChange">
@@ -170,8 +170,11 @@ const props = defineProps({
   columns:   { type: Array,  required: true },
   activeId:  { type: String, default: null },
   layerMeta: { type: Array,  default: () => [] },
+  // انتخاب فقط در جدول داده‌های توصیفی فعال است و دوسویه با نقشه همگام می‌شود
+  selectable:  { type: Boolean, default: false },
+  selectedIds: { type: Array,   default: () => [] },
 })
-const emit = defineEmits(['select', 'hover', 'export', 'zoom'])
+const emit = defineEmits(['select', 'hover', 'export', 'zoom', 'update:selected-ids'])
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200]
 const pageSize = ref(100)
@@ -179,51 +182,60 @@ const pageSizeOptions = PAGE_SIZE_OPTIONS
 const page = ref(1)
 const activeTab = ref('')
 
-/* ---------- انتخاب ردیف‌ها (مثل جدول ArcGIS) ---------- */
-const selected = ref(new Set())
+/* ---------- انتخاب ردیف‌ها (کنترل‌شده از والد؛ دوسویه با نقشه) ---------- */
 const showSelectedOnly = ref(false)
+
+// مجموعه سراسری انتخاب (از نقشه یا همین جدول می‌آید)
+const globalSet = computed(() => new Set((props.selectedIds ?? []).map(String)))
 
 function rowKeyOf(row) {
   return row._layerUuid ? `${row._layerUuid}::${row.id}` : String(row.id ?? '')
 }
 function isSelected(row) {
-  return selected.value.has(String(rowKeyOf(row)))
+  return props.selectable && globalSet.value.has(String(rowKeyOf(row)))
+}
+function pushGlobal(next) {
+  emit('update:selected-ids', [...next])
 }
 function toggleRow(row) {
   const k = String(rowKeyOf(row))
-  const next = new Set(selected.value)
+  const next = new Set(globalSet.value)
   if (next.has(k)) next.delete(k)
   else next.add(k)
-  selected.value = next
+  pushGlobal(next)
 }
 function selectAll() {
-  selected.value = new Set(effectiveRows.value.map(r => String(rowKeyOf(r))))
+  const next = new Set(globalSet.value)
+  for (const r of effectiveRows.value) next.add(String(rowKeyOf(r)))
+  pushGlobal(next)
 }
 function invertSelection() {
-  const next = new Set(selected.value)
+  const next = new Set(globalSet.value)
   for (const r of effectiveRows.value) {
     const k = String(rowKeyOf(r))
     if (next.has(k)) next.delete(k)
     else next.add(k)
   }
-  selected.value = next
+  pushGlobal(next)
 }
 function clearSelection() {
-  selected.value = new Set()
+  const next = new Set(globalSet.value)
+  for (const r of effectiveRows.value) next.delete(String(rowKeyOf(r)))
+  pushGlobal(next)
   showSelectedOnly.value = false
 }
 function togglePage(e) {
   const checked = e?.target?.checked
-  const next = new Set(selected.value)
+  const next = new Set(globalSet.value)
   for (const r of pagedRows.value) {
     const k = String(rowKeyOf(r))
     if (checked) next.add(k)
     else next.delete(k)
   }
-  selected.value = next
+  pushGlobal(next)
 }
 const selectedRows = computed(() => {
-  const set = selected.value
+  const set = globalSet.value
   if (!set.size) return []
   return effectiveRows.value.filter(r => set.has(String(rowKeyOf(r))))
 })
@@ -264,15 +276,15 @@ const effectiveColumns = computed(() =>
 )
 /* ردیف‌های قابل مشاهده: با فعال بودن «فقط انتخاب‌شده‌ها» فقط منتخب‌ها */
 const visibleRows = computed(() => {
-  if (!showSelectedOnly.value || !selected.value.size) return effectiveRows.value
-  const set = selected.value
+  if (!showSelectedOnly.value || !globalSet.value.size) return effectiveRows.value
+  const set = globalSet.value
   return effectiveRows.value.filter(r => set.has(String(rowKeyOf(r))))
 })
 const pageChecked = computed(() =>
-  pagedRows.value.length > 0 && pagedRows.value.every(r => selected.value.has(String(rowKeyOf(r))))
+  pagedRows.value.length > 0 && pagedRows.value.every(r => globalSet.value.has(String(rowKeyOf(r))))
 )
 const pageIndeterminate = computed(() =>
-  !pageChecked.value && pagedRows.value.some(r => selected.value.has(String(rowKeyOf(r))))
+  !pageChecked.value && pagedRows.value.some(r => globalSet.value.has(String(rowKeyOf(r))))
 )
 
 function selectTab(uuid) {
