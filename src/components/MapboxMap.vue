@@ -494,7 +494,6 @@ const activeToolChip = computed(() => {
 function deactivateAllTools() {
   clearSelAnchor();
   cancelSelDrag();
-  cancelSelPress();
   if (props.selectionTool) emit("update:selection-tool", null);
   if (activeMode.value) deactivateAll();
 }
@@ -678,7 +677,6 @@ function disableMapRotation() {
 function setSelectionToolActive(tool) {
   selecting = !!tool;
   // تعویض ابزار یا غیرفعال‌سازی → ژست نیمه‌کاره پاک شود
-  cancelSelPress();
   if (selDrag && (!tool || selDrag.type !== tool)) cancelSelDrag();
   if (!tool || (selAnchor && selAnchor.type !== tool)) clearSelAnchor();
   // تعارض با ترسیم/اندازه‌گیری و پیکر نقطه: فقط یکی فعال باشد
@@ -695,8 +693,12 @@ function setSelectionToolActive(tool) {
   if (!map) return;
   try {
     disableMapRotation();
-    // درگ/پن نقشه همیشه فعال می‌ماند (انتخاب بدون درگ است)
-    try { map.dragPan.enable(); } catch {}
+    // ابزار «دستی»: درگ کردن بی‌اثر است (نه انتخاب، نه پن نقشه)
+    if (tool === "point") {
+      try { map.dragPan.disable(); } catch {}
+    } else {
+      try { map.dragPan.enable(); } catch {}
+    }
     if (tool) {
       map.doubleClickZoom.enable();
       map.getCanvas().style.cursor = tool === "info" ? "pointer" : "crosshair";
@@ -732,7 +734,6 @@ function onSelKeyUp(e) {
 }
 function onSelBlur() {
   modHeld.shift = false; modHeld.ctrl = false; modHeld.meta = false; modHeld.alt = false;
-  cancelSelPress();
 }
 
 // حلقه مستطیل پیکسلی به مختصات جغرافیایی
@@ -848,23 +849,15 @@ function onSelMouseMove(e) {
   paintSelPreview(selAnchor, x, y);
 }
 // درگ با کلید اصلاح‌کننده: Shift=افزودن، Ctrl=حذف، Alt=فقط کاملاً داخل
+// (فقط مستطیل/دایره؛ ابزار دستی درگ ندارد و درگ = پن نقشه)
 let selDrag = null; // { type, startX, startY, startLngLat, el, mods }
-let selPress = null; // فشار Shift/Ctrl/Alt با ابزار دستی؛ انتخاب روی mouseup انجام می‌شود
 function onSelMouseDown(e) {
   if (!selecting || !map) return;
   const tool = props.selectionTool;
-  if (tool !== "rectangle" && tool !== "circle" && tool !== "point") return;
+  if (tool !== "rectangle" && tool !== "circle") return;
   if (e.button !== 0) return;
   const m = domMods(e);
-  if (!m.shift && !m.ctrl && !m.alt) return; // درگ/کلیک ساده = پن نقشه یا انتخاب نقطه‌ای
-  // ابزار دستی: بدون پیش‌نمایش و بدون بستن پن؛ ثبت روی mouseup تا Shift/Ctrl حتماً اعمال شود
-  if (tool === "point") {
-    if (selPress) return;
-    const [sx, sy] = containerXY(e.clientX, e.clientY);
-    selPress = { x: sx, y: sy, mods: m };
-    window.addEventListener("mouseup", onSelPressUp);
-    return;
-  }
+  if (!m.shift && !m.ctrl && !m.alt) return; // درگ/کلیک ساده = پن نقشه
   if (selDrag || selAnchor) return;
   try { map.dragPan.disable(); } catch {}
   const [sx, sy] = containerXY(e.clientX, e.clientY);
@@ -902,23 +895,6 @@ function cancelSelDrag() {
   try { map.dragPan.enable(); } catch {}
   try { selDrag?.el?.remove(); } catch {}
   selDrag = null;
-}
-// mouseup فشار ابزار دستی: اگر جابه‌جا نشده بود (پن نبود) همان‌جا ثبت شود
-function onSelPressUp(ev) {
-  window.removeEventListener("mouseup", onSelPressUp);
-  const p = selPress;
-  selPress = null;
-  if (!p || !selecting || !map || props.selectionTool !== "point") return;
-  let ex = p.x, ey = p.y;
-  try { [ex, ey] = containerXY(ev.clientX, ev.clientY); } catch {}
-  if (Math.abs(ex - p.x) + Math.abs(ey - p.y) > 8) return; // پن بود، نه کلیک
-  const m = mergeSelMods(p.mods, domMods(ev));
-  suppressSelClick();
-  selectAtPixel(ex, ey, modeOfMods(m), m.alt);
-}
-function cancelSelPress() {
-  window.removeEventListener("mouseup", onSelPressUp);
-  selPress = null;
 }
 // کلیک در حالت انتخاب مستطیل/دایره:
 // کلیک اول = ثبت لنگر، کلیک دوم = ثبت نهایی (بدون حرکت = نقطه‌ای)
@@ -2584,7 +2560,6 @@ onBeforeUnmount(() => {
   clearLabelMarkers();
   clearSelAnchor();
   cancelSelDrag();
-  cancelSelPress();
   try { window.removeEventListener("keydown", onSelKeyDown); } catch {}
   try { window.removeEventListener("keyup", onSelKeyUp); } catch {}
   try { window.removeEventListener("blur", onSelBlur); } catch {}
