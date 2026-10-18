@@ -76,6 +76,7 @@
             :radius-center="showRadiusOnMap ? committedRadiusCenter : null"
            :radius-km="committedRadiusKm"
              :selected-id="selectedWellId"
+             :info-well-key="infoWellId"
              :selection-tool="selectionTool"
              :selection-mode="selectionMode"
              :selection-ids="selectedIds"
@@ -84,6 +85,8 @@
              :sym-configs="symConfigs"
              :sym-version="symVersion"
             @select-well="onSelectFromMap"
+            @info-select="onInfoFromMap"
+            @update:info-well-key="infoWellId = $event"
             @map-empty-click="onMapEmptyClick"
             @update:selection-tool="selectionTool = $event"
             @update:selection-mode="selectionMode = $event"
@@ -301,6 +304,8 @@ const selectionMode    = ref('new')
 const mapRef           = shallowRef(null)
 const activeWellId     = ref(null)
 const selectedWellId   = ref(null)
+// عارضه‌ای که ابزار «اطلاعات» روی آن کلیک کرده → آبی پر رنگ روی نقشه
+const infoWellId       = ref(null)
 const resultsPanelOpen = ref(true)
 const customPoint      = ref(null)
 const isPickingPoint   = ref(false)
@@ -744,7 +749,7 @@ const mapWells = computed(() => {
   const src = hasAnyFilter.value ? displayRows.value : visibleWells.value
   if (src.length <= MAP_RENDER_CAP) return src
   const out = fairSamplePerLayer(src, MAP_RENDER_CAP)
-  const keep = activeWellId.value ?? selectedWellId.value
+  const keep = activeWellId.value ?? selectedWellId.value ?? infoWellId.value
   if (keep) {
     let found = false
     for (let i = 0; i < out.length; i++) {
@@ -1011,6 +1016,7 @@ function zoomToResults() {
 function onMapEmptyClick() {
   activeWellId.value = null
   selectedWellId.value = null
+  infoWellId.value = null
   if (queryKind.value === 'spatial') {
     radiusCenter.value = null
     customPoint.value = null
@@ -1027,6 +1033,10 @@ function onSelectFromMap(well) {
     mapRef.value?.disablePointPicker()
   }
   mapRef.value?.zoomToFeature(rowKey(well))
+}
+// ابزار اطلاعات: عارضه کلیک‌شده آبی پر رنگ می‌شود (بدون زوم و بدون تغییر انتخاب)
+function onInfoFromMap(well) {
+  infoWellId.value = rowKey(well)
 }
 function onSelectFromTable(row) {
   activeWellId.value = rowKey(row)

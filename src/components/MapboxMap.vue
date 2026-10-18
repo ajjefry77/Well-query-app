@@ -4,6 +4,19 @@
 
     <!-- نوار ابزارهای کنار نقشه (ثابت، بدون دراپ‌داون؛ آیکون + hint) -->
     <div class="map-tools" role="toolbar" aria-label="ابزارهای نقشه">
+      <!-- ابزار اطلاعات: جدا و بالاتر از همه ابزارها -->
+      <div class="map-tools__group">
+        <button
+          class="map-tool"
+          :class="{ active: selectionTool === 'info' }"
+          data-tool="info"
+          title="اطلاعات"
+          @click="toggleSelectionTool('info')"
+        >i</button>
+      </div>
+
+      <div class="map-tools__sep"></div>
+
       <!-- گروه انتخاب -->
       <div class="map-tools__group">
         <button
@@ -11,6 +24,7 @@
           :key="t.id"
           class="map-tool"
           :class="{ active: selectionTool === t.id }"
+          :data-tool="t.id"
           :title="t.hint"
           @click="toggleSelectionTool(t.id)"
         >{{ t.icon }}</button>
@@ -143,12 +157,16 @@ const SELECT_TOOLS = [
 // هایلایت مجموعه انتخاب — دقیقاً هم‌رنگ انتخاب با کلیک عادی (زرد)
 const SEL_COLOR = "#f0a500";
 const SEL_BORDER = "#1a1a1a";
+// هایلایت آبی پر رنگ برای ابزار «اطلاعات»
+const INFO_COLOR = "#2563eb";
+const INFO_BORDER = "#1e3a8a";
 
 // راهنمای متنی هر ابزار انتخاب (نوار شناور ابزار فعال)
 const SELECT_INSTRUCTIONS = {
   rectangle: "کلیک اول، حرکت موس، کلیک دوم",
   circle: "کلیک اول مرکز، حرکت موس، کلیک دوم",
   point: "روی عارضه کلیک کنید",
+  info: "روی عارضه کلیک کنید",
 };
 
 // ─── سیمبولوژی (ArcGIS-style): استایل پایه هر عارضه از کانفیگ لایه‌اش ───
@@ -405,6 +423,8 @@ const props = defineProps({
   radiusCenter: { type: Object, default: null },
   radiusKm: { type: Number, default: 0 },
   selectedId: { type: [String, Number], default: null },
+  // عارضه‌ای که ابزار «اطلاعات» روی آن کلیک کرده → آبی پر رنگ + پاپ‌آپ مشخصات
+  infoWellKey: { type: String, default: null },
   // کانفیگ سیمبولوژی هر لایه (uuid -> config) — استایل per-feature داخل همین کامپوننت ساخته می‌شود
   symConfigs: { type: Object, default: () => ({}) },
   symVersion: { type: Number, default: 0 },
@@ -421,7 +441,7 @@ const props = defineProps({
   selectionIds: { type: Array, default: () => [] },
   selectionCount: { type: Number, default: 0 },
 });
-const emit = defineEmits(["select-well", "map-empty-click", "update:selection-tool", "update:selection-mode", "selection-change", "selection-clear", "zoom-to-selection"]);
+const emit = defineEmits(["select-well", "map-empty-click", "update:selection-tool", "update:selection-mode", "selection-change", "selection-clear", "zoom-to-selection", "info-select", "update:info-well-key"]);
 
 const mapEl = ref(null);
 const activeMode = ref(null);
@@ -454,6 +474,7 @@ const selAnchorActive = ref(false);
 // متن نوار شناور ابزار فعال (تا کاربر همیشه بداند چه ابزاری فعال است و چه کند)
 const activeToolChip = computed(() => {
   if (props.selectionTool) {
+    if (props.selectionTool === "info") return "اطلاعات: روی عارضه کلیک کنید";
     const t = SELECT_TOOLS.find((x) => x.id === props.selectionTool);
     if (selAnchorActive.value && (props.selectionTool === "rectangle" || props.selectionTool === "circle"))
       return `${t?.label ?? props.selectionTool}: کلیک دوم = ثبت`;
@@ -678,7 +699,7 @@ function setSelectionToolActive(tool) {
     try { map.dragPan.enable(); } catch {}
     if (tool) {
       map.doubleClickZoom.enable();
-      map.getCanvas().style.cursor = "crosshair";
+      map.getCanvas().style.cursor = tool === "info" ? "pointer" : "crosshair";
     } else {
       map.doubleClickZoom.enable();
       map.getCanvas().style.cursor = "";
@@ -1580,12 +1601,24 @@ function collectStackedFeatures(e) {
   return items;
 }
 
+// پاپ‌آپ آخرین کلیک ابزار «اطلاعات» — برای بستن/پاک‌سازی هنگام غیرفعال‌سازی ابزار
+let lastInfoPopup = null;
+// بسته شدن پاپ‌آپ اطلاعات → حذف هایلایت آبی (فقط اگر همان پاپ‌آپ آخری باشد)
+function onInfoPopupClose(popup) {
+  try {
+    if (lastInfoPopup !== popup) return;
+    lastInfoPopup = null;
+    emit("update:info-well-key", null);
+  } catch {}
+}
 function showStackedPopup(items, lngLat) {
   const popup = new mapboxgl.Popup({ maxWidth: "340px" })
     .setLngLat(lngLat)
     .setHTML(multiPopupHTML(items))
     .addTo(map);
   bindPopupTabs(popup);
+  popup.on("close", () => onInfoPopupClose(popup));
+  lastInfoPopup = popup;
   return popup;
 }
 
@@ -1603,12 +1636,18 @@ function bindWellEventsOnce() {
         if (activeMode.value) return;
         // در حالت انتخاب هوشمند، هندلر کلیک نقشه تصمیم می‌گیرد (جلوگیری از دابل‌فایر)
         if (picking) return;
-        // ── ابزار انتخاب عارضه ──
+        // ── ابزارهای انتخاب عارضه + ابزار اطلاعات ──
         if (selecting && props.selectionTool) {
           if (isSelClickSuppressed()) return;
           try { syncModsFromDomEvent(e?.originalEvent); } catch {}
           try {
-            if (props.selectionTool === "point") {
+            if (props.selectionTool === "info") {
+              // ابزار اطلاعات: عارضه آبی پر رنگ + نمایش مشخصات
+              const items = collectStackedFeatures(e);
+              if (!items.length) return;
+              emit("info-select", items[0].well);
+              showStackedPopup(items, e.lngLat);
+            } else if (props.selectionTool === "point") {
               if (e.point) selectAtPixel(e.point.x, e.point.y, resolveSelMode(e), isContainedOnly(e));
             } else if (e.point) {
               handleSelAnchorClick(e.point.x, e.point.y, e);
@@ -1616,17 +1655,21 @@ function bindWellEventsOnce() {
           } catch {}
           return;
         }
-        const items = collectStackedFeatures(e);
-        if (!items.length) return;
-        emit("select-well", items[0].well);
-        showStackedPopup(items, e.lngLat);
+        // ── کلیک عادی (بدون ابزار): انتخاب دستی ──
+        if (isSelClickSuppressed()) return;
+        try { syncModsFromDomEvent(e?.originalEvent); } catch {}
+        try {
+          if (e.point) selectAtPixel(e.point.x, e.point.y, resolveSelMode(e), isContainedOnly(e));
+        } catch {}
       });
       map.on("mouseenter", layerId, () => {
         if (selecting && props.selectionTool) return;
         map.getCanvas().style.cursor = "pointer";
       });
       map.on("mouseleave", layerId, () => {
-        map.getCanvas().style.cursor = (selecting && props.selectionTool) ? "crosshair" : "";
+        map.getCanvas().style.cursor = (selecting && props.selectionTool)
+          ? (props.selectionTool === "info" ? "pointer" : "crosshair")
+          : "";
       });
     },
   );
@@ -1664,6 +1707,7 @@ function _statusColorExpr(failC, okC) {
   return [
     "case",
     ["==", ["get", "_sel"], 1], SEL_COLOR,
+    ["==", ["get", "_infoKey"], 1], INFO_COLOR,
     ["==", ["get", "_pfail"], 1], failC,
     ["==", ["get", "_pok"], 1], okC,
     ["==", ["get", "_psrc"], 1], PREVIEW_SRC_COLOR,
@@ -1692,6 +1736,7 @@ function _lineWidthPoly() {
   return [
     "case",
     ["==", ["get", "_sel"], 1], 4,
+    ["==", ["get", "_infoKey"], 1], 4,
     ["==", ["get", "_pfail"], 1], 4,
     ["==", ["get", "_pok"], 1], 4,
     ["==", ["get", "_psrc"], 1], 4,
@@ -1708,6 +1753,7 @@ function _lineWidthLine() {
   return [
     "case",
     ["==", ["get", "_sel"], 1], 4,
+    ["==", ["get", "_infoKey"], 1], 4,
     ["==", ["get", "_pfail"], 1], 4,
     ["==", ["get", "_pok"], 1], 4,
     ["==", ["get", "_psrc"], 1], 4,
@@ -1725,6 +1771,7 @@ function _lineOpacity(dimmedVal) {
   return [
     "case",
     ["==", ["get", "_sel"], 1], 1,
+    ["==", ["get", "_infoKey"], 1], 1,
     ["==", ["get", "_pfail"], 1], 1,
     ["==", ["get", "_pok"], 1], 1,
     ["==", ["get", "_psrc"], 1], 1,
@@ -1746,6 +1793,7 @@ function _pointHalo() {
   return [
     "case",
     ["==", ["get", "_sel"], 1], SEL_BORDER,
+    ["==", ["get", "_infoKey"], 1], "#ffffff",
     ["==", ["get", "_pfail"], 1], PREVIEW_FAIL_BORDER,
     ["==", ["get", "_pok"], 1], PREVIEW_OK_BORDER,
     ["==", ["get", "_psrc"], 1], "#1a1a1a",
@@ -1762,6 +1810,7 @@ function _pointOpacity() {
   return [
     "case",
     ["==", ["get", "_sel"], 1], 1,
+    ["==", ["get", "_infoKey"], 1], 1,
     ["==", ["get", "_pfail"], 1], 1,
     ["==", ["get", "_pok"], 1], 1,
     ["==", ["get", "_psrc"], 1], 1,
@@ -1775,6 +1824,7 @@ function _pointTextSize() {
   return [
     "case",
     ["==", ["get", "_sel"], 1], 26,
+    ["==", ["get", "_infoKey"], 1], 26,
     ["==", ["get", "_pfail"], 1], 26,
     ["==", ["get", "_pok"], 1], 26,
     ["==", ["get", "_psrc"], 1], 26,
@@ -1851,6 +1901,7 @@ function renderMarkers(fit = true) {
   const psets = previewSets();
   const centerKey = wellKey(props.radiusCenter);
   const selectedKey = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null;
+  const infoKey = props.infoWellKey != null && props.infoWellKey !== '' ? String(props.infoWellKey) : null;
   const hasGeometry = props.wells.some((w) => w._geometry);
 
   if (hasGeometry) {
@@ -1877,6 +1928,7 @@ function renderMarkers(fit = true) {
       f.properties._dimmed = (!neutral && props.hasFilter && !hl && !isAny && !isSel) ? 1 : 0;
       f.properties._match = match ? 1 : 0;
       f.properties._sel = isSel ? 1 : 0;
+      f.properties._infoKey = (infoKey && (key === infoKey || String(f.properties.id) === infoKey)) ? 1 : 0;
       f.properties._psrc = isSrc && !isOk && !isFail ? 1 : 0;
       f.properties._pok = isOk ? 1 : 0;
       f.properties._pfail = isFail ? 1 : 0;
@@ -1905,6 +1957,8 @@ function renderMarkers(fit = true) {
           "case",
           ["==", ["get", "_sel"], 1],
           SEL_COLOR,
+          ["==", ["get", "_infoKey"], 1],
+          INFO_COLOR,
           ["==", ["get", "_pfail"], 1],
           PREVIEW_FAIL_COLOR,
           ["==", ["get", "_pok"], 1],
@@ -1928,6 +1982,8 @@ function renderMarkers(fit = true) {
           "case",
           ["==", ["get", "_sel"], 1],
           0.55,
+          ["==", ["get", "_infoKey"], 1],
+          1,
           ["==", ["get", "_pfail"], 1],
           0.6,
           ["==", ["get", "_pok"], 1],
@@ -1963,6 +2019,8 @@ function renderMarkers(fit = true) {
           "case",
           ["==", ["get", "_sel"], 1],
           SEL_COLOR,
+          ["==", ["get", "_infoKey"], 1],
+          INFO_COLOR,
           ["==", ["get", "_pfail"], 1],
           PREVIEW_FAIL_BORDER,
           ["==", ["get", "_pok"], 1],
@@ -1984,6 +2042,8 @@ function renderMarkers(fit = true) {
         "line-width": [
           "case",
           ["==", ["get", "_sel"], 1],
+          4,
+          ["==", ["get", "_infoKey"], 1],
           4,
           ["==", ["get", "_pfail"], 1],
           4,
@@ -2038,6 +2098,8 @@ function renderMarkers(fit = true) {
           "case",
           ["==", ["get", "_sel"], 1],
           4,
+          ["==", ["get", "_infoKey"], 1],
+          4,
           ["==", ["get", "_pfail"], 1],
           4,
           ["==", ["get", "_pok"], 1],
@@ -2064,6 +2126,8 @@ function renderMarkers(fit = true) {
           "case",
           ["==", ["get", "_sel"], 1],
           SEL_COLOR,
+          ["==", ["get", "_infoKey"], 1],
+          INFO_COLOR,
           ["==", ["get", "_pfail"], 1],
           PREVIEW_FAIL_COLOR,
           ["==", ["get", "_pok"], 1],
@@ -2082,7 +2146,16 @@ function renderMarkers(fit = true) {
           "#4a9b8e",
           "#8a9490",
         ],
-        "line-opacity": ["case", ["==", ["get", "_dimmed"], 1], 0.25, ["coalesce", ["get", "_sym_op"], 1]],
+        "line-opacity": [
+          "case",
+          ["==", ["get", "_sel"], 1],
+          1,
+          ["==", ["get", "_infoKey"], 1],
+          1,
+          ["==", ["get", "_dimmed"], 1],
+          0.25,
+          ["coalesce", ["get", "_sym_op"], 1],
+        ],
       },
     });
     map.addLayer({
@@ -2094,6 +2167,8 @@ function renderMarkers(fit = true) {
         "circle-radius": [
           "case",
           ["==", ["get", "_sel"], 1],
+          12,
+          ["==", ["get", "_infoKey"], 1],
           12,
           ["==", ["get", "_pfail"], 1],
           12,
@@ -2119,6 +2194,8 @@ function renderMarkers(fit = true) {
           "case",
           ["==", ["get", "_sel"], 1],
           SEL_COLOR,
+          ["==", ["get", "_infoKey"], 1],
+          INFO_COLOR,
           ["==", ["get", "_pfail"], 1],
           PREVIEW_FAIL_COLOR,
           ["==", ["get", "_pok"], 1],
@@ -2141,6 +2218,8 @@ function renderMarkers(fit = true) {
           "case",
           ["==", ["get", "_sel"], 1],
           1,
+          ["==", ["get", "_infoKey"], 1],
+          1,
           ["==", ["get", "_pfail"], 1],
           1,
           ["==", ["get", "_pok"], 1],
@@ -2159,6 +2238,8 @@ function renderMarkers(fit = true) {
           "case",
           ["==", ["get", "_sel"], 1],
           3,
+          ["==", ["get", "_infoKey"], 1],
+          3,
           ["==", ["get", "_pfail"], 1],
           3,
           ["==", ["get", "_pok"], 1],
@@ -2175,6 +2256,8 @@ function renderMarkers(fit = true) {
           "case",
           ["==", ["get", "_sel"], 1],
           SEL_BORDER,
+          ["==", ["get", "_infoKey"], 1],
+          INFO_BORDER,
           ["==", ["get", "_pfail"], 1],
           PREVIEW_FAIL_BORDER,
           ["==", ["get", "_pok"], 1],
@@ -2198,6 +2281,8 @@ function renderMarkers(fit = true) {
         "circle-stroke-opacity": [
           "case",
           ["==", ["get", "_sel"], 1],
+          1,
+          ["==", ["get", "_infoKey"], 1],
           1,
           ["==", ["get", "_pfail"], 1],
           1,
@@ -2238,47 +2323,52 @@ function renderMarkers(fit = true) {
       const isDimmed = !neutral && props.hasFilter && !isH && !isAny && !inSelSet;
       const isMatch = !neutral && props.hasFilter && isH;
       const isCenter = centerKey && key === centerKey;
+      const isInfo = infoKey && (key === infoKey || String(w.id) === infoKey);
       const isSel = (selectedKey && (key === selectedKey || String(w.id) === selectedKey)) || isAny || inSelSet;
       const sym = symStyleOf(w);
       const symColor = sym?.color ?? null;
       const color = inSelSet
         ? SEL_COLOR
-        : isFail
-        ? PREVIEW_FAIL_COLOR
-        : isOk
-          ? PREVIEW_OK_COLOR
-          : isSrc
-            ? PREVIEW_SRC_COLOR
-            : isSel
-              ? "#f0a500"
-              : isCenter
-                ? "#e74c3c"
-                : (symColor ?? (isMatch
-                  ? "#22c55e"
-                  : isH
-                    ? "#4a9b8e"
-                    : "#8a9490"));
-      const opacity = inSelSet || isSel || isCenter || isMatch ? "1" : isDimmed ? "0.25" : String(sym?.opacity ?? 1);
-      const strokeW = isSel || isCenter || isMatch ? 3 : Math.max(0, Math.min(6, Number(sym?.strokeWidth) ?? 2));
+        : isInfo
+          ? INFO_COLOR
+          : isFail
+          ? PREVIEW_FAIL_COLOR
+          : isOk
+            ? PREVIEW_OK_COLOR
+            : isSrc
+              ? PREVIEW_SRC_COLOR
+              : isSel
+                ? "#f0a500"
+                : isCenter
+                  ? "#e74c3c"
+                  : (symColor ?? (isMatch
+                    ? "#22c55e"
+                    : isH
+                      ? "#4a9b8e"
+                      : "#8a9490"));
+      const opacity = inSelSet || isInfo || isSel || isCenter || isMatch ? "1" : isDimmed ? "0.25" : String(sym?.opacity ?? 1);
+      const strokeW = isSel || isCenter || isMatch || isInfo ? 3 : Math.max(0, Math.min(6, Number(sym?.strokeWidth) ?? 2));
       const strokeC = sym?.strokeColor ?? "rgba(255,255,255,0.4)";
       const border = inSelSet
         ? `3px solid ${SEL_BORDER}`
-        : isFail
-        ? `3px solid ${PREVIEW_FAIL_BORDER}`
-        : isOk
-          ? `3px solid ${PREVIEW_OK_BORDER}`
-          : isSel
-            ? "3px solid #1a1a1a"
-            : isCenter
-              ? "3px solid #fff"
-              : isMatch
-                ? "3px solid #14532d"
-                : isH
-                  ? "3px solid #fff"
-                  : `${strokeW}px solid ${strokeC}`;
+        : isInfo
+          ? `3px solid ${INFO_BORDER}`
+          : isFail
+          ? `3px solid ${PREVIEW_FAIL_BORDER}`
+          : isOk
+            ? `3px solid ${PREVIEW_OK_BORDER}`
+            : isSel
+              ? "3px solid #1a1a1a"
+              : isCenter
+                ? "3px solid #fff"
+                : isMatch
+                  ? "3px solid #14532d"
+                  : isH
+                    ? "3px solid #fff"
+                    : `${strokeW}px solid ${strokeC}`;
       const symSize = Math.max(4, Math.min(30, Number(sym?.size) || 12));
       const hasSym = sym?.size != null;
-      const size = inSelSet ? 22 : isSel ? 22 : isCenter ? 22 : isDimmed ? 8 : hasSym ? symSize : isMatch ? 20 : isH ? 18 : symSize;
+      const size = inSelSet ? 22 : isInfo ? 22 : isSel ? 22 : isCenter ? 22 : isDimmed ? 8 : hasSym ? symSize : isMatch ? 20 : isH ? 18 : symSize;
       const shape = sym?.shape ?? 'circle';
       const shapeCss = shape === 'square'
         ? 'border-radius:4px;'
@@ -2297,7 +2387,7 @@ function renderMarkers(fit = true) {
       box-shadow:0 2px 6px rgba(0,0,0,0.4);cursor:pointer;
       opacity:${opacity};
       ${shape === 'cross' ? `background:linear-gradient(${color},${color}) center/60% 18% no-repeat, linear-gradient(${color},${color}) center/18% 60% no-repeat;` : ''}
-      ${isSel || isCenter || isMatch ? "outline:3px solid rgba(34,197,94,0.45);outline-offset:3px;" : (isH ? "outline:3px solid rgba(240,165,0,0.4);outline-offset:3px;" : "")}`;
+      ${isSel || isCenter || isMatch ? "outline:3px solid rgba(34,197,94,0.45);outline-offset:3px;" : (isInfo ? "outline:3px solid rgba(255,255,255,0.75);outline-offset:3px;" : (isH ? "outline:3px solid rgba(240,165,0,0.4);outline-offset:3px;" : ""))}`;
       // عارضه‌های هم‌مختصات (دو لایه روی هم) → تب در یک پاپ‌آپ
       const stacked = props.wells.filter(
         (o) => Number.isFinite(+o.lat) && Number.isFinite(+o.lng) && +o.lat === +w.lat && +o.lng === +w.lng,
@@ -2309,6 +2399,7 @@ function renderMarkers(fit = true) {
       const popup = new mapboxgl.Popup({ offset: 14, maxWidth: "340px" })
         .setHTML(multiPopupHTML(markerItems));
       popup.on("open", () => bindPopupTabs(popup));
+      popup.on("close", () => onInfoPopupClose(popup));
       el.addEventListener("click", (e) => {
         if (activeMode.value) {
           e.stopPropagation();
@@ -2317,8 +2408,18 @@ function renderMarkers(fit = true) {
         // در حالت انتخاب هوشمند از پیکر نقشه استفاده می‌شود؛ جلوی دابل‌فایر گرفته شود
         if (picking) {
           e.stopPropagation();
+          emit("select-well", w);
+          return;
         }
         if (selecting && props.selectionTool) {
+          // ابزار اطلاعات: عارضه آبی پر رنگ + نمایش مشخصات
+          if (props.selectionTool === "info") {
+            e.stopPropagation();
+            emit("info-select", w);
+            popup.openPopup();
+            lastInfoPopup = popup;
+            return;
+          }
           e.stopPropagation();
           if (isSelClickSuppressed()) return;
           try { syncModsFromDomEvent(e); } catch {}
@@ -2335,12 +2436,18 @@ function renderMarkers(fit = true) {
           suppressSelClick(300);
           return;
         }
-        emit("select-well", w);
+        // کلیک عادی (بدون ابزار) = انتخاب دستی؛ بدون پاپ‌آپ
+        if (isSelClickSuppressed()) return;
+        try { syncModsFromDomEvent(e); } catch {}
+        try {
+          const rect = map.getContainer().getBoundingClientRect();
+          const px = e.clientX - rect.left, py = e.clientY - rect.top;
+          selectAtPixel(px, py, resolveSelMode(e), isContainedOnly(e));
+        } catch {}
       });
       markers.push(
         new mapboxgl.Marker(el)
           .setLngLat([w.lng, w.lat])
-          .setPopup(popup)
           .addTo(map),
       );
     });
@@ -2430,7 +2537,7 @@ onMounted(async () => {
         return;
       }
       // ابزار دستی: کلیک روی فضای خالی در حالت «جدید» → پاک شدن انتخاب
-      if (resolveSelMode(e) === "new") {
+      if (props.selectionTool === "point" && resolveSelMode(e) === "new") {
         try {
           const layerIds = [...WELL_LAYER_IDS].filter((id) => map.getLayer(id));
           const feats = layerIds.length ? map.queryRenderedFeatures(e.point, { layers: layerIds }) : [];
@@ -2448,6 +2555,8 @@ onMounted(async () => {
       const feats = layerIds.length ? map.queryRenderedFeatures(e.point, { layers: layerIds }) : [];
       if (feats && feats.length) return;
     } catch {}
+    // کلیک عادی روی فضای خالی → پاک کردن انتخاب فعلی (مثل ابزار دستی)
+    if (props.selectionCount > 0) emit("selection-change", [], "new");
     emit("map-empty-click");
   });
   // چرخش/زاویه نقشه از ابتدا غیرفعال تا Ctrl برای حذف از انتخاب آزاد باشد
@@ -2497,6 +2606,7 @@ function updateHighlightData() {
   const psets = previewSets();
   const centerKey = wellKey(props.radiusCenter);
   const selectedKey = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null;
+  const infoKey = props.infoWellKey != null && props.infoWellKey !== '' ? String(props.infoWellKey) : null;
   const fsetUp = filteredSet();
   const selSetUp = new Set((props.selectionIds || []).map(String));
   wellsGeoJSON.features.forEach((f) => {
@@ -2509,6 +2619,7 @@ function updateHighlightData() {
     f.properties._dimmed = (!neutral && props.hasFilter && !hl && !isAny && !isSelUp) ? 1 : 0;
     f.properties._match = (!neutral && props.hasFilter && hl) ? 1 : 0;
     f.properties._sel = isSelUp ? 1 : 0;
+    f.properties._infoKey = (infoKey && (key === infoKey || String(f.properties.id) === infoKey)) ? 1 : 0;
     f.properties._psrc = isSrc && !isOk && !isFail ? 1 : 0;
     f.properties._pok = isOk ? 1 : 0;
     f.properties._pfail = isFail ? 1 : 0;
@@ -2525,6 +2636,8 @@ watch(() => props.highlightedIds, scheduleHighlight);
 watch(() => props.hasFilter, scheduleHighlight);
 watch(() => props.filteredLayerUuids, scheduleHighlight);
 watch(() => props.selectedId, scheduleHighlight);
+// عارضه اطلاعات (آبی) با تغییر انتخاب از ابزار «اطلاعات» به‌روز می‌شود
+watch(() => props.infoWellKey, scheduleHighlight);
 function schedulePreviewRefresh() {
   // حالت نقطه‌ای (بدون wells-src) نیاز به رندر کامل مارکرها دارد
   if (!wellsGeoJSON || !map?.getSource?.("wells-src")) scheduleRender();
@@ -2537,7 +2650,13 @@ watch(() => props.previewFailIds, schedulePreviewRefresh);
 // عارضه مرجع (قرمز) با تغییر انتخاب به‌روز می‌شود
 watch(() => props.radiusCenter, scheduleHighlight);
 // ابزار انتخاب: فعال/غیرفعال‌سازی تعامل‌های نقشه
-watch(() => props.selectionTool, (t) => {
+// خروج از ابزار «اطلاعات» → بستن پاپ‌آپ و برگشت رنگ عارضه به حالت عادی
+watch(() => props.selectionTool, (t, prev) => {
+  if (prev === "info" && t !== "info") {
+    try { lastInfoPopup?.remove?.(); } catch {}
+    lastInfoPopup = null;
+    emit("update:info-well-key", null);
+  }
   setSelectionToolActive(t);
 });
 // تغییر مجموعه انتخاب → فقط استایل‌ها به‌روز شوند (هایلایت زرد)
@@ -2844,6 +2963,10 @@ defineExpose({
   border-color: #06b6d4;
   color: #0891b2;
   box-shadow: 0 0 0 1px #06b6d4;
+}
+/* آیکون «i» ابزار اطلاعات */
+.map-tool[data-tool="info"] {
+  font-weight: 800;
 }
 .map-tool:disabled {
   opacity: 0.35;
