@@ -42,8 +42,6 @@
         :relation-loading="spatialLoading"
         :relation-error="relationError"
         :saved-queries="savedQueries"
-        :attribute-history="attributeHistoryEntries"
-        :spatial-history="spatialHistoryEntries"
         @toggle="toggleQueryPanel"
         @update:active-query-layer="activeQueryLayer = $event"
         @add-condition="addLayerCondition"
@@ -59,9 +57,6 @@
         @update:relation-target-layer="relationTargetLayer = $event"
         @update:relation-operator="relationOperator = $event"
         @apply-relation="onApplyRelation"
-        @rerun-history="onRerunHistory"
-        @remove-history-entry="onRemoveHistoryEntry"
-        @clear-history="onClearHistory"
         @load-query="onLoadQuery"
         @delete-query="deleteSavedQuery"
         @clear-data="handleClearData"
@@ -297,9 +292,6 @@ const {
   remove: removeHistoryEntry,
   clear: clearHistoryEntries,
 } = useQueryHistory()
-// در هر تب فقط تاریخچه همان نوع کوئری نمایش داده می‌شود
-const attributeHistoryEntries = computed(() => allHistoryEntries.value.filter(e => e.type === 'attribute'))
-const spatialHistoryEntries = computed(() => allHistoryEntries.value.filter(e => e.type === 'relation'))
 
 function layerFeatureCount(uuid) {
   return (_layerFeaturesMap.value?.[uuid] ?? []).length
