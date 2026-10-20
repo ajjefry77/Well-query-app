@@ -25,13 +25,13 @@
           <button class="rt__tool-btn" @click="invertSelection" title="معکوس کردن انتخاب">⇄ معکوس انتخاب</button>
           <button class="rt__tool-btn" @click="clearSelection" :disabled="!globalSet.size" title="پاک کردن انتخاب">✕ پاک کردن</button>
           <button class="rt__tool-btn rt__tool-btn--primary" @click="zoomToSelection" :disabled="!selectedRows.length" title="زوم روی عارضه‌های انتخاب‌شده">
-            🔍 زوم به انتخاب<template v-if="globalSet.size"> ({{ globalSet.size.toLocaleString('fa-IR') }})</template>
+            🔍 زوم به انتخاب<template v-if="selectedInTableCount"> ({{ selectedInTableCount.toLocaleString('fa-IR') }})</template>
           </button>
-          <label class="rt__tool-check" :class="{ 'rt__tool-check--off': !globalSet.size }" title="فقط ردیف‌های انتخاب‌شده نمایش داده شوند">
-            <input type="checkbox" v-model="showSelectedOnly" :disabled="!globalSet.size" /> فقط انتخاب‌شده‌ها
+          <label class="rt__tool-check" :class="{ 'rt__tool-check--off': !selectedInTableCount }" title="فقط ردیف‌های انتخاب‌شده نمایش داده شوند">
+            <input type="checkbox" v-model="showSelectedOnly" :disabled="!selectedInTableCount" /> فقط انتخاب‌شده‌ها
           </label>
         </div>
-        <span class="rt__sel-info mono" v-if="globalSet.size">{{ globalSet.size.toLocaleString('fa-IR') }} انتخاب شده</span>
+        <span class="rt__sel-info mono" v-if="selectedInTableCount">{{ selectedInTableCount.toLocaleString('fa-IR') }} انتخاب شده</span>
       </div>
       <div class="rt__scroll">
         <table class="rt__table" :style="tableStyle(effectiveColumns)">
@@ -239,6 +239,9 @@ const selectedRows = computed(() => {
   if (!set.size) return []
   return effectiveRows.value.filter(r => set.has(String(rowKeyOf(r))))
 })
+// تعداد انتخاب‌شده‌های واقعاً موجود در داده همین جدول (همان عدد پایین جدول).
+// قبلاً از شمارش سراسری بین همه لایه‌ها استفاده می‌شد و با عدد پایین جدول اختلاف داشت.
+const selectedInTableCount = computed(() => selectedRows.value.length)
 function zoomToSelection() {
   const rows = selectedRows.value
   if (rows.length) emit('zoom', rows)
