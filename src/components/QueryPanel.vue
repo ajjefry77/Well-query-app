@@ -29,25 +29,25 @@
         </div>
 
         <template v-else>
-          <!-- محدوده کوئری: همه عوارض یا فقط انتخاب‌شده‌ها (قابلیت فراتر از ArcGIS) -->
-          <div class="scope-toggle">
-            <button
-              class="scope-toggle__btn"
-              :class="{ 'scope-toggle__btn--active': attributeScope !== 'selected' }"
-              @click="$emit('update:attribute-scope', 'all')"
-            >
-              همه عوارض
-            </button>
-            <button
-              class="scope-toggle__btn"
-              :class="{ 'scope-toggle__btn--active': attributeScope === 'selected' }"
-              :disabled="!selectionCount"
-              :title="selectionCount ? 'اجرای کوئری فقط روی عوارض انتخاب‌شده' : 'ابتدا از روی نقشه عارضه انتخاب کنید'"
-              @click="$emit('update:attribute-scope', 'selected')"
-            >
-              فقط انتخاب‌شده‌ها ({{ selectionCount.toLocaleString('fa-IR') }})
-            </button>
-          </div>
+          <!-- تب‌ها با کوئری توصیفی هم‌نام‌اند (انتخاب‌شده‌ها / همه عوارض) -->
+        <div class="scope-toggle">
+          <button
+            class="scope-toggle__btn"
+            :class="{ 'scope-toggle__btn--active': attributeScope === 'selected' }"
+            :disabled="!selectionCount"
+            :title="selectionCount ? 'اجرای کوئری فقط روی عوارض انتخاب‌شده' : 'ابتدا از روی نقشه عارضه انتخاب کنید'"
+            @click="$emit('update:attribute-scope', 'selected')"
+          >
+            انتخاب‌شده‌ها ({{ selectionCount.toLocaleString('fa-IR') }})
+          </button>
+          <button
+            class="scope-toggle__btn"
+            :class="{ 'scope-toggle__btn--active': attributeScope !== 'selected' }"
+            @click="$emit('update:attribute-scope', 'all')"
+          >
+            همه عوارض
+          </button>
+        </div>
 
           <div class="layer-dropdown-wrap">
             <label class="layer-dropdown-label">لایه انتخابی</label>
@@ -95,7 +95,6 @@
         :target-layer="relationTargetLayer"
         :operator="relationOperator"
         :radius-km="relationRadiusKm"
-        :target-only-selected="targetOnlySelected"
         :relation-loading="relationLoading"
         :relation-error="relationError"
         @clear-selection="$emit('clear-selection')"
@@ -105,7 +104,6 @@
         @update:target-layer="$emit('update:relation-target-layer', $event)"
         @update:operator="$emit('update:relation-operator', $event)"
         @update:radius-km="$emit('update:radius-km', $event)"
-        @update:target-only-selected="$emit('update:target-only-selected', $event)"
         @apply-relation="$emit('apply-relation')"
       />
       <div class="side-divider"></div>
@@ -150,7 +148,6 @@ const props = defineProps({
   relationTargetLayer: { type: String, default: null },
   relationOperator: { type: String, default: 'within' },
   relationRadiusKm: { type: Number, default: 3 },
-  targetOnlySelected: { type: Boolean, default: false },
   relationLoading: { type: Boolean, default: false },
   relationError: { type: String, default: null },
 })
@@ -169,7 +166,6 @@ defineEmits([
   'update:relation-source-layer',
   'update:relation-target-layer',
   'update:relation-operator',
-  'update:target-only-selected',
   'apply-relation',
   'load-query',
   'delete-query',

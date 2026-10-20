@@ -23,21 +23,23 @@
       </div>
       <p class="sq__hint sq__hint--tiny">انتخاب عارضه با ابزارهای تولبار نقشه انجام می‌شود (مستطیل، دایره، دستی).</p>
 
-      <!-- حالت مبدأ: انتخاب‌شده‌ها یا کل لایه -->
+      <!-- حالت مبدأ: تب‌ها با کوئری توصیفی هم‌نام‌اند (انتخاب‌شده‌ها / همه عوارض) -->
       <div class="src-mode">
         <button
           class="src-mode__btn"
           :class="{ 'src-mode__btn--active': sourceMode === 'selected' }"
+          :disabled="!selectionCount"
+          :title="selectionCount ? 'اجرای رابطه مکانی از روی عوارض انتخاب‌شده' : 'ابتدا از روی نقشه عارضه انتخاب کنید'"
           @click="$emit('update:source-mode', 'selected')"
         >
-          از عوارض انتخاب‌شده
+          انتخاب‌شده‌ها<template v-if="selectionCount"> ({{ selectionCount.toLocaleString('fa-IR') }})</template>
         </button>
         <button
           class="src-mode__btn"
           :class="{ 'src-mode__btn--active': sourceMode === 'layer' }"
           @click="$emit('update:source-mode', 'layer')"
         >
-          از کل لایه
+          همه عوارض
         </button>
       </div>
 
@@ -74,15 +76,6 @@
           @update:model-value="$emit('update:target-layer', $event)"
         />
       </div>
-      <label class="scope-check" :class="{ 'scope-check--disabled': !sourceReady }">
-        <input
-          type="checkbox"
-          :checked="targetOnlySelected"
-          :disabled="!sourceReady || !selectionCount"
-          @change="$emit('update:target-only-selected', $event.target.checked)"
-        />
-        <span>جستجو فقط در میان عوارض انتخاب‌شده <template v-if="selectionCount">({{ selectionCount.toLocaleString('fa-IR') }})</template></span>
-      </label>
     </div>
 
     <!-- ─── گام ۳: نوع رابطه ─── -->
@@ -160,7 +153,6 @@ const props = defineProps({
   targetLayer: { type: String, default: null },
   operator: { type: String, default: "within" },
   radiusKm: { type: Number, default: 3 },
-  targetOnlySelected: { type: Boolean, default: false },
   relationLoading: { type: Boolean, default: false },
   relationError: { type: String, default: null },
 });
@@ -173,7 +165,6 @@ const emit = defineEmits([
   "update:target-layer",
   "update:operator",
   "update:radius-km",
-  "update:target-only-selected",
   "apply-relation",
 ]);
 
@@ -367,6 +358,10 @@ const numberCfg = { min: 0.1, step: 0.1 };
   font-family: inherit;
   cursor: pointer;
 }
+.src-mode__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .src-mode__btn--active {
   background: var(--brand-soft);
   color: var(--brand);
@@ -398,25 +393,6 @@ const numberCfg = { min: 0.1, step: 0.1 };
   border-radius: var(--radius-sm);
   padding: 8px 10px;
   line-height: 1.8;
-}
-.scope-check {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 11.5px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  line-height: 1.7;
-}
-.scope-check input {
-  accent-color: #06b6d4;
-  width: 15px;
-  height: 15px;
-  cursor: pointer;
-}
-.scope-check--disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 .field-group {
   display: flex;

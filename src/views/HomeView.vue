@@ -39,7 +39,6 @@
         :relation-target-layer="relationTargetLayer"
         :relation-operator="relationOperator"
         :relation-radius-km="relationRadiusKm"
-        :target-only-selected="spatialTargetOnlySelected"
         :relation-loading="spatialLoading"
         :relation-error="relationError"
         :saved-queries="savedQueries"
@@ -57,7 +56,6 @@
         @update:relation-source-layer="relationSourceLayer = $event"
         @update:relation-target-layer="relationTargetLayer = $event"
         @update:relation-operator="relationOperator = $event"
-        @update:target-only-selected="spatialTargetOnlySelected = $event"
         @apply-relation="onApplyRelation"
         @load-query="onLoadQuery"
         @delete-query="deleteSavedQuery"
@@ -267,7 +265,7 @@ const {
   committedRadiusCenter, committedRadiusKm,
   spatialLoading, commitSpatialFilter,
   relationSourceLayer, relationTargetLayer, relationOperator, relationRadiusKm,
-  relationSourceMode, spatialTargetOnlySelected,
+  relationSourceMode,
   selectedIds, selectionCount, attributeScope,
   applySelectionKeys, setSelectionKeys, clearSelection,
   relationCommitted, relationResults, relationProgress, relationError,
@@ -587,9 +585,7 @@ const relationSummary = computed(() => {
   const sourceText = c.sourceMode === 'selected'
     ? (srcName ? `مبدأ: ${selectionCount.value} عارضه انتخاب‌شده (${srcName})` : `مبدأ: ${selectionCount.value} عارضه انتخاب‌شده`)
     : `مبدأ: ${srcName} کل لایه`
-  const targetText = c.targetOnlySelected
-    ? `هدف: ${layerNameOf(c.targetLayerUuid)} (فقط انتخاب‌شده‌ها)`
-    : `هدف: ${layerNameOf(c.targetLayerUuid)} کل لایه`
+  const targetText = `هدف: ${layerNameOf(c.targetLayerUuid)} — کل لایه`
   return {
     opLabel: c.operator === 'within-distance' && Number.isFinite(+c.radiusKm)
       ? `${relationLabel(c.operator)} (${(+c.radiusKm).toLocaleString('fa-IR')} km)`
