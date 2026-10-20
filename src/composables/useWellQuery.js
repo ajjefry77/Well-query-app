@@ -509,6 +509,32 @@ export function useWellQuery() {
 
   const hasAnyFilter = computed(() => hasAttributeFilter.value || hasSpatialFilter.value)
 
+  // ── بازمحاسبه بدون‌اثر (برای تاریخچه کوئری‌ها) ──
+  // نتیجه یک کوئری ثبت‌شده در تاریخچه، بدون تغییر state فعلی دوباره محاسبه می‌شود
+  // (مبنای دکمه «ذخیره/خروجی Shapefile» ذیل جدول TOC)
+  function computeAttributeRows(uuid, conditions, scope = 'all') {
+    let rows = (layerFeaturesMap.value[uuid] ?? []).slice()
+    if (scope === 'selected' && selectedKeys.value.size) {
+      const set = selectedKeys.value
+      rows = rows.filter(r => set.has(rowKeyOf(r)))
+    }
+    const active = (conditions ?? []).filter(c => c.value !== '' && c.value !== null && c.value !== undefined)
+    return active.length ? rows.filter(row => evaluateGroup(row, active)) : rows
+  }
+
+  function computeRelationRows(params) {
+    if (!params?.targetLayerUuid) return []
+    const sourceRows = getRelationSourceRows(params.sourceLayerUuid, params.sourceMode || 'layer')
+    if (!sourceRows.length) return []
+    let targets = allFeatures.value.filter(r => String(r._layerUuid) === String(params.targetLayerUuid))
+    if (params.targetOnlySelected && selectedKeys.value.size) {
+      const set = selectedKeys.value
+      targets = targets.filter(r => set.has(rowKeyOf(r)))
+    }
+    if (!targets.length) return []
+    return findMatchingRowsMulti(sourceRows, targets, params.operator, { radiusKm: params.radiusKm })
+  }
+
   // ── کوئری مکانی (فقط کیلومتر، بدون سقف) ──
   // شعاع عمداً در localStorage ذخیره نمی‌شود تا با رفرش صفحه به دیفالت برگردد
   const DEFAULT_RADIUS_KM = 3
@@ -814,6 +840,7 @@ export function useWellQuery() {
     combinedResults, hasAnyFilter,
     getLayerConditions, getAppliedConditions, addLayerCondition, removeLayerCondition,
     applyAttributeConditions, removeAppliedCondition, clearAllConditions, getLayerResultCount,
+    computeAttributeRows, computeRelationRows,
     radiusCenter, radiusKm,
     committedRadiusCenter, committedRadiusKm,
     spatialLoading, commitSpatialFilter,

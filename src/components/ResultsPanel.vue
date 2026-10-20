@@ -230,12 +230,26 @@
         </div>
       </div>
 
+      <!-- تاریخچه کوئری‌ها (اجرای مجدد + خروجی Shapefile نتیجه) -->
+      <QueryHistory
+        class="qh--toc"
+        :toc="true"
+        :entries="historyEntries"
+        :running="historyRunning"
+        :exporting="historyExporting"
+        @rerun="$emit('rerun-history', $event)"
+        @export-shp="$emit('export-history-shp', $event)"
+        @remove="$emit('remove-history-entry', $event)"
+        @clear="$emit('clear-history')"
+      />
+
     </div>
   </section>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
+import QueryHistory from './QueryHistory.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: true },
@@ -250,8 +264,12 @@ const props = defineProps({
   spatialLabel: { type: String, default: '' },
   spatialRadius: { type: [Number, String], default: 0 },
   relationSummary: { type: Object, default: null },
+  // تاریخچه کوئری‌ها (اجرای مجدد + خروجی Shapefile)
+  historyEntries: { type: Array, default: () => [] },
+  historyRunning: { type: Boolean, default: false },
+  historyExporting: { type: Boolean, default: false },
 })
-const emit = defineEmits(['toggle', 'open-modal', 'remove-layer', 'zoom-layer', 'toggle-layer-visibility', 'remove-condition', 'clear-spatial', 'clear-relation', 'clear-all', 'view-layer-data', 'open-symbology'])
+const emit = defineEmits(['toggle', 'open-modal', 'remove-layer', 'zoom-layer', 'toggle-layer-visibility', 'remove-condition', 'clear-spatial', 'clear-relation', 'clear-all', 'view-layer-data', 'open-symbology', 'rerun-history', 'export-history-shp', 'remove-history-entry', 'clear-history'])
 
 // ── منوی راست‌کلیک (مثل ArcGIS: راست‌کلیک روی لایه در Table of Contents) ──
 const ctx = ref({ uuid: null, x: 0, y: 0 })

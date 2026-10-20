@@ -81,6 +81,14 @@
           <button class="btn-apply-attribute" @click="$emit('apply-attribute')">
             اجرای کوئری
           </button>
+
+          <!-- تاریخچه کوئری توصیفی (اجرای مجدد) -->
+          <QueryHistory
+            :entries="attributeHistory"
+            @rerun="$emit('rerun-history', $event)"
+            @remove="$emit('remove-history-entry', $event)"
+            @clear="$emit('clear-history')"
+          />
         </template>
       </div>
 
@@ -106,6 +114,14 @@
         @update:radius-km="$emit('update:radius-km', $event)"
         @apply-relation="$emit('apply-relation')"
       />
+
+      <!-- تاریخچه کوئری مکانی (اجرای مجدد) -->
+      <QueryHistory
+        :entries="spatialHistory"
+        @rerun="$emit('rerun-history', $event)"
+        @remove="$emit('remove-history-entry', $event)"
+        @clear="$emit('clear-history')"
+      />
       <div class="side-divider"></div>
       <SavedQueries :queries="savedQueries" @load="$emit('load-query', $event)" @delete="$emit('delete-query', $event)" />
 
@@ -124,6 +140,7 @@ import { computed } from 'vue'
 import QueryBuilder from './QueryBuilder.vue'
 import SpatialQueryPanel from './SpatialQueryPanel.vue'
 import SavedQueries from './SavedQueries.vue'
+import QueryHistory from './QueryHistory.vue'
 import AppSelect from './AppSelect.vue'
 
 const props = defineProps({
@@ -138,6 +155,9 @@ const props = defineProps({
   loadingFeatures: { type: Boolean, default: false },
   wells: { type: Array, default: () => [] },
   savedQueries: { type: Array, default: () => [] },
+  // ── تاریخچه کوئری‌ها (اجرا مجدد) ──
+  attributeHistory: { type: Array, default: () => [] },
+  spatialHistory: { type: Array, default: () => [] },
   // ── انتخاب عارضه (فقط شمارش؛ ابزارها در تولبار نقشه‌اند) ──
   selectionCount: { type: Number, default: 0 },
   selectionLayers: { type: Array, default: () => [] },
@@ -170,6 +190,10 @@ defineEmits([
   'load-query',
   'delete-query',
   'clear-data',
+  // تاریخچه کوئری
+  'rerun-history',
+  'remove-history-entry',
+  'clear-history',
 ])
 
 const activeLayerColor = computed(() =>

@@ -42,6 +42,8 @@
         :relation-loading="spatialLoading"
         :relation-error="relationError"
         :saved-queries="savedQueries"
+        :attribute-history="attributeHistoryEntries"
+        :spatial-history="spatialHistoryEntries"
         @toggle="toggleQueryPanel"
         @update:active-query-layer="activeQueryLayer = $event"
         @add-condition="addLayerCondition"
@@ -57,6 +59,9 @@
         @update:relation-target-layer="relationTargetLayer = $event"
         @update:relation-operator="relationOperator = $event"
         @apply-relation="onApplyRelation"
+        @rerun-history="onRerunHistory"
+        @remove-history-entry="onRemoveHistoryEntry"
+        @clear-history="onClearHistory"
         @load-query="onLoadQuery"
         @delete-query="deleteSavedQuery"
         @clear-data="handleClearData"
@@ -149,6 +154,13 @@
         @clear-all="onClearAllQueries"
         @view-layer-data="onOpenLayerData"
         @open-symbology="onOpenSymbology"
+        :history-entries="allHistoryEntries"
+        :history-running="historyRunning"
+        :history-exporting="historyExporting"
+        @rerun-history="onRerunHistory"
+        @export-history-shp="onExportHistoryShp"
+        @remove-history-entry="onRemoveHistoryEntry"
+        @clear-history="onClearHistory"
       />
 
       <!-- موبایل: نوار grab + تب‌های پنل پایین -->
@@ -232,6 +244,7 @@ import { useTheme } from '../composables/useTheme.js'
 import { layerColor } from '../composables/useLayerColors.js'
 import { useSymbology, legendItems } from '../composables/useSymbology.js'
 import { relationLabel } from '../composables/useSpatialRelations.js'
+import { useQueryHistory } from '../composables/useQueryHistory.js'
 import { useRoute, useRouter } from '../router/index.js'
 
 // بارگذاری تنبل: همه‌چیز به‌جز هدر، کد-split می‌شود تا First Paint روی سیستم ضعیف سریع باشد
@@ -256,8 +269,9 @@ const {
   queryableFields,
   loadingLayers, loadingFields, loadingFeatures, apiError,
   loadVectorLayers,
-  removeLayer, setActiveLayers,
+  addLayer, removeLayer, setActiveLayers,
   isLayerVisible, toggleLayerVisibility,
+  computeAttributeRows, computeRelationRows,
   allWells, combinedResults, hasAnyFilter,
   getLayerConditions, getAppliedConditions, addLayerCondition, removeLayerCondition,
   applyAttributeConditions, removeAppliedCondition, clearAllConditions, getLayerResultCount,
@@ -273,6 +287,19 @@ const {
   savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
   clearAllLocalData,
 } = useWellQuery()
+
+// ── تاریخچه کوئری‌ها (توصیفی + مکانی) ──
+const historyRunning = ref(false)
+const historyExporting = ref(false)
+const {
+  entries: allHistoryEntries,
+  push: pushHistoryEntry,
+  remove: removeHistoryEntry,
+  clear: clearHistoryEntries,
+} = useQueryHistory()
+// در هر تب فقط تاریخچه همان نوع کوئری نمایش داده می‌شود
+const attributeHistoryEntries = computed(() => allHistoryEntries.value.filter(e => e.type === 'attribute'))
+const spatialHistoryEntries = computed(() => allHistoryEntries.value.filter(e => e.type === 'relation'))
 
 function layerFeatureCount(uuid) {
   return (_layerFeaturesMap.value?.[uuid] ?? []).length
@@ -985,18 +1012,158 @@ async function onApplySpatial() {
   await commitSpatialFilter()
   zoomToResults()
 }
-// اعمال رابطه مکانی و زوم روی نتایج
+// اعمال رابطه مکانی و زوم روی نتایج (+ ثبت در تاریخچه)
 async function onApplyRelation() {
   const ok = await commitRelationFilter()
-  if (ok) zoomToResults()
+  if (ok) {
+    zoomToResults()
+    recordRelationHistory()
+  }
 }
 function onClearRelation() {
   clearRelation()
 }
-// اجرای کوئری توصیفی: تأیید پیش‌نویس‌ها و زوم روی نتایج
+// اجرای کوئری توصیفی: تأیید پیش‌نویس‌ها و زوم روی نتایج (+ ثبت در تاریخچه)
 function onApplyAttribute() {
   applyAttributeConditions()
   zoomToResults()
+  recordAttributeHistory()
+}
+
+// ── ثبت و اجرای مجدد کوئری‌ها در تاریخچه ──
+const OP_SYMBOLS = { '=': '=', '!=': '≠', '>': '>', '>=': '≥', '<': '<', '<=': '≤', contains: 'شامل' }
+function condText(cond, fields) {
+  const fieldLabel = (fields ?? []).find(f => f.key === cond.field)?.label ?? cond.field
+  const op = OP_SYMBOLS[cond.operator] ?? cond.operator
+  return `${fieldLabel} ${op} ${cond.value}`
+}
+function findLayerName(uuid) {
+  return activeLayers.value.find(l => String(l.uuid) === String(uuid))?.display_name
+    ?? vectorLayers.value.find(l => String(l.uuid) === String(uuid))?.display_name ?? ''
+}
+
+function recordAttributeHistory() {
+  const items = []
+  for (const layer of activeLayers.value) {
+    if (!isLayerVisible(layer.uuid)) continue
+    const conds = (getAppliedConditions(layer.uuid) ?? []).map(c => ({ ...c }))
+    items.push({
+      layerUuid: layer.uuid,
+      layerName: layer.display_name || layer.name,
+      conditions: conds,
+    })
+  }
+  if (!items.length) return
+  const labels = items.map(item => {
+    const active = item.conditions.filter(c => c.value !== '' && c.value !== null && c.value !== undefined)
+    const text = active.length
+      ? active.map(c => condText(c, layerFields(item.layerUuid))).join(' ؛ ')
+      : 'همه عوارض'
+    return `${item.layerName}: ${text}`
+  })
+  pushHistoryEntry({
+    type: 'attribute',
+    scope: attributeScope.value === 'selected' ? 'selected' : 'all',
+    items,
+    label: labels.join(' | ') + (attributeScope.value === 'selected' ? ' (انتخاب‌شده‌ها)' : ''),
+    count: displayRows.value.length,
+  })
+}
+
+function recordRelationHistory() {
+  const c = relationCommitted.value
+  if (!c) return
+  const opText = c.operator === 'within-distance' && Number.isFinite(+c.radiusKm)
+    ? `${relationLabel(c.operator)} (${(+c.radiusKm).toLocaleString('fa-IR')} km)`
+    : relationLabel(c.operator)
+  pushHistoryEntry({
+    type: 'relation',
+    params: JSON.parse(JSON.stringify(c)),
+    label: `${opText} — از ${findLayerName(c.sourceLayerUuid)} به ${findLayerName(c.targetLayerUuid)}`,
+    count: relationResults.value.length,
+  })
+}
+
+// اجرای مجدد یک کوئری ثبت‌شده در تاریخچه
+async function onRerunHistory(entry) {
+  if (!entry || historyRunning.value || historyExporting.value) return
+  historyRunning.value = true
+  try {
+    if (entry.type === 'attribute') await rerunAttributeEntry(entry)
+    else await rerunRelationEntry(entry)
+  } finally {
+    historyRunning.value = false
+  }
+}
+
+// کوئری توصیفی: شرط‌های ثبت‌شده روی همان لایه‌ها ست می‌شود و کوئری اجرا می‌شود
+async function rerunAttributeEntry(entry) {
+  for (const item of (entry.items ?? [])) {
+    // لایه اگر از قبل فعال نباشد، همین‌جا اضافه می‌شود و شرط‌ها ست می‌شوند
+    await loadSavedQuery({ layerUuid: item.layerUuid, conditions: item.conditions })
+  }
+  if (!entry.items?.length) return
+  attributeScope.value = entry.scope === 'selected' ? 'selected' : 'all'
+  activeQueryLayer.value = entry.items[0].layerUuid
+  queryKind.value = 'attribute'
+  applyAttributeConditions()
+  zoomToResults()
+}
+
+// رابطه مکانی: پارامترها روی پنل مکانی ست و مجدداً اجرا می‌شود
+async function rerunRelationEntry(entry) {
+  const p = entry.params ?? {}
+  if (!p.targetLayerUuid) return
+  queryKind.value = 'spatial'
+  // حالت «انتخاب‌شده‌ها» فقط وقتی معتبر است که هنوز عارضه‌ای انتخاب شده باشد؛
+  // وگرنه کوئری روی کل لایه مبدأ (همه عوارض) اجرا می‌شود
+  if ((p.sourceMode ?? 'selected') === 'selected' && !selectionCount.value) {
+    relationSourceMode.value = 'layer'
+  } else {
+    relationSourceMode.value = p.sourceMode || 'selected'
+  }
+  relationSourceLayer.value = p.sourceLayerUuid ?? null
+  relationTargetLayer.value = p.targetLayerUuid
+  relationOperator.value = p.operator || 'within'
+  relationRadiusKm.value = Number.isFinite(+p.radiusKm) ? +p.radiusKm : 3
+  const ok = await commitRelationFilter()
+  if (ok) zoomToResults()
+}
+
+// حذف مورد/کل تاریخچه
+function onRemoveHistoryEntry(id) {
+  removeHistoryEntry(id)
+}
+function onClearHistory() {
+  if (!confirm('کل تاریخچه کوئری‌ها پاک شود؟')) return
+  clearHistoryEntries()
+}
+
+// خروجی Shapefile نتیجه یک کوئری ثبت‌شده (دکمه ذخیره ذیل جدول TOC)
+async function onExportHistoryShp(entry) {
+  if (!entry || historyRunning.value || historyExporting.value) return
+  historyExporting.value = true
+  try {
+    const rows = []
+    if (entry.type === 'attribute') {
+      const scope = entry.scope === 'selected' ? 'selected' : 'all'
+      for (const item of (entry.items ?? [])) {
+        const part = computeAttributeRows(item.layerUuid, item.conditions, scope)
+        // push(...rows) روی آرایه‌های بزرگ استک را منفجر می‌کند؛ حلقه استفاده شد
+        for (const r of part) rows.push(r)
+      }
+    } else {
+      for (const r of computeRelationRows(entry.params)) rows.push(r)
+    }
+    if (!rows.length) {
+      alert('نتیجه‌ای برای این کوئری یافت نشد (مثلاً لایه حذف شده است).')
+      return
+    }
+    const { exportData } = await import('../composables/useExport.js')
+    exportData('shp', rows, convertFeature, { crs: crs.value })
+  } finally {
+    historyExporting.value = false
+  }
 }
 // حذف یک شرط تأییدشده از خلاصه شرط‌ها
 function onRemoveAppliedCondition(uuid, index) {
