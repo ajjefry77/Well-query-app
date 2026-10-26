@@ -525,11 +525,13 @@ export function useWellQuery() {
 
   function computeRelationRows(params) {
     if (!params?.targetLayerUuid) return []
-    const sourceRows = getRelationSourceRows(params.sourceLayerUuid, params.sourceMode || 'layer')
+    const sourceRows = params.sourceKeys
+      ? findRelationRows(params.sourceLayerUuid).filter(row => params.sourceKeys.includes(rowKeyOf(row)))
+      : getRelationSourceRows(params.sourceLayerUuid, params.sourceMode || 'layer')
     if (!sourceRows.length) return []
     let targets = allFeatures.value.filter(r => String(r._layerUuid) === String(params.targetLayerUuid))
-    if (params.targetOnlySelected && selectedKeys.value.size) {
-      const set = selectedKeys.value
+    if (params.targetOnlySelected) {
+      const set = new Set(params.targetKeys ?? selectedKeys.value)
       targets = targets.filter(r => set.has(rowKeyOf(r)))
     }
     if (!targets.length) return []
@@ -621,7 +623,9 @@ export function useWellQuery() {
       relationProgress.value = { done: 0, total: 0 }
       return []
     }
-    const sourceRows = getRelationSourceRows(c.sourceLayerUuid, c.sourceMode || 'layer')
+    const sourceRows = c.sourceKeys
+      ? findRelationRows(c.sourceLayerUuid).filter(row => c.sourceKeys.includes(rowKeyOf(row)))
+      : getRelationSourceRows(c.sourceLayerUuid, c.sourceMode || 'layer')
     if (!sourceRows.length) {
       if (myId === relationReqId) {
         relationResults.value = []
@@ -633,8 +637,8 @@ export function useWellQuery() {
       String(r._layerUuid) === String(c.targetLayerUuid)
     )
     // محدود کردن نامزدهای هدف به عوارض انتخاب‌شده (کوئری از روی انتخاب‌شده‌ها)
-    if (c.targetOnlySelected && selectedKeys.value.size) {
-      const set = selectedKeys.value
+    if (c.targetOnlySelected) {
+      const set = new Set(c.targetKeys ?? selectedKeys.value)
       targets = targets.filter(r => set.has(rowKeyOf(r)))
     }
     if (!targets.length) {
@@ -728,8 +732,11 @@ export function useWellQuery() {
       operator: relationOperator.value || 'within',
       radiusKm: Number(relationRadiusKm.value) || 3,
       sourceMode: mode,
+      sourceKeys: mode === 'selected' ? getRelationSourceRows(srcUuid, mode).map(rowKeyOf) : null,
+      targetKeys: spatialTargetOnlySelected.value ? [...selectedKeys.value] : null,
       targetOnlySelected: !!spatialTargetOnlySelected.value,
     }
+    attributeScope.value = 'all'
     relationResults.value = []
     try {
       await computeRelationResults()

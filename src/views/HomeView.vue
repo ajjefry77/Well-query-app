@@ -91,6 +91,7 @@
             @selection-change="onSelectionChange"
             @selection-clear="onClearSelection"
             @zoom-to-selection="zoomToSelection"
+            @save-selection="onSaveSelection"
           />
           <!-- لجند سیمبولوژی -->
           <MapLegend :entries="legendEntries" />
@@ -275,7 +276,7 @@ const {
   committedRadiusCenter, committedRadiusKm,
   spatialLoading, commitSpatialFilter,
   relationSourceLayer, relationTargetLayer, relationOperator, relationRadiusKm,
-  relationSourceMode,
+  relationSourceMode, spatialTargetOnlySelected,
   selectedIds, selectionCount, attributeScope,
   applySelectionKeys, setSelectionKeys, clearSelection,
   relationCommitted, relationResults, relationProgress, relationError,
@@ -991,6 +992,14 @@ function onSelectionChange(keys, mode) {
 }
 function onClearSelection() {
   clearSelection()
+  selectedWellId.value = null
+}
+async function onSaveSelection() {
+  const keys = new Set(selectedIds.value.map(String))
+  const rows = allWells.value.filter(row => keys.has(rowKey(row)))
+  if (!rows.length) return
+  const { exportData } = await import('../composables/useExport.js')
+  await exportData('geojson', rows, convertFeature, { crs: crs.value })
 }
 // زوم روی عوارض انتخاب‌شده
 function zoomToSelection() {
@@ -1082,6 +1091,7 @@ async function onRerunHistory(entry) {
   if (!entry || historyRunning.value || historyExporting.value) return
   historyRunning.value = true
   try {
+    onClearAllQueries()
     if (entry.type === 'attribute') await rerunAttributeEntry(entry)
     else await rerunRelationEntry(entry)
   } finally {
@@ -1094,9 +1104,10 @@ async function rerunAttributeEntry(entry) {
   for (const item of (entry.items ?? [])) {
     // لایه اگر از قبل فعال نباشد، همین‌جا اضافه می‌شود و شرط‌ها ست می‌شوند
     await loadSavedQuery({ layerUuid: item.layerUuid, conditions: item.conditions })
+    if (!isLayerVisible(item.layerUuid)) toggleLayerVisibility(item.layerUuid)
   }
   if (!entry.items?.length) return
-  attributeScope.value = entry.scope === 'selected' ? 'selected' : 'all'
+  attributeScope.value = 'all'
   activeQueryLayer.value = entry.items[0].layerUuid
   queryKind.value = 'attribute'
   applyAttributeConditions()
@@ -1107,6 +1118,12 @@ async function rerunAttributeEntry(entry) {
 async function rerunRelationEntry(entry) {
   const p = entry.params ?? {}
   if (!p.targetLayerUuid) return
+  for (const uuid of new Set([p.sourceLayerUuid, p.targetLayerUuid].filter(Boolean))) {
+    await loadSavedQuery({ layerUuid: uuid, conditions: [] })
+    if (!isLayerVisible(uuid)) toggleLayerVisibility(uuid)
+  }
+  setSelectionKeys([...(p.sourceKeys ?? []), ...(p.targetKeys ?? [])])
+  spatialTargetOnlySelected.value = !!p.targetOnlySelected
   queryKind.value = 'spatial'
   // حالت «انتخاب‌شده‌ها» فقط وقتی معتبر است که هنوز عارضه‌ای انتخاب شده باشد؛
   // وگرنه کوئری روی کل لایه مبدأ (همه عوارض) اجرا می‌شود

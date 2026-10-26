@@ -33,13 +33,14 @@
           :disabled="!selectionCount"
           :title="`زوم به انتخاب (${selectionCount.toLocaleString('fa-IR')})`"
           @click="$emit('zoom-to-selection')"
-        >⤢</button>
+        ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6M7 10h6m-3-3v6"/></svg></button>
+        <button class="map-tool" :disabled="!selectionCount" title="ذخیره انتخاب‌ها (GeoJSON)" @click="$emit('save-selection')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></svg></button>
         <button
           class="map-tool danger"
           :disabled="!selectionCount"
           :title="`پاک کردن انتخاب (${selectionCount.toLocaleString('fa-IR')})`"
           @click="$emit('selection-clear')"
-        >✕</button>
+        ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-dasharray="3 2" d="M3 3h14v14H3z"/><path d="m15 15 6 6m0-6-6 6"/></svg></button>
       </div>
 
       <div class="map-tools__sep"></div>
@@ -441,7 +442,7 @@ const props = defineProps({
   selectionIds: { type: Array, default: () => [] },
   selectionCount: { type: Number, default: 0 },
 });
-const emit = defineEmits(["select-well", "map-empty-click", "update:selection-tool", "update:selection-mode", "selection-change", "selection-clear", "zoom-to-selection", "info-select", "update:info-well-key"]);
+const emit = defineEmits(["select-well", "map-empty-click", "update:selection-tool", "update:selection-mode", "selection-change", "selection-clear", "zoom-to-selection", "save-selection", "info-select", "update:info-well-key"]);
 
 const mapEl = ref(null);
 const activeMode = ref(null);
@@ -1735,8 +1736,8 @@ function _lineWidthLine() {
     ["==", ["get", "_psrc"], 1], 4,
     ["==", ["get", "_selected"], 1], 4,
     ["==", ["get", "_isCenter"], 1], 4,
-    ["!=", ["get", "_sym_size"], null], ["get", "_sym_size"],
     ["!=", ["get", "_sym_strokew"], null], ["get", "_sym_strokew"],
+    ["!=", ["get", "_sym_size"], null], ["get", "_sym_size"],
     ["==", ["get", "_match"], 1], 3.5,
     ["==", ["get", "_highlighted"], 1], 3,
     ["==", ["get", "_dimmed"], 1], 1,
@@ -1775,6 +1776,7 @@ function _pointHalo() {
     ["==", ["get", "_psrc"], 1], "#1a1a1a",
     ["==", ["get", "_selected"], 1], "#1a1a1a",
     ["==", ["get", "_isCenter"], 1], "#fff",
+    ["!=", ["get", "_sym_stroke"], null], ["get", "_sym_stroke"],
     ["==", ["get", "_match"], 1], "#14532d",
     ["==", ["get", "_highlighted"], 1], "#1a1a1a",
     ["==", ["get", "_dimmed"], 1], "#666",
@@ -1815,8 +1817,8 @@ function addDashAndShapeLayers() {
   const lineGeoms = ["literal", ["LineString", "MultiLineString"]];
   const ptGeoms = ["literal", ["Point", "MultiPoint"]];
   const dashStyles = [
-    { suffix: "dash", dash: "dash", array: ["literal", [2.5, 2]] },
-    { suffix: "dot", dash: "dot", array: ["literal", [1, 2.5]] },
+    { suffix: "dash", dash: "dash", array: [2.5, 2] },
+    { suffix: "dot", dash: "dot", array: [0, 2.5] },
   ];
   for (const d of dashStyles) {
     const lid = "wells-line-" + d.suffix;
@@ -2086,10 +2088,10 @@ function renderMarkers(fit = true) {
           4,
           ["==", ["get", "_isCenter"], 1],
           4,
-          ["!=", ["get", "_sym_size"], null],
-          ["get", "_sym_size"],
           ["!=", ["get", "_sym_strokew"], null],
           ["get", "_sym_strokew"],
+          ["!=", ["get", "_sym_size"], null],
+          ["get", "_sym_size"],
           ["==", ["get", "_match"], 1],
           3.5,
           ["==", ["get", "_highlighted"], 1],
@@ -2244,6 +2246,8 @@ function renderMarkers(fit = true) {
           "#1a1a1a",
           ["==", ["get", "_isCenter"], 1],
           "#fff",
+          ["!=", ["get", "_sym_stroke"], null],
+          ["get", "_sym_stroke"],
           ["==", ["get", "_match"], 1],
           "#14532d",
           ["==", ["get", "_highlighted"], 1],
@@ -2323,7 +2327,7 @@ function renderMarkers(fit = true) {
                       ? "#4a9b8e"
                       : "#8a9490"));
       const opacity = inSelSet || isInfo || isSel || isCenter || isMatch ? "1" : isDimmed ? "0.25" : String(sym?.opacity ?? 1);
-      const strokeW = isSel || isCenter || isMatch || isInfo ? 3 : Math.max(0, Math.min(6, Number(sym?.strokeWidth) ?? 2));
+      const strokeW = isSel || isCenter || isInfo ? 3 : Math.max(0, Math.min(6, Number(sym?.strokeWidth ?? 2)));
       const strokeC = sym?.strokeColor ?? "rgba(255,255,255,0.4)";
       const border = inSelSet
         ? `3px solid ${SEL_BORDER}`
@@ -2337,6 +2341,8 @@ function renderMarkers(fit = true) {
               ? "3px solid #1a1a1a"
               : isCenter
                 ? "3px solid #fff"
+                : sym
+                  ? strokeW + "px solid " + strokeC
                 : isMatch
                   ? "3px solid #14532d"
                   : isH
