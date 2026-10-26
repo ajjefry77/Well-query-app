@@ -109,11 +109,11 @@
       <div class="side-divider"></div>
       <SavedQueries :queries="savedQueries" @load="$emit('load-query', $event)" @delete="$emit('delete-query', $event)" />
 
-      <button class="clear-data-btn" @click="$emit('clear-data')" title="پاک کردن همه داده‌های ذخیره‌شده">
+      <button class="clear-data-btn" @click="$emit('clear-data')" title="پاک کردن کوئری‌ها بدون حذف لایه‌ها">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z" />
         </svg>
-        پاک کردن داده‌ها
+        پاک کردن کوئری ها
       </button>
     </div>
   </aside>

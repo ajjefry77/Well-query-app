@@ -138,6 +138,7 @@
         :spatial-label="spatialSummaryLabel"
         :spatial-radius="spatialSummaryRadius"
         :relation-summary="relationSummary"
+        @clear-layers="handleClearLayers"
         @toggle="toggleResultsPanel"
         @open-modal="openLayerModal"
         @remove-layer="onRemoveLayer"
@@ -280,7 +281,7 @@ const {
   relationCommitted, relationResults, relationProgress, relationError,
   commitRelationFilter, clearRelation,
   savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
-  clearAllLocalData,
+  clearSavedQueries, clearLayers,
 } = useWellQuery()
 
 // ── تاریخچه کوئری‌ها (توصیفی + مکانی) ──
@@ -1224,9 +1225,17 @@ async function handleExport(format) {
 }
 
 function handleClearData() {
-  if (!confirm('همه داده‌های ذخیره‌شده (لایه‌های فعال، شرط‌ها، کوئری‌های ذخیره‌شده و تنظیمات) پاک شوند؟')) return
+  if (!confirm('کوئری‌ها و تاریخچه پاک شوند؟ لایه‌ها حفظ می‌شوند.')) return
+  onClearAllQueries()
+  clearSavedQueries()
+  clearHistoryEntries()
+  showResultsModal.value = false
+}
+
+function handleClearLayers() {
+  if (!confirm('لایه‌ها پاک شوند؟ کوئری‌های ذخیره‌شده و تاریخچه حفظ می‌شوند.')) return
   clearSymAll()
-  clearAllLocalData()
+  clearLayers()
   activeQueryLayer.value = null
   showResultsModal.value = false
 }

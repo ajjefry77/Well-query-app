@@ -33,7 +33,10 @@ export function useQueryHistory() {
     (lsGet(LS_KEY, []) ?? []).filter(e => e && typeof e.type === 'string' && typeof e.id === 'string')
   )
 
-  watch(entries, val => lsSet(LS_KEY, val), { deep: true })
+  watch(entries, val => {
+    if (val.length) lsSet(LS_KEY, val)
+    else localStorage.removeItem(LS_KEY)
+  }, { deep: true })
 
   function push(entry) {
     const record = {
@@ -55,6 +58,7 @@ export function useQueryHistory() {
 
   function clear() {
     entries.value = []
+    localStorage.removeItem(LS_KEY)
   }
 
   const attributeEntries = computed(() => entries.value.filter(e => e.type === 'attribute'))

@@ -250,7 +250,8 @@ export function useWellQuery() {
   // لایه‌های انتخاب‌شده در localStorage ذخیره می‌شوند تا با رفرش باقی بمانند
   watch(activeLayers, (val) => {
     try {
-      lsSet(LS_KEYS.activeLayers, (val ?? []).map(l => l.uuid))
+      if (val?.length) lsSet(LS_KEYS.activeLayers, val.map(layer => layer.uuid))
+      else localStorage.removeItem(LS_KEYS.activeLayers)
     } catch {}
   })
 
@@ -757,7 +758,10 @@ export function useWellQuery() {
   const rawSaved = lsGet(LS_KEYS.savedQueries, [])
   const savedQueries = ref(Array.isArray(rawSaved) ? rawSaved.filter(q => q && typeof q.layerUuid === 'string' && Array.isArray(q.conditions)) : [])
 
-  watch(savedQueries, val => lsSet(LS_KEYS.savedQueries, val), { deep: true })
+  watch(savedQueries, val => {
+    if (val.length) lsSet(LS_KEYS.savedQueries, val)
+    else localStorage.removeItem(LS_KEYS.savedQueries)
+  }, { deep: true })
 
   function saveCurrentQuery(name, layerUuid) {
     const uuid = layerUuid ?? selectedLayer.value?.uuid
@@ -801,14 +805,18 @@ export function useWellQuery() {
   }
 
   // ── پاک کردن همه داده‌های ذخیره‌شده ──
-  function clearAllLocalData() {
+  function clearSavedQueries() {
+    savedQueries.value = []
+    localStorage.removeItem(LS_KEYS.savedQueries)
+  }
+
+  function clearLayers() {
     // پاک کردن localStorage (کوئری‌های ذخیره‌شده + لایه‌های انتخاب‌شده)
-    Object.values(LS_KEYS).forEach(key => localStorage.removeItem(key))
+    localStorage.removeItem(LS_KEYS.activeLayers)
     try { LEGACY_RADIUS_KEYS.forEach(k => localStorage.removeItem(k)) } catch {}
     for (const [, c] of inFlight) c.abort()
     inFlight.clear()
     // ریست state بدون reload
-    savedQueries.value    = []
     activeLayers.value    = []
     hiddenLayers.value    = new Set()
     layerFeaturesMap.value = {}
@@ -851,6 +859,6 @@ export function useWellQuery() {
     relationCommitted, relationResults, relationProgress, relationError, hasRelationFilter,
     commitRelationFilter, clearRelation,
     savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
-    clearAllLocalData,
+    clearSavedQueries, clearLayers,
   }
 }
