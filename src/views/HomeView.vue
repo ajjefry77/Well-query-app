@@ -999,7 +999,7 @@ async function onSaveSelection() {
   const rows = allWells.value.filter(row => keys.has(rowKey(row)))
   if (!rows.length) return
   const { exportData } = await import('../composables/useExport.js')
-  await exportData('geojson', rows, convertFeature, { crs: crs.value })
+  await exportData('shp', rows, convertFeature, { crs: crs.value })
 }
 // زوم روی عوارض انتخاب‌شده
 function zoomToSelection() {
