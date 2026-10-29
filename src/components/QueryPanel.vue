@@ -146,7 +146,7 @@ const props = defineProps({
   sourceMode: { type: String, default: 'selected' },
   relationSourceLayer: { type: String, default: null },
   relationTargetLayer: { type: String, default: null },
-  relationOperator: { type: String, default: 'within' },
+  relationOperator: { type: [String, Array], default: () => ['within'] },
   relationRadiusKm: { type: Number, default: 3 },
   relationLoading: { type: Boolean, default: false },
   relationError: { type: String, default: null },

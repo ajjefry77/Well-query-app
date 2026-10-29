@@ -85,13 +85,27 @@
         <span>نوع رابطه</span>
       </div>
       <div class="field-group">
-        <AppSelect
-          class="qb-select qb-select--full"
-          :model-value="operator"
-          :options="operatorOptions"
-          :disabled="!sourceReady || !targetLayer"
-          @update:model-value="$emit('update:operator', $event)"
-        />
+        <div class="relation-dropdown" :class="{ 'relation-dropdown--open': relationDropdownOpen }">
+          <button
+            type="button"
+            class="relation-dropdown__trigger"
+            :disabled="!sourceReady || !targetLayer"
+            @click="relationDropdownOpen = !relationDropdownOpen"
+          >
+            <span>{{ relationSummaryText }}</span>
+            <span class="relation-dropdown__chevron">▾</span>
+          </button>
+          <div v-if="relationDropdownOpen" class="relation-dropdown__menu">
+            <label v-for="option in operatorOptions" :key="option.value" class="relation-option">
+              <input
+                type="checkbox"
+                :checked="selectedOperators.includes(option.value)"
+                @change="toggleOperator(option.value, $event.target.checked)"
+              />
+              <span>{{ option.label }}</span>
+            </label>
+          </div>
+        </div>
       </div>
       <p class="sq__hint">{{ operatorHint }}</p>
 
@@ -137,9 +151,9 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import AppSelect from "./AppSelect.vue";
-import { RELATION_OPERATORS } from "../composables/useSpatialRelations.js";
+import { RELATION_OPERATORS, normalizeRelationOperators } from "../composables/useSpatialRelations.js";
 
 const props = defineProps({
   layers: { type: Array, default: () => [] },
@@ -151,7 +165,7 @@ const props = defineProps({
   sourceMode: { type: String, default: "selected" },
   sourceLayer: { type: String, default: null },
   targetLayer: { type: String, default: null },
-  operator: { type: String, default: "within" },
+  operator: { type: [String, Array], default: () => ["within"] },
   radiusKm: { type: Number, default: 3 },
   relationLoading: { type: Boolean, default: false },
   relationError: { type: String, default: null },
@@ -168,6 +182,7 @@ const emit = defineEmits([
   "apply-relation",
 ]);
 
+const relationDropdownOpen = ref(false);
 const layerOptions = computed(() =>
   props.layers.map((layer) => ({
     value: layer.uuid,
@@ -175,12 +190,31 @@ const layerOptions = computed(() =>
   })),
 );
 
+const selectedOperators = computed(() => normalizeRelationOperators(props.operator));
 const operatorOptions = computed(() =>
   RELATION_OPERATORS.map((o) => ({ value: o.value, label: o.label })),
 );
-const operatorHint = computed(
-  () => RELATION_OPERATORS.find((o) => o.value === props.operator)?.hint ?? "",
-);
+const relationSummaryText = computed(() => {
+  if (!selectedOperators.value.length) return 'انتخاب نوع رابطه';
+  if (selectedOperators.value.length === 1) return RELATION_OPERATORS.find(o => o.value === selectedOperators.value[0])?.label ?? 'نوع رابطه';
+  return `${selectedOperators.value.length} نوع رابطه انتخاب شده`;
+});
+const operatorHint = computed(() => {
+  const chosen = selectedOperators.value;
+  if (!chosen.length) return 'حداقل یک نوع رابطه را انتخاب کنید.';
+  if (chosen.length === 1) {
+    return RELATION_OPERATORS.find((o) => o.value === chosen[0])?.hint ?? '';
+  }
+  return 'نتیجه با ترکیب OR بین نوع‌های انتخاب‌شده ساخته می‌شود.';
+});
+
+function toggleOperator(value, checked) {
+  const current = new Set(selectedOperators.value);
+  if (checked) current.add(value);
+  else current.delete(value);
+  const next = [...current];
+  emit('update:operator', next.length ? next : ['within']);
+}
 
 // گام ۱ آماده است اگر: حالت انتخاب‌شده + حداقل یک انتخاب، یا حالت کل‌لایه + لایه مبدأ
 const sourceReady = computed(() => {
@@ -200,7 +234,8 @@ const selectionInSource = computed(() => {
 const canApply = computed(() => {
   if (!sourceReady.value || !props.targetLayer) return false;
   if (!selectionInSource.value) return false;
-  if (props.operator === "within-distance") {
+  const operators = normalizeRelationOperators(props.operator);
+  if (operators.includes('within-distance')) {
     const r = Number(props.radiusKm);
     if (!Number.isFinite(r) || r <= 0) return false;
   }
@@ -406,6 +441,62 @@ const numberCfg = { min: 0.1, step: 0.1 };
 .accent {
   color: var(--brand);
   font-weight: 700;
+}
+.relation-dropdown {
+  position: relative;
+}
+.relation-dropdown__trigger {
+  width: 100%;
+  appearance: none;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 9px 10px;
+  cursor: pointer;
+}
+.relation-dropdown__trigger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.relation-dropdown__chevron {
+  color: var(--text-muted);
+}
+.relation-dropdown__menu {
+  position: absolute;
+  inset: calc(100% + 6px) auto auto 0;
+  width: 100%;
+  max-height: 280px;
+  overflow: auto;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  box-shadow: var(--shadow-sm);
+  padding: 8px;
+  z-index: 30;
+}
+.relation-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px;
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.relation-option input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--brand);
+  margin: 0;
 }
 .qb-select {
   display: block;

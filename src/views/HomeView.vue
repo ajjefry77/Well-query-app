@@ -607,10 +607,12 @@ const relationSummary = computed(() => {
     ? (srcName ? `مبدأ: ${selectionCount.value} عارضه انتخاب‌شده (${srcName})` : `مبدأ: ${selectionCount.value} عارضه انتخاب‌شده`)
     : `مبدأ: ${srcName} کل لایه`
   const targetText = `هدف: ${layerNameOf(c.targetLayerUuid)} — کل لایه`
+  const operatorValue = Array.isArray(c.operator) ? c.operator : [c.operator]
+  const opLabel = operatorValue.includes('within-distance') && Number.isFinite(+c.radiusKm)
+    ? `${relationLabel(operatorValue)} (${(+c.radiusKm).toLocaleString('fa-IR')} km)`
+    : relationLabel(operatorValue)
   return {
-    opLabel: c.operator === 'within-distance' && Number.isFinite(+c.radiusKm)
-      ? `${relationLabel(c.operator)} (${(+c.radiusKm).toLocaleString('fa-IR')} km)`
-      : relationLabel(c.operator),
+    opLabel,
     sourceText,
     targetText,
     count: relationResults.value.length,
@@ -1075,9 +1077,10 @@ function recordAttributeHistory() {
 function recordRelationHistory() {
   const c = relationCommitted.value
   if (!c) return
-  const opText = c.operator === 'within-distance' && Number.isFinite(+c.radiusKm)
-    ? `${relationLabel(c.operator)} (${(+c.radiusKm).toLocaleString('fa-IR')} km)`
-    : relationLabel(c.operator)
+  const operatorValue = Array.isArray(c.operator) ? c.operator : [c.operator]
+  const opText = operatorValue.includes('within-distance') && Number.isFinite(+c.radiusKm)
+    ? `${relationLabel(operatorValue)} (${(+c.radiusKm).toLocaleString('fa-IR')} km)`
+    : relationLabel(operatorValue)
   pushHistoryEntry({
     type: 'relation',
     params: JSON.parse(JSON.stringify(c)),

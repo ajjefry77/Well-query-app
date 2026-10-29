@@ -578,7 +578,7 @@ export function useWellQuery() {
   // پیش‌نویس فرم و مقادیر تأییدشده (فقط بعد از «اجرای کوئری» اثر می‌کنند)
   const relationSourceLayer = ref(null)
   const relationTargetLayer = ref(null)
-  const relationOperator    = ref('within')
+  const relationOperator    = ref(['within'])
   const relationRadiusKm    = ref(3)
   const relationCommitted   = ref(null)
 
@@ -729,7 +729,9 @@ export function useWellQuery() {
     relationCommitted.value = {
       sourceLayerUuid: srcUuid,
       targetLayerUuid: relationTargetLayer.value,
-      operator: relationOperator.value || 'within',
+      operator: Array.isArray(relationOperator.value) && relationOperator.value.length
+        ? relationOperator.value
+        : ['within'],
       radiusKm: Number(relationRadiusKm.value) || 3,
       sourceMode: mode,
       sourceKeys: mode === 'selected' ? getRelationSourceRows(srcUuid, mode).map(rowKeyOf) : null,
@@ -751,7 +753,7 @@ export function useWellQuery() {
     relationAbortCtrl?.abort()
     relationSourceLayer.value = null
     relationTargetLayer.value = null
-    relationOperator.value    = 'within'
+    relationOperator.value    = ['within']
     relationRadiusKm.value    = 3
     relationSourceMode.value  = 'selected'
     spatialTargetOnlySelected.value = false

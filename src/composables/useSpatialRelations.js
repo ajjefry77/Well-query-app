@@ -48,8 +48,27 @@ export const RELATION_OPERATORS = [
   },
 ]
 
+export function normalizeRelationOperators(operator) {
+  const values = Array.isArray(operator)
+    ? operator
+    : typeof operator === 'string' && operator
+      ? [operator]
+      : []
+  const clean = values
+    .map(v => String(v).trim())
+    .filter(Boolean)
+    .filter((v, index, arr) => arr.indexOf(v) === index)
+  return clean.length ? clean : ['within']
+}
+
 export function relationLabel(value) {
-  return RELATION_OPERATORS.find(o => o.value === value)?.label ?? value
+  const operators = normalizeRelationOperators(value)
+  if (operators.length === 1) {
+    return RELATION_OPERATORS.find(o => o.value === operators[0])?.label ?? operators[0]
+  }
+  return operators
+    .map(op => RELATION_OPERATORS.find(o => o.value === op)?.label ?? op)
+    .join(' / ')
 }
 
 // تبدیل سطر نتیجه به Feature استاندارد GeoJSON (نقطه فاقد هندسه → Point)
@@ -390,7 +409,24 @@ export async function findWithinDistanceMultiAsync(sourceRows, targetRows, radiu
 // قبلاً evaluateRelation داخل حلقه تودرتو برای هر جفت، bbox مبدأ و هدف را
 // از نو روی همه مختصات راه می‌رفت (O(S*T*N)) که روی لایه‌های بزرگ مرورگر را فریز می‌کرد.
 export function findMatchingRowsMulti(sourceRows, targetRows, operator, opts = {}) {
-  if (operator === 'within-distance') {
+  const operators = normalizeRelationOperators(operator)
+  if (operators.length > 1) {
+    const seen = new Set()
+    const merged = []
+    for (const op of operators) {
+      const rows = findMatchingRowsMulti(sourceRows, targetRows, op, opts)
+      for (const row of rows) {
+        const key = row?._layerUuid ? `${row._layerUuid}::${row.id}` : String(row.id ?? '')
+        if (!key || !seen.has(key)) {
+          if (key) seen.add(key)
+          merged.push(row)
+        }
+      }
+    }
+    return merged
+  }
+  const op = operators[0]
+  if (op === 'within-distance') {
     return findWithinDistanceMulti(sourceRows, targetRows, opts.radiusKm)
   }
   if (!Array.isArray(sourceRows) || !Array.isArray(targetRows) || !sourceRows.length) return []
@@ -420,7 +456,7 @@ export function findMatchingRowsMulti(sourceRows, targetRows, operator, opts = {
       if (sb && tb && bboxesDisjoint(sb, tb)) continue
       let ok = false
       lastRelationStats.evaluated++
-      try { ok = evaluateRelationFast(sGeom, tGeom, operator) === true } catch { ok = false }
+      try { ok = evaluateRelationFast(sGeom, tGeom, op) === true } catch { ok = false }
       if (ok) {
         if (key) {
           if (seen.has(key)) break
@@ -459,7 +495,24 @@ function evaluateRelationFast(sourceGeom, targetGeom, operator) {
 // فرصت می‌دهد تا دیالوگ "long script / wait" مرورگر ظاهر نشود و
 // بتوان پیشرفت و لغو (AbortSignal) را گزارش کرد.
 export async function findMatchingRowsMultiAsync(sourceRows, targetRows, operator, opts = {}) {
-  if (operator === 'within-distance') {
+  const operators = normalizeRelationOperators(operator)
+  if (operators.length > 1) {
+    const seen = new Set()
+    const merged = []
+    for (const op of operators) {
+      const rows = await findMatchingRowsMultiAsync(sourceRows, targetRows, op, opts)
+      for (const row of rows) {
+        const key = row?._layerUuid ? `${row._layerUuid}::${row.id}` : String(row.id ?? '')
+        if (!key || !seen.has(key)) {
+          if (key) seen.add(key)
+          merged.push(row)
+        }
+      }
+    }
+    return merged
+  }
+  const op = operators[0]
+  if (op === 'within-distance') {
     return findWithinDistanceMultiAsync(sourceRows, targetRows, opts.radiusKm, opts)
   }
   if (!Array.isArray(sourceRows) || !Array.isArray(targetRows) || !sourceRows.length) return []
@@ -499,7 +552,7 @@ export async function findMatchingRowsMultiAsync(sourceRows, targetRows, operato
         if (sb && tb && bboxesDisjoint(sb, tb)) continue
         let ok = false
         lastRelationStats.evaluated++
-        try { ok = evaluateRelationFast(sGeom, tGeom, operator) === true } catch { ok = false }
+        try { ok = evaluateRelationFast(sGeom, tGeom, op) === true } catch { ok = false }
         if (ok) {
           if (!key || !seen.has(key)) {
             if (key) seen.add(key)
