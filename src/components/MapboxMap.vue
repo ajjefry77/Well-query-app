@@ -1804,19 +1804,13 @@ function _pointOpacity() {
     ["==", ["get", "_psrc"], 1], 1,
     ["==", ["get", "_selected"], 1], 1,
     ["==", ["get", "_isCenter"], 1], 1,
-    ["==", ["get", "_dimmed"], 1], 0.3,
+    ["==", ["get", "_dimmed"], 1], 0.5,
     ["coalesce", ["get", "_sym_op"], 1],
   ];
 }
 function _pointTextSize() {
   return [
     "case",
-    ["==", ["get", "_sel"], 1], 26,
-    ["==", ["get", "_infoKey"], 1], 26,
-    ["==", ["get", "_pfail"], 1], 26,
-    ["==", ["get", "_pok"], 1], 26,
-    ["==", ["get", "_psrc"], 1], 26,
-    ["==", ["get", "_selected"], 1], 26,
     ["==", ["get", "_isCenter"], 1], 26,
     ["*", ["coalesce", ["get", "_sym_size"], 6], 2.4],
   ];
@@ -1840,7 +1834,7 @@ function addDashAndShapeLayers() {
         paint: {
           "line-color": _polyOutlineColor(),
           "line-width": _lineWidthPoly(),
-          "line-opacity": _lineOpacity(0.15),
+          "line-opacity": _lineOpacity(0.4),
           "line-dasharray": d.array,
         },
       });
@@ -1854,7 +1848,7 @@ function addDashAndShapeLayers() {
         paint: {
           "line-color": _polylineColor(),
           "line-width": _lineWidthLine(),
-          "line-opacity": _lineOpacity(0.25),
+          "line-opacity": _lineOpacity(0.5),
           "line-dasharray": d.array,
         },
       });
@@ -1989,7 +1983,7 @@ function renderMarkers(fit = true) {
           ["==", ["get", "_highlighted"], 1],
           0.55,
           ["==", ["get", "_dimmed"], 1],
-          0.06,
+          0.25,
           ["coalesce", ["get", "_sym_fillop"], 0.2], // عادی: شفافیت سیمبولوژی
         ],
       },
@@ -2070,7 +2064,7 @@ function renderMarkers(fit = true) {
           ["==", ["get", "_highlighted"], 1],
           1,
           ["==", ["get", "_dimmed"], 1],
-          0.15,
+          0.4,
           0.5,
         ],
       },
@@ -2147,7 +2141,7 @@ function renderMarkers(fit = true) {
           ["==", ["get", "_infoKey"], 1],
           1,
           ["==", ["get", "_dimmed"], 1],
-          0.25,
+          0.5,
           ["coalesce", ["get", "_sym_op"], 1],
         ],
       },
@@ -2160,8 +2154,6 @@ function renderMarkers(fit = true) {
       paint: {
         "circle-radius": [
           "case",
-          ["==", ["get", "_sel"], 1],
-          12,
           ["==", ["get", "_infoKey"], 1],
           12,
           ["==", ["get", "_pfail"], 1],
@@ -2170,19 +2162,11 @@ function renderMarkers(fit = true) {
           12,
           ["==", ["get", "_psrc"], 1],
           12,
-          ["==", ["get", "_selected"], 1],
-          12,
           ["==", ["get", "_isCenter"], 1],
           12,
           ["!=", ["get", "_sym_size"], null],
           ["get", "_sym_size"],
-          ["==", ["get", "_match"], 1],
-          11,
-          ["==", ["get", "_highlighted"], 1],
-          9,
-          ["==", ["get", "_dimmed"], 1],
-          4,
-          6,
+          4.5,
         ],
         "circle-color": [
           "case",
@@ -2227,13 +2211,11 @@ function renderMarkers(fit = true) {
           ["==", ["get", "_isCenter"], 1],
           1,
           ["==", ["get", "_dimmed"], 1],
-          0.3,
+          0.5,
           ["coalesce", ["get", "_sym_op"], 1],
         ],
         "circle-stroke-width": [
           "case",
-          ["==", ["get", "_sel"], 1],
-          3,
           ["==", ["get", "_infoKey"], 1],
           3,
           ["==", ["get", "_pfail"], 1],
@@ -2241,8 +2223,6 @@ function renderMarkers(fit = true) {
           ["==", ["get", "_pok"], 1],
           3,
           ["==", ["get", "_psrc"], 1],
-          3,
-          ["==", ["get", "_selected"], 1],
           3,
           ["==", ["get", "_isCenter"], 1],
           3,
@@ -2250,8 +2230,6 @@ function renderMarkers(fit = true) {
         ],
         "circle-stroke-color": [
           "case",
-          ["==", ["get", "_sel"], 1],
-          SEL_BORDER,
           ["==", ["get", "_infoKey"], 1],
           INFO_BORDER,
           ["==", ["get", "_pfail"], 1],
@@ -2259,8 +2237,6 @@ function renderMarkers(fit = true) {
           ["==", ["get", "_pok"], 1],
           PREVIEW_OK_BORDER,
           ["==", ["get", "_psrc"], 1],
-          "#1a1a1a",
-          ["==", ["get", "_selected"], 1],
           "#1a1a1a",
           ["==", ["get", "_isCenter"], 1],
           "#fff",
@@ -2344,20 +2320,18 @@ function renderMarkers(fit = true) {
                 : isCenter
                   ? "#e74c3c"
                   : (isMatch ? "#22c55e" : isDimmed ? "#8a9490" : (symColor ?? DEFAULT_FEATURE_COLOR));
-      const opacity = inSelSet || isInfo || isSel || isCenter || isMatch ? "1" : isDimmed ? "0.25" : String(sym?.opacity ?? 1);
-      const strokeW = isSel || isCenter || isInfo ? 3 : Math.max(0, Math.min(6, Number(sym?.strokeWidth ?? 2)));
+      const opacity = inSelSet || isInfo || isSel || isCenter || isMatch ? "1" : isDimmed ? "0.5" : String(sym?.opacity ?? 1);
+      const strokeW = isCenter || isInfo ? 3 : Math.max(0, Math.min(6, Number(sym?.strokeWidth ?? 2)));
       const strokeC = sym?.strokeColor ?? "rgba(255,255,255,0.4)";
       const border = inSelSet
-        ? `3px solid ${SEL_BORDER}`
+        ? strokeW + "px solid " + strokeC
         : isInfo
           ? `3px solid ${INFO_BORDER}`
           : isFail
           ? `3px solid ${PREVIEW_FAIL_BORDER}`
           : isOk
             ? `3px solid ${PREVIEW_OK_BORDER}`
-            : isSel
-              ? "3px solid #1a1a1a"
-              : isCenter
+            : isCenter
                 ? "3px solid #fff"
                 : sym
                   ? strokeW + "px solid " + strokeC
@@ -2366,9 +2340,8 @@ function renderMarkers(fit = true) {
                   : isH
                     ? "3px solid #fff"
                     : `${strokeW}px solid ${strokeC}`;
-      const symSize = Math.max(4, Math.min(30, Number(sym?.size) || 12));
-      const hasSym = sym?.size != null;
-      const size = inSelSet ? 22 : isInfo ? 22 : isSel ? 22 : isCenter ? 22 : isDimmed ? 8 : hasSym ? symSize : isMatch ? 20 : isH ? 18 : symSize;
+      const symSize = Math.max(4, Math.min(30, Number(sym?.size) || 8));
+      const size = symSize;
       const shape = sym?.shape ?? 'circle';
       const shapeCss = shape === 'square'
         ? 'border-radius:4px;'
@@ -2387,7 +2360,7 @@ function renderMarkers(fit = true) {
       box-shadow:0 2px 6px rgba(0,0,0,0.4);cursor:pointer;
       opacity:${opacity};
       ${shape === 'cross' ? `background:linear-gradient(${color},${color}) center/60% 18% no-repeat, linear-gradient(${color},${color}) center/18% 60% no-repeat;` : ''}
-      ${isSel || isCenter || isMatch ? "outline:3px solid rgba(34,197,94,0.45);outline-offset:3px;" : (isInfo ? "outline:3px solid rgba(255,255,255,0.75);outline-offset:3px;" : (isH ? "outline:3px solid rgba(240,165,0,0.4);outline-offset:3px;" : ""))}`;
+      ${isCenter || isMatch ? "outline:3px solid rgba(34,197,94,0.45);outline-offset:3px;" : (isInfo ? "outline:3px solid rgba(255,255,255,0.75);outline-offset:3px;" : (isH ? "outline:3px solid rgba(240,165,0,0.4);outline-offset:3px;" : ""))}`;
       // عارضه‌های هم‌مختصات (دو لایه روی هم) → تب در یک پاپ‌آپ
       const stacked = props.wells.filter(
         (o) => Number.isFinite(+o.lat) && Number.isFinite(+o.lng) && +o.lat === +w.lat && +o.lng === +w.lng,

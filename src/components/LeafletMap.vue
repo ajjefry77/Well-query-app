@@ -242,7 +242,7 @@ function defaultStyle(feature, highlighted, matched = false, neutral = false) {
     return {
       color: dimmed ? GRAY : color,
       weight: Number(sym?.strokeWidth ?? sym?.size) || 2.5,
-      opacity: dimmed ? 0.35 : (highlighted ? 1 : (Number(sym?.opacity) ?? 0.8)),
+      opacity: dimmed ? 0.5 : (highlighted ? 1 : (Number(sym?.opacity) ?? 0.8)),
       dashArray: dashToLeaflet(sym?.dash),
     };
   }
@@ -250,15 +250,15 @@ function defaultStyle(feature, highlighted, matched = false, neutral = false) {
     color: dimmed ? GRAY : (highlighted ? "#e9efe9" : strokeC),
     weight: highlighted ? 2.5 : (Number(sym?.strokeWidth) || 1.5),
     fillColor: dimmed ? GRAY : color,
-    fillOpacity: dimmed ? 0.08 : (highlighted ? 0.55 : (Number(sym?.fillOpacity) ?? 0.25)),
-    opacity: dimmed ? 0.35 : (highlighted ? 1 : (Number(sym?.opacity) ?? 0.8)),
+    fillOpacity: dimmed ? 0.3 : (highlighted ? 0.55 : (Number(sym?.fillOpacity) ?? 0.25)),
+    opacity: dimmed ? 0.5 : (highlighted ? 1 : (Number(sym?.opacity) ?? 0.8)),
     dashArray: dashToLeaflet(sym?.dash),
   };
 }
 
 function makePointIcon(color, highlighted, dimmed, isCenter = false, matched = false, sizeOverride = null, sym = null) {
-  const base = Number(sizeOverride) >= 4 ? Math.min(28, Number(sizeOverride)) : 10;
-  const size = isCenter ? 20 : (matched ? 18 : (highlighted ? 16 : base));
+  const base = Number(sizeOverride) >= 4 ? Math.min(20, Number(sizeOverride)) : 8;
+  const size = isCenter ? 14 : base;
   const bg = dimmed ? GRAY : (isCenter ? color : (matched ? MATCH_FILL : color))
   const strokeW = Math.max(0, Math.min(6, Number(sym?.strokeWidth) ?? 2));
   const strokeC = sym?.strokeColor ?? "rgba(12,18,16,0.6)";
@@ -268,7 +268,7 @@ function makePointIcon(color, highlighted, dimmed, isCenter = false, matched = f
   const shadow = isCenter
     ? "0 0 0 4px rgba(240,165,0,0.25)"
     : (matched ? "0 0 0 5px rgba(34,197,94,0.35)" : (highlighted ? "0 0 0 4px rgba(240,165,0,0.25)" : "none"))
-  const opacity = isCenter ? "1" : (dimmed ? "0.35" : String(sym?.opacity ?? "1"))
+  const opacity = isCenter ? "1" : (dimmed ? "0.5" : String(sym?.opacity ?? "1"))
   if (shape === 'cross' || shape === 'star') {
     const char = shape === 'cross' ? '✕' : '★';
     return L.divIcon({
@@ -458,11 +458,11 @@ function renderFeatures(fit = true) {
         const matched = !neutral && highlighted && props.hasFilter
         const isCenter = centerKey && key === centerKey;
         const isSel = (selectedKey && (key === selectedKey || String(feature.properties.id) === selectedKey)) || isAny;
+        const psym = symOf(feature);
         if (isFail) return L.marker(latlng, { icon: makePointIcon(PREVIEW_FAIL_FILL, true, false) });
         if (isOk) return L.marker(latlng, { icon: makePointIcon(PREVIEW_OK_FILL, true, false) });
         if (isSrc) return L.marker(latlng, { icon: makePointIcon(PREVIEW_SRC, true, false) });
-        if (isSel) return L.marker(latlng, { icon: makePointIcon("#f0a500", true, false) });
-        const psym = symOf(feature);
+        if (isSel) return L.marker(latlng, { icon: makePointIcon("#f0a500", false, false, false, false, psym?.size, psym) });
         const color = isCenter ? "#e74c3c" : (psym?.color ?? colorForId(feature.properties.id));
         return L.marker(latlng, { icon: makePointIcon(color, highlighted, dimmed, isCenter, matched, psym?.size, psym) });
       },
@@ -512,12 +512,12 @@ function renderFeatures(fit = true) {
       const baseColor = previewColor ?? (isSel ? "#f0a500" : (isCenter ? "#e74c3c" : (wsym?.color ?? colorForId(w.id))));
       const color = matched && !isSel && !isCenter && !isAny ? MATCH_FILL : baseColor;
       const marker = L.circleMarker([+w.lat, +w.lng], {
-        radius: isSel ? 9 : (isCenter ? 10 : (matched ? 9 : (highlighted ? 8 : (dimmed ? 4 : Math.max(3, Math.min(14, Math.round((Number(wsym?.size) || 5) / 1.4))))))),
+        radius: isCenter ? 5 : Math.max(2.5, Math.min(7, Math.round((Number(wsym?.size) || 5) / 2))),
         color: dimmed && !isSel ? GRAY : (matched && !isAny ? MATCH_BORDER : ((isSel || isAny) ? previewBorder : (isCenter ? "#fff" : (highlighted ? "#e9efe9" : (wsym?.strokeColor ?? color))))),
-        weight: isSel || isCenter || matched ? 3 : (Number(wsym?.strokeWidth) || 1.5),
+        weight: Number(wsym?.strokeWidth) || 1.5,
         fillColor: dimmed && !isSel ? GRAY : color,
-        fillOpacity: dimmed && !isSel ? 0.15 : ((isSel || isCenter || matched) ? 0.9 : (highlighted ? 0.8 : (Number(wsym?.fillOpacity) ?? 0.5))),
-        opacity: (isSel || isCenter || matched) ? 1 : (dimmed ? 0.35 : (Number(wsym?.opacity) ?? 1)),
+        fillOpacity: dimmed && !isSel ? 0.3 : ((isSel || isCenter || matched) ? 0.9 : (highlighted ? 0.8 : (Number(wsym?.fillOpacity) ?? 0.5))),
+        opacity: (isSel || isCenter || matched) ? 1 : (dimmed ? 0.5 : (Number(wsym?.opacity) ?? 1)),
       });
       marker._wellId = key;
       marker.on("click", (e) => {
@@ -572,12 +572,12 @@ function addCoordMarkers(highlightSet, centerKey, selectedKey, psets) {
       const baseColor = previewColor ?? (isSel ? "#f0a500" : (isCenter ? "#e74c3c" : (wsym?.color ?? colorForId(w.id))));
       const color = matched && !isSel && !isCenter && !isAny ? MATCH_FILL : baseColor;
       const marker = L.circleMarker([+w.lat, +w.lng], {
-        radius: isSel ? 9 : (isCenter ? 10 : (matched ? 9 : (highlighted ? 8 : (dimmed ? 4 : Math.max(3, Math.min(14, Math.round((Number(wsym?.size) || 5) / 1.4))))))),
+        radius: isCenter ? 5 : Math.max(2.5, Math.min(7, Math.round((Number(wsym?.size) || 5) / 2))),
         color: dimmed && !isSel ? GRAY : (matched && !isAny ? MATCH_BORDER : ((isSel || isAny) ? previewBorder : (isCenter ? "#fff" : (highlighted ? "#e9efe9" : (wsym?.strokeColor ?? color))))),
-        weight: isSel || isCenter || matched ? 3 : (Number(wsym?.strokeWidth) || 1.5),
+        weight: Number(wsym?.strokeWidth) || 1.5,
         fillColor: dimmed && !isSel ? GRAY : color,
-        fillOpacity: dimmed && !isSel ? 0.15 : ((isSel || isCenter || matched) ? 0.9 : (highlighted ? 0.8 : (Number(wsym?.fillOpacity) ?? 0.5))),
-        opacity: (isSel || isCenter || matched) ? 1 : (dimmed ? 0.35 : (Number(wsym?.opacity) ?? 1)),
+        fillOpacity: dimmed && !isSel ? 0.3 : ((isSel || isCenter || matched) ? 0.9 : (highlighted ? 0.8 : (Number(wsym?.fillOpacity) ?? 0.5))),
+        opacity: (isSel || isCenter || matched) ? 1 : (dimmed ? 0.5 : (Number(wsym?.opacity) ?? 1)),
       });
       marker._wellId = key;
       marker.on("click", (e) => {
@@ -686,15 +686,21 @@ function styleSingleLayer(layer, highlightSet, centerKey, selectedKey, psets, fs
     }
   } else if (isSel) {
     if (layer.setStyle) {
-      layer.setStyle({
-        color: "#f0a500",
-        weight: 3.5,
-        fillColor: "#f0a500",
-        fillOpacity: 0.6,
-        opacity: 1,
-      });
+      if (layer instanceof L.CircleMarker) {
+        layer.setStyle({ fillColor: "#f0a500" });
+      } else {
+        layer.setStyle({
+          color: "#f0a500",
+          weight: 3.5,
+          fillColor: "#f0a500",
+          fillOpacity: 0.6,
+          opacity: 1,
+        });
+      }
     } else if (layer.setIcon) {
-      layer.setIcon(makePointIcon("#f0a500", true, false));
+      const well = key ? props.wells.find(x => wellKey(x) === key) : null;
+      const sym = well ? symOf(well) : null;
+      layer.setIcon(makePointIcon("#f0a500", false, false, false, false, sym?.size, sym));
     }
   } else if (isCenter) {
     if (layer.setStyle) {

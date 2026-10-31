@@ -85,27 +85,16 @@
         <span>نوع رابطه</span>
       </div>
       <div class="field-group">
-        <div class="relation-dropdown" :class="{ 'relation-dropdown--open': relationDropdownOpen }">
-          <button
-            type="button"
-            class="relation-dropdown__trigger"
-            :disabled="!sourceReady || !targetLayer"
-            @click="relationDropdownOpen = !relationDropdownOpen"
-          >
-            <span>{{ relationSummaryText }}</span>
-            <span class="relation-dropdown__chevron">▾</span>
-          </button>
-          <div v-if="relationDropdownOpen" class="relation-dropdown__menu">
-            <label v-for="option in operatorOptions" :key="option.value" class="relation-option">
-              <input
-                type="checkbox"
-                :checked="selectedOperators.includes(option.value)"
-                @change="toggleOperator(option.value, $event.target.checked)"
-              />
-              <span>{{ option.label }}</span>
-            </label>
-          </div>
-        </div>
+        <fieldset class="relation-list" :disabled="!sourceReady || !targetLayer">
+          <label v-for="option in operatorOptions" :key="option.value" class="relation-option">
+            <input
+              type="checkbox"
+              :checked="selectedOperators.includes(option.value)"
+              @change="toggleOperator(option.value, $event.target.checked)"
+            />
+            <span>{{ option.label }}</span>
+          </label>
+        </fieldset>
       </div>
       <p class="sq__hint">{{ operatorHint }}</p>
 
@@ -151,7 +140,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed } from "vue";
 import AppSelect from "./AppSelect.vue";
 import { RELATION_OPERATORS, normalizeRelationOperators } from "../composables/useSpatialRelations.js";
 
@@ -182,7 +171,6 @@ const emit = defineEmits([
   "apply-relation",
 ]);
 
-const relationDropdownOpen = ref(false);
 const layerOptions = computed(() =>
   props.layers.map((layer) => ({
     value: layer.uuid,
@@ -191,14 +179,7 @@ const layerOptions = computed(() =>
 );
 
 const selectedOperators = computed(() => normalizeRelationOperators(props.operator));
-const operatorOptions = computed(() =>
-  RELATION_OPERATORS.map((o) => ({ value: o.value, label: o.label })),
-);
-const relationSummaryText = computed(() => {
-  if (!selectedOperators.value.length) return 'انتخاب نوع رابطه';
-  if (selectedOperators.value.length === 1) return RELATION_OPERATORS.find(o => o.value === selectedOperators.value[0])?.label ?? 'نوع رابطه';
-  return `${selectedOperators.value.length} نوع رابطه انتخاب شده`;
-});
+const operatorOptions = RELATION_OPERATORS;
 const operatorHint = computed(() => {
   const chosen = selectedOperators.value;
   if (!chosen.length) return 'حداقل یک نوع رابطه را انتخاب کنید.';
@@ -443,45 +424,19 @@ const numberCfg = { min: 0.1, step: 0.1 };
   color: var(--brand);
   font-weight: 700;
 }
-.relation-dropdown {
-  position: relative;
-}
-.relation-dropdown__trigger {
+.relation-list {
   width: 100%;
-  appearance: none;
-  background: var(--bg-panel);
-  border: 1px solid var(--border-strong);
+  min-width: 0;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xs);
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 9px 10px;
-  cursor: pointer;
-}
-.relation-dropdown__trigger:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.relation-dropdown__chevron {
-  color: var(--text-muted);
-}
-.relation-dropdown__menu {
-  position: absolute;
-  inset: calc(100% + 6px) auto auto 0;
-  width: 100%;
   max-height: 280px;
   overflow: auto;
   background: var(--bg-panel-raised);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xs);
-  box-shadow: var(--shadow-sm);
-  padding: 8px;
-  z-index: 30;
+}
+.relation-list:disabled {
+  opacity: 0.45;
 }
 .relation-option {
   display: flex;
@@ -492,6 +447,13 @@ const numberCfg = { min: 0.1, step: 0.1 };
   color: var(--text-primary);
   font-size: 12px;
   line-height: 1.5;
+  cursor: pointer;
+}
+.relation-option:hover {
+  background: var(--bg-panel);
+}
+.relation-list:disabled .relation-option {
+  cursor: not-allowed;
 }
 .relation-option input {
   width: 15px;
