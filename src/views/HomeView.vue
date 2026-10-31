@@ -765,7 +765,7 @@ const visibleWells = computed(() =>
 // سطر انتخاب‌شده همیشه نگه داشته می‌شود تا زوم از جدول کار کند.
 const MAP_RENDER_CAP = 8000
 const mapWells = computed(() => {
-  const src = hasAnyFilter.value ? displayRows.value : visibleWells.value
+  const src = visibleWells.value
   if (src.length <= MAP_RENDER_CAP) return src
   const out = fairSamplePerLayer(src, MAP_RENDER_CAP)
   const keep = activeWellId.value ?? selectedWellId.value ?? infoWellId.value
@@ -782,7 +782,7 @@ const mapWells = computed(() => {
   return out
 })
 const mapCappedTotal = computed(() =>
-  hasAnyFilter.value ? displayRows.value.length : visibleWells.value.length
+  visibleWells.value.length
 )
 
 // کلید ارزان تغییر نقشه — قبلاً کل idها sort و join می‌شد (رشته چندمگابایتی روی

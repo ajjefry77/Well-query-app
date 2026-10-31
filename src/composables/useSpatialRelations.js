@@ -4,6 +4,7 @@ import booleanWithin from '@turf/boolean-within'
 import booleanContains from '@turf/boolean-contains'
 import booleanEqual from '@turf/boolean-equal'
 import booleanTouches from '@turf/boolean-touches'
+import intersect from '@turf/intersect'
 import booleanIntersects from '@turf/boolean-intersects'
 import booleanOverlap from '@turf/boolean-overlap'
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
@@ -121,7 +122,16 @@ const OP_FNS = {
   within: (target, source) => booleanWithin(target, source),
   contains: (target, source) => booleanContains(target, source),
   identical: (target, source) => booleanEqual(target, source),
-  touches: (target, source) => booleanTouches(target, source),
+  touches: (target, source) => {
+    const polygonTypes = new Set(['Polygon', 'MultiPolygon'])
+    if (polygonTypes.has(target.geometry.type) && polygonTypes.has(source.geometry.type)) {
+      return booleanIntersects(target, source) && intersect({
+        type: 'FeatureCollection',
+        features: [target, source],
+      }) === null
+    }
+    return booleanTouches(target, source)
+  },
   intersects: (target, source) => booleanIntersects(target, source),
   overlaps: (target, source) => booleanOverlap(target, source),
 }

@@ -2578,9 +2578,13 @@ watch(() => props.wells, () => scheduleRender());
 
 // وقتی فقط highlight یا filter عوض شد، فقط data رو آپدیت کن (سریع‌تر از renderMarkers کامل)
 function updateHighlightData() {
-  if (!map || !map.isStyleLoaded()) return;
+  if (!map) return;
   if (!wellsGeoJSON || !map.getSource("wells-src")) {
-    scheduleRender();
+    if (!map.isStyleLoaded()) {
+      map.once("idle", scheduleHighlight);
+      return;
+    }
+    scheduleRender(true);
     return;
   }
   const highlightSet = new Set((props.highlightedIds || []).map(String));
