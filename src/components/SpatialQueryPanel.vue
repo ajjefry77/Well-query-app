@@ -110,7 +110,7 @@
       <p class="sq__hint">{{ operatorHint }}</p>
 
       <!-- شعاع (فقط برای عملگر فاصله) -->
-      <div v-if="operator === 'within-distance'" class="field-group">
+      <div v-if="selectedOperators.includes('within-distance')" class="field-group">
         <label>شعاع جستجو: <span class="mono accent">{{ displayRadius }} کیلومتر</span></label>
         <div class="radius-control">
           <input
@@ -162,10 +162,10 @@ const props = defineProps({
   selectionCount: { type: Number, default: 0 },
   selectionLayers: { type: Array, default: () => [] },
   // ── مبدأ/هدف + عملگر ──
-  sourceMode: { type: String, default: "selected" },
+  sourceMode: { type: String, default: "layer" },
   sourceLayer: { type: String, default: null },
   targetLayer: { type: String, default: null },
-  operator: { type: [String, Array], default: () => ["within"] },
+  operator: { type: [String, Array], default: () => [] },
   radiusKm: { type: Number, default: 3 },
   relationLoading: { type: Boolean, default: false },
   relationError: { type: String, default: null },
@@ -213,7 +213,7 @@ function toggleOperator(value, checked) {
   if (checked) current.add(value);
   else current.delete(value);
   const next = [...current];
-  emit('update:operator', next.length ? next : ['within']);
+  emit('update:operator', next);
 }
 
 // گام ۱ آماده است اگر: حالت انتخاب‌شده + حداقل یک انتخاب، یا حالت کل‌لایه + لایه مبدأ
@@ -251,6 +251,7 @@ const applyHint = computed(() => {
   if (!selectionInSource.value)
     return "عارضه‌های انتخاب‌شده در لایه مبدأ نیستند — لایه مبدأ را عوض کنید یا انتخاب جدید بکنید.";
   if (!props.targetLayer) return "حالا لایه هدف را انتخاب کنید.";
+  if (!selectedOperators.value.length) return "حداقل یک نوع رابطه را انتخاب کنید.";
   return "";
 });
 

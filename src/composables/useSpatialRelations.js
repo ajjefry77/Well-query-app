@@ -58,7 +58,7 @@ export function normalizeRelationOperators(operator) {
     .map(v => String(v).trim())
     .filter(Boolean)
     .filter((v, index, arr) => arr.indexOf(v) === index)
-  return clean.length ? clean : ['within']
+  return clean
 }
 
 export function relationLabel(value) {
@@ -410,6 +410,7 @@ export async function findWithinDistanceMultiAsync(sourceRows, targetRows, radiu
 // از نو روی همه مختصات راه می‌رفت (O(S*T*N)) که روی لایه‌های بزرگ مرورگر را فریز می‌کرد.
 export function findMatchingRowsMulti(sourceRows, targetRows, operator, opts = {}) {
   const operators = normalizeRelationOperators(operator)
+  if (!operators.length) return []
   if (operators.length > 1) {
     const seen = new Set()
     const merged = []
@@ -496,6 +497,7 @@ function evaluateRelationFast(sourceGeom, targetGeom, operator) {
 // بتوان پیشرفت و لغو (AbortSignal) را گزارش کرد.
 export async function findMatchingRowsMultiAsync(sourceRows, targetRows, operator, opts = {}) {
   const operators = normalizeRelationOperators(operator)
+  if (!operators.length) return []
   if (operators.length > 1) {
     const seen = new Set()
     const merged = []

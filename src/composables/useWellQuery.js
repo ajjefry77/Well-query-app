@@ -103,7 +103,7 @@ export function useWellQuery() {
   // محدوده کوئری توصیفی: همه عوارض یا فقط انتخاب‌شده‌ها
   const attributeScope = ref('all')
   // حالت مبدأ رابطه مکانی: عوارض انتخاب‌شده یا کل لایه مبدأ
-  const relationSourceMode = ref('selected')
+  const relationSourceMode = ref('layer')
   // محدود کردن نامزدهای هدف رابطه به عوارض انتخاب‌شده
   const spatialTargetOnlySelected = ref(false)
 
@@ -578,7 +578,7 @@ export function useWellQuery() {
   // پیش‌نویس فرم و مقادیر تأییدشده (فقط بعد از «اجرای کوئری» اثر می‌کنند)
   const relationSourceLayer = ref(null)
   const relationTargetLayer = ref(null)
-  const relationOperator    = ref(['within'])
+  const relationOperator    = ref([])
   const relationRadiusKm    = ref(3)
   const relationCommitted   = ref(null)
 
@@ -706,6 +706,7 @@ export function useWellQuery() {
   // مبدأ = عوارض انتخاب‌شده (حالت selected) یا کل لایه مبدأ (حالت layer)
   async function commitRelationFilter() {
     if (!relationTargetLayer.value) return false
+    if (!Array.isArray(relationOperator.value) || !relationOperator.value.length) return false
     const mode = relationSourceMode.value || 'selected'
     if (mode === 'selected') {
       if (!selectedKeys.value.size) return false
@@ -729,9 +730,7 @@ export function useWellQuery() {
     relationCommitted.value = {
       sourceLayerUuid: srcUuid,
       targetLayerUuid: relationTargetLayer.value,
-      operator: Array.isArray(relationOperator.value) && relationOperator.value.length
-        ? relationOperator.value
-        : ['within'],
+      operator: [...relationOperator.value],
       radiusKm: Number(relationRadiusKm.value) || 3,
       sourceMode: mode,
       sourceKeys: mode === 'selected' ? getRelationSourceRows(srcUuid, mode).map(rowKeyOf) : null,
@@ -753,9 +752,9 @@ export function useWellQuery() {
     relationAbortCtrl?.abort()
     relationSourceLayer.value = null
     relationTargetLayer.value = null
-    relationOperator.value    = ['within']
+    relationOperator.value    = []
     relationRadiusKm.value    = 3
-    relationSourceMode.value  = 'selected'
+    relationSourceMode.value  = 'layer'
     spatialTargetOnlySelected.value = false
     relationCommitted.value   = null
     relationResults.value = []

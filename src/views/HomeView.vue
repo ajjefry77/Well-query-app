@@ -240,7 +240,7 @@ import { useCoordinates } from '../composables/useCoordinates.js'
 import { useTheme } from '../composables/useTheme.js'
 import { layerColor } from '../composables/useLayerColors.js'
 import { useSymbology, legendItems } from '../composables/useSymbology.js'
-import { relationLabel } from '../composables/useSpatialRelations.js'
+import { normalizeRelationOperators, relationLabel } from '../composables/useSpatialRelations.js'
 import { useQueryHistory } from '../composables/useQueryHistory.js'
 import { useRoute, useRouter } from '../router/index.js'
 
@@ -1137,7 +1137,7 @@ async function rerunRelationEntry(entry) {
   }
   relationSourceLayer.value = p.sourceLayerUuid ?? null
   relationTargetLayer.value = p.targetLayerUuid
-  relationOperator.value = p.operator || 'within'
+  relationOperator.value = normalizeRelationOperators(p.operator)
   relationRadiusKm.value = Number.isFinite(+p.radiusKm) ? +p.radiusKm : 3
   const ok = await commitRelationFilter()
   if (ok) zoomToResults()

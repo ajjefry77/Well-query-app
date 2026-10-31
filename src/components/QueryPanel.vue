@@ -143,10 +143,10 @@ const props = defineProps({
   selectionLayers: { type: Array, default: () => [] },
   attributeScope: { type: String, default: 'all' },
   // ── رابطه مکانی ──
-  sourceMode: { type: String, default: 'selected' },
+  sourceMode: { type: String, default: 'layer' },
   relationSourceLayer: { type: String, default: null },
   relationTargetLayer: { type: String, default: null },
-  relationOperator: { type: [String, Array], default: () => ['within'] },
+  relationOperator: { type: [String, Array], default: () => [] },
   relationRadiusKm: { type: Number, default: 3 },
   relationLoading: { type: Boolean, default: false },
   relationError: { type: String, default: null },
