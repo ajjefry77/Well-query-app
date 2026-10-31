@@ -142,7 +142,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
-import { resolveFeatureStyle, rampStops } from "../composables/useSymbology.js";
+import { resolveFeatureStyle, rampStops, defaultSymbology, DEFAULT_FEATURE_COLOR } from "../composables/useSymbology.js";
 import booleanIntersects from "@turf/boolean-intersects";
 import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import pointToLineDistance from "@turf/point-to-line-distance";
@@ -180,7 +180,7 @@ function geomKindOf(w) {
 }
 function symStyleOf(w) {
   try {
-    const cfg = props.symConfigs?.[w?._layerUuid]
+    const cfg = props.symConfigs?.[w?._layerUuid] ?? defaultSymbology(w?._layerUuid, geomKindOf(w))
     if (!cfg || cfg.renderer === 'heatmap') return null
     return resolveFeatureStyle(w, cfg, geomKindOf(w))
   } catch { return null }
@@ -1360,7 +1360,7 @@ function clearAll() {
 }
 
 // ─── رندر عوارض ───────────────────────────────────────────
-const WELL_COLOR = "#7ec88a";
+const WELL_COLOR = DEFAULT_FEATURE_COLOR;
 
 // کلید یکتا: شناسه‌ها ممکن است بین لایه‌ها تکراری باشند
 function wellKey(w) {
@@ -1694,6 +1694,8 @@ function _statusColorExpr(failC, okC) {
 }
 function _polyOutlineColor() {
   return [..._statusColorExpr(PREVIEW_FAIL_BORDER, PREVIEW_OK_BORDER),
+    ["==", ["get", "_match"], 1], "#14532d",
+    ["==", ["get", "_dimmed"], 1], "#8a9490",
     ["!=", ["get", "_sym_color"], null],
     ["coalesce", ["get", "_sym_stroke"], ["get", "_sym_color"]],
     ["==", ["get", "_match"], 1], "#14532d",
@@ -1703,6 +1705,8 @@ function _polyOutlineColor() {
 }
 function _polylineColor() {
   return [..._statusColorExpr(PREVIEW_FAIL_COLOR, PREVIEW_OK_COLOR),
+    ["==", ["get", "_match"], 1], "#22c55e",
+    ["==", ["get", "_dimmed"], 1], "#8a9490",
     ["!=", ["get", "_sym_color"], null], ["get", "_sym_color"],
     ["==", ["get", "_match"], 1], "#22c55e",
     ["==", ["get", "_highlighted"], 1], "#4a9b8e",
@@ -1760,6 +1764,8 @@ function _lineOpacity(dimmedVal) {
 }
 function _pointColor() {
   return [..._statusColorExpr(PREVIEW_FAIL_COLOR, PREVIEW_OK_COLOR),
+    ["==", ["get", "_match"], 1], "#22c55e",
+    ["==", ["get", "_dimmed"], 1], "#8a9490",
     ["!=", ["get", "_sym_color"], null], ["get", "_sym_color"],
     ["==", ["get", "_match"], 1], "#22c55e",
     ["==", ["get", "_dimmed"], 1], "#8a9490",
@@ -1776,10 +1782,14 @@ function _pointHalo() {
     ["==", ["get", "_psrc"], 1], "#1a1a1a",
     ["==", ["get", "_selected"], 1], "#1a1a1a",
     ["==", ["get", "_isCenter"], 1], "#fff",
+    ["==", ["get", "_match"], 1], "#14532d",
+    ["==", ["get", "_dimmed"], 1], "#8a9490",
     ["!=", ["get", "_sym_stroke"], null], ["get", "_sym_stroke"],
     ["==", ["get", "_match"], 1], "#14532d",
     ["==", ["get", "_highlighted"], 1], "#1a1a1a",
     ["==", ["get", "_dimmed"], 1], "#666",
+    ["==", ["get", "_match"], 1], "#14532d",
+    ["==", ["get", "_dimmed"], 1], "#8a9490",
     ["!=", ["get", "_sym_stroke"], null], ["get", "_sym_stroke"],
     "#ffffff",
   ];
@@ -1948,6 +1958,8 @@ function renderMarkers(fit = true) {
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
           // سیمبولوژی لایه بر هایلایت/مچ اولویت دارد تا تغییرات کاربر همیشه دیده شود
+          ["==", ["get", "_match"], 1], "#22c55e",
+          ["==", ["get", "_dimmed"], 1], "#8a9490",
           ["!=", ["get", "_sym_color"], null],
           ["get", "_sym_color"], // سیمبولوژی لایه
           ["==", ["get", "_match"], 1],
@@ -2009,6 +2021,8 @@ function renderMarkers(fit = true) {
           "#f0a500",
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
+          ["==", ["get", "_match"], 1], "#14532d",
+          ["==", ["get", "_dimmed"], 1], "#8a9490",
           ["!=", ["get", "_sym_color"], null],
           ["coalesce", ["get", "_sym_stroke"], ["get", "_sym_color"]],
           ["==", ["get", "_match"], 1],
@@ -2116,6 +2130,8 @@ function renderMarkers(fit = true) {
           "#f0a500",
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
+          ["==", ["get", "_match"], 1], "#22c55e",
+          ["==", ["get", "_dimmed"], 1], "#8a9490",
           ["!=", ["get", "_sym_color"], null],
           ["get", "_sym_color"],
           ["==", ["get", "_match"], 1],
@@ -2184,6 +2200,8 @@ function renderMarkers(fit = true) {
           "#f0a500",
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
+          ["==", ["get", "_match"], 1], "#22c55e",
+          ["==", ["get", "_dimmed"], 1], "#8a9490",
           ["!=", ["get", "_sym_color"], null],
           ["get", "_sym_color"],
           ["==", ["get", "_match"], 1],
@@ -2246,6 +2264,8 @@ function renderMarkers(fit = true) {
           "#1a1a1a",
           ["==", ["get", "_isCenter"], 1],
           "#fff",
+          ["==", ["get", "_match"], 1], "#14532d",
+          ["==", ["get", "_dimmed"], 1], "#8a9490",
           ["!=", ["get", "_sym_stroke"], null],
           ["get", "_sym_stroke"],
           ["==", ["get", "_match"], 1],
@@ -2254,6 +2274,8 @@ function renderMarkers(fit = true) {
           "#1a1a1a",
           ["==", ["get", "_dimmed"], 1],
           "#666",
+          ["==", ["get", "_match"], 1], "#14532d",
+          ["==", ["get", "_dimmed"], 1], "#8a9490",
           ["!=", ["get", "_sym_stroke"], null],
           ["get", "_sym_stroke"],
           "#ffffff",
@@ -2321,11 +2343,7 @@ function renderMarkers(fit = true) {
                 ? "#f0a500"
                 : isCenter
                   ? "#e74c3c"
-                  : (symColor ?? (isMatch
-                    ? "#22c55e"
-                    : isH
-                      ? "#4a9b8e"
-                      : "#8a9490"));
+                  : (isMatch ? "#22c55e" : isDimmed ? "#8a9490" : (symColor ?? DEFAULT_FEATURE_COLOR));
       const opacity = inSelSet || isInfo || isSel || isCenter || isMatch ? "1" : isDimmed ? "0.25" : String(sym?.opacity ?? 1);
       const strokeW = isSel || isCenter || isInfo ? 3 : Math.max(0, Math.min(6, Number(sym?.strokeWidth ?? 2)));
       const strokeC = sym?.strokeColor ?? "rgba(255,255,255,0.4)";
@@ -2660,7 +2678,11 @@ function symStructSig() {
 }
 let lastSymStruct = symStructSig()
 function updateSymData() {
-  if (!map || !map.isStyleLoaded()) return
+  if (!map) return
+  if (!map.isStyleLoaded() && !map.getSource("wells-src")) {
+    map.once("idle", onSymChange)
+    return
+  }
   if (!wellsGeoJSON || !map.getSource("wells-src")) {
     scheduleRender(true)
     return

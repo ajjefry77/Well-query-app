@@ -887,7 +887,7 @@ const symGeomKind = computed(() =>
 const symConfigForModal = computed(() => {
   if (!symLayer.value) return null
   return symConfigs.value[symLayer.value.uuid]
-    ?? getSymConfig(symLayer.value.uuid, symGeomKind.value, layerColor(symLayer.value.uuid))
+    ?? getSymConfig(symLayer.value.uuid, symGeomKind.value)
 })
 // ورودی‌های لجند روی نقشه (فقط لایه‌های نمایان با رندر thematic)
 const legendEntries = computed(() =>
@@ -904,7 +904,7 @@ const legendEntries = computed(() =>
 function onOpenSymbology(uuid) {
   const layer = activeLayers.value.find(l => String(l.uuid) === String(uuid))
   if (!layer) return
-  getSymConfig(uuid, layerGeomKind(uuid), layerColor(uuid))
+  getSymConfig(uuid, layerGeomKind(uuid))
   symLayerUuid.value = uuid
   showSymbology.value = true
 }
@@ -914,7 +914,7 @@ function onSymUpdate(cfg) {
 }
 function onSymReset() {
   if (!symLayerUuid.value) return
-  resetSymConfig(symLayerUuid.value, symGeomKind.value, layerColor(symLayerUuid.value))
+  resetSymConfig(symLayerUuid.value, symGeomKind.value)
   symVersion.value++
 }
 

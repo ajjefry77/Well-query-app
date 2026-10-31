@@ -12,7 +12,7 @@ import { ref, onMounted, onBeforeUnmount, watch } from "vue";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { toGeoJSON } from "../composables/useGeoUtils.js";
-import { resolveFeatureStyle } from "../composables/useSymbology.js";
+import { resolveFeatureStyle, defaultSymbology } from "../composables/useSymbology.js";
 
 // ─── سیمبولوژی (ArcGIS-style) ───
 function geomKindOf(obj) {
@@ -25,7 +25,7 @@ function geomKindOf(obj) {
 function symOf(obj) {
   try {
     const uuid = obj?._layerUuid ?? obj?.properties?._layerUuid
-    const cfg = uuid ? props.symConfigs?.[uuid] : null
+    const cfg = props.symConfigs?.[uuid] ?? defaultSymbology(uuid, geomKindOf(obj))
     if (!cfg || cfg.renderer === "heatmap") return null
     const row = obj?.properties ? { ...obj.properties, _geometry: obj.geometry } : obj
     return resolveFeatureStyle(row, cfg, geomKindOf(obj))

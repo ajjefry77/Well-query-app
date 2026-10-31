@@ -7,6 +7,7 @@
 import { ref, watch } from 'vue'
 
 const LS_KEY = 'wqa:symbology:v1'
+export const DEFAULT_FEATURE_COLOR = '#4a9b8e'
 
 // ---------- رامپ‌های رنگی ----------
 export const COLOR_RAMPS = [
@@ -271,7 +272,7 @@ export function classLabel(min, max, isFirst, isLast) {
 }
 
 // ---------- کانفیگ پیش‌فرض ----------
-export function defaultSymbology(uuid, geomKind = 'point', fallbackColor = '#0f5c7e') {
+export function defaultSymbology(uuid, geomKind = 'point', fallbackColor = DEFAULT_FEATURE_COLOR) {
   return {
     uuid,
     renderer: 'single',
@@ -319,7 +320,7 @@ export function useSymbology() {
     try { localStorage.setItem(LS_KEY, JSON.stringify(v)) } catch {}
   }, { deep: true })
 
-  function getConfig(uuid, geomKind = 'point', fallbackColor = '#0f5c7e') {
+  function getConfig(uuid, geomKind = 'point', fallbackColor = DEFAULT_FEATURE_COLOR) {
     if (!configs.value[uuid]) {
       configs.value[uuid] = defaultSymbology(uuid, geomKind, fallbackColor)
     } else {
@@ -330,7 +331,7 @@ export function useSymbology() {
   function setConfig(uuid, cfg) {
     configs.value[uuid] = { ...cfg, uuid }
   }
-  function resetConfig(uuid, geomKind = 'point', fallbackColor = '#0f5c7e') {
+  function resetConfig(uuid, geomKind = 'point', fallbackColor = DEFAULT_FEATURE_COLOR) {
     configs.value[uuid] = defaultSymbology(uuid, geomKind, fallbackColor)
   }
   function removeConfig(uuid) {
@@ -407,7 +408,7 @@ export function resolveFeatureStyle(row, cfg, geomKind = 'point') {
   const t = 1 - Math.max(0, Math.min(100, cfg.transparency || 0)) / 100
   const single = cfg.single || {}
   const base = {
-    color: single.color ?? '#0f5c7e',
+    color: single.color ?? DEFAULT_FEATURE_COLOR,
     strokeColor: single.strokeColor ?? '#ffffff',
     strokeWidth: single.strokeWidth ?? (geomKind === 'point' ? 2 : 1.5),
     size: single.size ?? (geomKind === 'point' ? 7 : 2.5),
