@@ -230,12 +230,32 @@
         </div>
       </div>
 
+      <!-- تاریخچه کوئری‌ها (اجرای مجدد + خروجی Shapefile نتیجه) -->
+      <QueryHistory
+        class="qh--toc"
+        :toc="true"
+        :entries="historyEntries"
+        :running="historyRunning"
+        :exporting="historyExporting"
+        @rerun="$emit('rerun-history', $event)"
+        @export-shp="$emit('export-history-shp', $event)"
+        @remove="$emit('remove-history-entry', $event)"
+        @clear="$emit('clear-history')"
+      />
+      <button class="clear-layers-btn" @click="$emit('clear-layers')" title="پاک کردن لایه‌ها">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z" />
+        </svg>
+        پاک کردن لایه ها
+      </button>
+
     </div>
   </section>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
+import QueryHistory from './QueryHistory.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: true },
@@ -250,8 +270,12 @@ const props = defineProps({
   spatialLabel: { type: String, default: '' },
   spatialRadius: { type: [Number, String], default: 0 },
   relationSummary: { type: Object, default: null },
+  // تاریخچه کوئری‌ها (اجرای مجدد + خروجی Shapefile)
+  historyEntries: { type: Array, default: () => [] },
+  historyRunning: { type: Boolean, default: false },
+  historyExporting: { type: Boolean, default: false },
 })
-const emit = defineEmits(['toggle', 'open-modal', 'remove-layer', 'zoom-layer', 'toggle-layer-visibility', 'remove-condition', 'clear-spatial', 'clear-relation', 'clear-all', 'view-layer-data', 'open-symbology'])
+const emit = defineEmits(['toggle', 'open-modal', 'remove-layer', 'zoom-layer', 'toggle-layer-visibility', 'remove-condition', 'clear-spatial', 'clear-relation', 'clear-all', 'view-layer-data', 'open-symbology', 'rerun-history', 'export-history-shp', 'remove-history-entry', 'clear-history', 'clear-layers'])
 
 // ── منوی راست‌کلیک (مثل ArcGIS: راست‌کلیک روی لایه در Table of Contents) ──
 const ctx = ref({ uuid: null, x: 0, y: 0 })
@@ -305,6 +329,28 @@ const hasAttributeSummary = computed(() => summariesWithConds.value.length > 0)
 </script>
 
 <style scoped>
+.clear-layers-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: auto;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: inherit;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.clear-layers-btn:hover {
+  color: var(--accent-danger);
+  border-color: var(--accent-danger);
+}
+
+
 /* ---------- پنل راست ---------- */
 .results-panel {
   background: var(--bg-panel);

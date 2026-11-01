@@ -30,19 +30,17 @@
         :loading-features="loadingFeatures"
         :field-stats-map="layerFieldStats"
         :field-values="layerFieldValues"
-        :spatial-mode="spatialMode"
-        :spatial-tool="spatialTool"
         :wells="allWells"
-        :radius-center="radiusCenter"
-        :radius-km="radiusKm"
-        :spatial-group-fields="spatialGroupFields"
-        :custom-point="customPoint"
-        :is-picking-point="isPickingPoint"
-        :spatial-loading="spatialLoading"
+        :selection-count="selectionCount"
+        :selection-layers="selectionLayerUuids"
+        :attribute-scope="attributeScope"
+        :source-mode="relationSourceMode"
         :relation-source-layer="relationSourceLayer"
         :relation-target-layer="relationTargetLayer"
         :relation-operator="relationOperator"
+        :relation-radius-km="relationRadiusKm"
         :relation-loading="spatialLoading"
+        :relation-error="relationError"
         :saved-queries="savedQueries"
         @toggle="toggleQueryPanel"
         @update:active-query-layer="activeQueryLayer = $event"
@@ -50,14 +48,11 @@
         @remove-condition="removeLayerCondition"
         @save-query="saveCurrentQuery"
         @apply-attribute="onApplyAttribute"
-        @update:spatial-mode="spatialMode = $event"
-        @update:spatial-tool="spatialTool = $event"
-        @update:radius-center="onUpdateRadiusCenter"
-        @update:radius-km="radiusKm = $event"
-        @pick-point="onPickPoint"
-        @clear-point="onClearPoint"
-        @clear-spatial="onClearSpatial"
-        @apply-spatial="onApplySpatial"
+        @update:attribute-scope="attributeScope = $event"
+        @clear-selection="onClearSelection"
+        @zoom-selection="zoomToSelection"
+        @update:source-mode="relationSourceMode = $event"
+        @update:radius-km="relationRadiusKm = $event"
         @update:relation-source-layer="relationSourceLayer = $event"
         @update:relation-target-layer="relationTargetLayer = $event"
         @update:relation-operator="relationOperator = $event"
@@ -74,16 +69,29 @@
            :wells="mapWells"
            :wells-key="mapWellsKey"
            :highlighted-ids="highlightedIds"
-            :has-filter="hasAnyFilter"
+            :has-filter="hasAnyFilter && selectionCount > 0"
             :filtered-layer-uuids="filteredLayerUuids"
             :radius-center="showRadiusOnMap ? committedRadiusCenter : null"
            :radius-km="committedRadiusKm"
              :selected-id="selectedWellId"
+             :info-well-key="infoWellId"
+             :selection-tool="selectionTool"
+             :selection-mode="selectionMode"
+             :selection-ids="selectedIds"
+             :selection-count="selectionCount"
              :theme="theme"
              :sym-configs="symConfigs"
              :sym-version="symVersion"
             @select-well="onSelectFromMap"
+            @info-select="onInfoFromMap"
+            @update:info-well-key="infoWellId = $event"
             @map-empty-click="onMapEmptyClick"
+            @update:selection-tool="selectionTool = $event"
+            @update:selection-mode="selectionMode = $event"
+            @selection-change="onSelectionChange"
+            @selection-clear="onClearSelection"
+            @zoom-to-selection="zoomToSelection"
+            @save-selection="onSaveSelection"
           />
           <!-- لجند سیمبولوژی -->
           <MapLegend :entries="legendEntries" />
@@ -131,6 +139,7 @@
         :spatial-label="spatialSummaryLabel"
         :spatial-radius="spatialSummaryRadius"
         :relation-summary="relationSummary"
+        @clear-layers="handleClearLayers"
         @toggle="toggleResultsPanel"
         @open-modal="openLayerModal"
         @remove-layer="onRemoveLayer"
@@ -142,6 +151,13 @@
         @clear-all="onClearAllQueries"
         @view-layer-data="onOpenLayerData"
         @open-symbology="onOpenSymbology"
+        :history-entries="allHistoryEntries"
+        :history-running="historyRunning"
+        :history-exporting="historyExporting"
+        @rerun-history="onRerunHistory"
+        @export-history-shp="onExportHistoryShp"
+        @remove-history-entry="onRemoveHistoryEntry"
+        @clear-history="onClearHistory"
       />
 
       <!-- موبایل: نوار grab + تب‌های پنل پایین -->
@@ -195,19 +211,23 @@
       @zoom="onZoomFromTable"
     />
 
-    <!-- مودال داده تمام عارضه‌های یک لایه -->
+    <!-- مودال جدول داده‌های توصیفی یک لایه (جدا از نتایج؛ تنها جدول دارای انتخاب) -->
     <ResultsModal
       v-if="showLayerDataModal"
       :open="showLayerDataModal"
+      :title="layerDataTitle"
       :rows="layerDataRows"
       :columns="layerDataColumns"
       :layer-meta="layerDataMeta"
       :active-id="activeWellId"
+      :selectable="true"
+      :selected-ids="selectedIds"
       @close="showLayerDataModal = false"
       @select="onSelectFromTable"
       @hover="onHoverRow"
       @export="handleLayerDataExport"
       @zoom="onZoomFromTable"
+      @update:selected-ids="onAttributeTableSelection"
     />
   </div>
 </template>
@@ -220,7 +240,8 @@ import { useCoordinates } from '../composables/useCoordinates.js'
 import { useTheme } from '../composables/useTheme.js'
 import { layerColor } from '../composables/useLayerColors.js'
 import { useSymbology, legendItems } from '../composables/useSymbology.js'
-import { relationLabel } from '../composables/useSpatialRelations.js'
+import { normalizeRelationOperators, relationLabel } from '../composables/useSpatialRelations.js'
+import { useQueryHistory } from '../composables/useQueryHistory.js'
 import { useRoute, useRouter } from '../router/index.js'
 
 // بارگذاری تنبل: همه‌چیز به‌جز هدر، کد-split می‌شود تا First Paint روی سیستم ضعیف سریع باشد
@@ -245,20 +266,34 @@ const {
   queryableFields,
   loadingLayers, loadingFields, loadingFeatures, apiError,
   loadVectorLayers,
-  removeLayer, setActiveLayers,
+  addLayer, removeLayer, setActiveLayers,
   isLayerVisible, toggleLayerVisibility,
+  computeAttributeRows, computeRelationRows,
   allWells, combinedResults, hasAnyFilter,
   getLayerConditions, getAppliedConditions, addLayerCondition, removeLayerCondition,
   applyAttributeConditions, removeAppliedCondition, clearAllConditions, getLayerResultCount,
   radiusCenter, radiusKm,
   committedRadiusCenter, committedRadiusKm,
   spatialLoading, commitSpatialFilter,
-  relationSourceLayer, relationTargetLayer, relationOperator,
-  relationCommitted, relationResults, relationProgress,
+  relationSourceLayer, relationTargetLayer, relationOperator, relationRadiusKm,
+  relationSourceMode, spatialTargetOnlySelected,
+  selectedIds, selectedRows, selectionCount, attributeScope,
+  applySelectionKeys, setSelectionKeys, clearSelection,
+  relationCommitted, relationResults, relationProgress, relationError,
   commitRelationFilter, clearRelation,
   savedQueries, saveCurrentQuery, loadSavedQuery, deleteSavedQuery,
-  clearAllLocalData,
+  clearSavedQueries, clearLayers,
 } = useWellQuery()
+
+// ── تاریخچه کوئری‌ها (توصیفی + مکانی) ──
+const historyRunning = ref(false)
+const historyExporting = ref(false)
+const {
+  entries: allHistoryEntries,
+  push: pushHistoryEntry,
+  remove: removeHistoryEntry,
+  clear: clearHistoryEntries,
+} = useQueryHistory()
 
 function layerFeatureCount(uuid) {
   return (_layerFeaturesMap.value?.[uuid] ?? []).length
@@ -282,9 +317,14 @@ function viewFromUrl() {
 const queryKind        = ref(viewFromUrl())
 const spatialMode      = ref('map')
 const spatialTool      = ref('radius')
+// ── انتخاب عارضه (ابزارهای ArcGIS-like؛ state در useWellQuery) ──
+const selectionTool    = ref(null)
+const selectionMode    = ref('new')
 const mapRef           = shallowRef(null)
 const activeWellId     = ref(null)
 const selectedWellId   = ref(null)
+// عارضه‌ای که ابزار «اطلاعات» روی آن کلیک کرده → آبی پر رنگ روی نقشه
+const infoWellId       = ref(null)
 const resultsPanelOpen = ref(true)
 const customPoint      = ref(null)
 const isPickingPoint   = ref(false)
@@ -556,16 +596,25 @@ const spatialSummaryLabel = computed(() => {
   return 'مرکز نامشخص'
 })
 
-// ── خلاصه رابطه مکانی برای پنل «شرط‌های فعال» (همیشه کل لایه) ──
+// ── خلاصه رابطه مکانی برای پنل «شرط‌های فعال» ──
 const relationSummary = computed(() => {
   const c = relationCommitted.value
   if (!c) return null
   const layerNameOf = (uuid) =>
     activeLayers.value.find(l => String(l.uuid) === String(uuid))?.display_name ?? ''
+  const srcName = c.sourceLayerUuid ? layerNameOf(c.sourceLayerUuid) : ''
+  const sourceText = c.sourceMode === 'selected'
+    ? (srcName ? `مبدأ: ${selectionCount.value} عارضه انتخاب‌شده (${srcName})` : `مبدأ: ${selectionCount.value} عارضه انتخاب‌شده`)
+    : `مبدأ: ${srcName} کل لایه`
+  const targetText = `هدف: ${layerNameOf(c.targetLayerUuid)} — کل لایه`
+  const operatorValue = Array.isArray(c.operator) ? c.operator : [c.operator]
+  const opLabel = operatorValue.includes('within-distance') && Number.isFinite(+c.radiusKm)
+    ? `${relationLabel(operatorValue)} (${(+c.radiusKm).toLocaleString('fa-IR')} km)`
+    : relationLabel(operatorValue)
   return {
-    opLabel: relationLabel(c.operator),
-    sourceText: `مبدأ: ${layerNameOf(c.sourceLayerUuid)} کل لایه`,
-    targetText: `هدف: ${layerNameOf(c.targetLayerUuid)} کل لایه`,
+    opLabel,
+    sourceText,
+    targetText,
     count: relationResults.value.length,
   }
 })
@@ -649,12 +698,21 @@ const layerDataMeta = computed(() => {
     fields: layerDataFields.value,
   }]
 })
+const layerDataTitle = computed(() => {
+  const uuid = layerDataUuid.value
+  const layer = activeLayers.value.find(l => String(l.uuid) === String(uuid))
+  const name = layer?.display_name || layer?.name || ''
+  return name ? `جدول داده‌های توصیفی — ${name}` : 'جدول داده‌های توصیفی'
+})
+// انتخاب از جدول توصیفی ↔ نقشه (دوسویه؛ جدول آرایه کامل را می‌فرستد)
+function onAttributeTableSelection(keys) {
+  setSelectionKeys(keys ?? [])
+}
 async function handleLayerDataExport(format) {
   const { exportData } = await import('../composables/useExport.js')
   exportData(format, layerDataRows.value, convertFeature, { crs: crs.value })
 }
 // سقف ارسال به نقشه برای جلوگیری از فریز روی 100k سطر (کمتر = سریع‌تر روی سیستم ضعیف)
-const MAX_HIGHLIGHT = 2000
 
 // ── نمونه‌برداری عادلانه per-layer ──
 // مشکل: نمونه‌برداری سراسری روی آرایه الحاقی لایه‌ها، سهم هر لایه را متناسب با
@@ -694,7 +752,7 @@ function fairSamplePerLayer(src, cap) {
   }
   return out
 }
-const highlightedIds = computed(() => fairSamplePerLayer(combinedResults.value, MAX_HIGHLIGHT).map(rowKey))
+const highlightedIds = computed(() => selectedIds.value)
 
 // لایه‌های مخفی (با آیکون چشم) از روی نقشه حذف می‌شوند؛ ولی داده‌های آن‌ها در نتایج/جدول باقی می‌ماند
 const visibleWells = computed(() =>
@@ -706,10 +764,10 @@ const visibleWells = computed(() =>
 // سطر انتخاب‌شده همیشه نگه داشته می‌شود تا زوم از جدول کار کند.
 const MAP_RENDER_CAP = 8000
 const mapWells = computed(() => {
-  const src = hasAnyFilter.value ? displayRows.value : visibleWells.value
+  const src = visibleWells.value
   if (src.length <= MAP_RENDER_CAP) return src
   const out = fairSamplePerLayer(src, MAP_RENDER_CAP)
-  const keep = activeWellId.value ?? selectedWellId.value
+  const keep = activeWellId.value ?? selectedWellId.value ?? infoWellId.value
   if (keep) {
     let found = false
     for (let i = 0; i < out.length; i++) {
@@ -723,7 +781,7 @@ const mapWells = computed(() => {
   return out
 })
 const mapCappedTotal = computed(() =>
-  hasAnyFilter.value ? displayRows.value.length : visibleWells.value.length
+  visibleWells.value.length
 )
 
 // کلید ارزان تغییر نقشه — قبلاً کل idها sort و join می‌شد (رشته چندمگابایتی روی
@@ -795,6 +853,18 @@ const visibleActiveLayers = computed(() =>
   activeLayers.value.filter(layer => isLayerVisible(layer.uuid))
 )
 
+// لایه‌هایی که عارضه انتخاب‌شده دارند (اعتبارسنجی مبدأ در پنل مکانی)
+const selectionLayerUuids = computed(() => {
+  const set = new Set((selectedIds.value ?? []).map(String))
+  if (!set.size) return []
+  const layers = new Set()
+  for (const r of allWells.value) {
+    const k = r._layerUuid ? `${r._layerUuid}::${r.id}` : String(r.id ?? '')
+    if (set.has(k) && r._layerUuid != null) layers.add(String(r._layerUuid))
+  }
+  return [...layers]
+})
+
 // ── سیمبولوژی به سبک ArcGIS (کلیک‌راست روی لایه) ──
 const {
   configs: symConfigs,
@@ -816,7 +886,7 @@ const symGeomKind = computed(() =>
 const symConfigForModal = computed(() => {
   if (!symLayer.value) return null
   return symConfigs.value[symLayer.value.uuid]
-    ?? getSymConfig(symLayer.value.uuid, symGeomKind.value, layerColor(symLayer.value.uuid))
+    ?? getSymConfig(symLayer.value.uuid, symGeomKind.value)
 })
 // ورودی‌های لجند روی نقشه (فقط لایه‌های نمایان با رندر thematic)
 const legendEntries = computed(() =>
@@ -833,7 +903,7 @@ const legendEntries = computed(() =>
 function onOpenSymbology(uuid) {
   const layer = activeLayers.value.find(l => String(l.uuid) === String(uuid))
   if (!layer) return
-  getSymConfig(uuid, layerGeomKind(uuid), layerColor(uuid))
+  getSymConfig(uuid, layerGeomKind(uuid))
   symLayerUuid.value = uuid
   showSymbology.value = true
 }
@@ -843,7 +913,7 @@ function onSymUpdate(cfg) {
 }
 function onSymReset() {
   if (!symLayerUuid.value) return
-  resetSymConfig(symLayerUuid.value, symGeomKind.value, layerColor(symLayerUuid.value))
+  resetSymConfig(symLayerUuid.value, symGeomKind.value)
   symVersion.value++
 }
 
@@ -865,11 +935,12 @@ function onToggleLayerVisibility(uuid) {
 }
 async function onLoadQuery(q) {
   const uuid = await loadSavedQuery(q)
+  if (uuid) selectQueryResults()
   queryKind.value = 'attribute'
   if (uuid) {
     activeQueryLayer.value = uuid
     queryPanelOpen.value = true
-    zoomToResults()
+    zoomToAttributeResults()
   }
 }
 function onPickPoint() {
@@ -911,31 +982,227 @@ function onClearSpatial() {
 // پاک کردن تمام کوئری‌های فعال (توصیفی همه لایه‌ها + مکانی شعاعی و رابطه‌ای)
 function onClearAllQueries() {
   clearAllConditions()
+  attributeScope.value = 'all'
   onClearSpatial()
   onClearRelation()
+  onClearSelection()
+}
+// ── انتخاب عارضه (ArcGIS-like) ──
+// incoming: آرایه کلیدها از ابزار نقشه؛ mode: new/add/remove/subset
+function onSelectionChange(keys, mode) {
+  selectedWellId.value = null
+  activeWellId.value = null
+  applySelectionKeys(keys ?? [], mode || selectionMode.value || 'new')
+}
+function onClearSelection() {
+  clearSelection()
+  selectedWellId.value = null
+  activeWellId.value = null
+  infoWellId.value = null
+}
+// Query output replaces the same selection set used by the map tools.
+function selectQueryResults() {
+  const affected = new Set(filteredLayerUuids.value.map(String))
+  const rows = displayRows.value.filter(r => isLayerVisible(r._layerUuid)
+    && (!hasAnyFilter.value || !affected.size || affected.has(String(r._layerUuid))))
+  onClearSelection()
+  setSelectionKeys(rows.map(rowKey))
+}
+async function onSaveSelection() {
+  const keys = new Set(selectedIds.value.map(String))
+  const rows = allWells.value.filter(row => keys.has(rowKey(row)))
+  if (!rows.length) return
+  const { exportData } = await import('../composables/useExport.js')
+  await exportData('shp', rows, convertFeature, { crs: crs.value })
+}
+// زوم روی عوارض انتخاب‌شده
+function zoomToSelection() {
+  if (selectedRows.value.length) mapRef.value?.zoomToResults?.(selectedRows.value)
 }
 async function onApplySpatial() {
   await commitSpatialFilter()
+  selectQueryResults()
   zoomToResults()
 }
-// اعمال رابطه مکانی و زوم روی نتایج
+// اعمال رابطه مکانی و زوم روی نتایج (+ ثبت در تاریخچه)
 async function onApplyRelation() {
   const ok = await commitRelationFilter()
-  if (ok) zoomToResults()
+  if (ok) {
+    selectQueryResults()
+    zoomToResults()
+    recordRelationHistory()
+  }
 }
 function onClearRelation() {
   clearRelation()
 }
-// اجرای کوئری توصیفی: تأیید پیش‌نویس‌ها و زوم روی نتایج
+// اجرای کوئری توصیفی: تأیید پیش‌نویس‌ها و زوم روی نتایج (+ ثبت در تاریخچه)
 function onApplyAttribute() {
   applyAttributeConditions()
-  zoomToResults()
+  selectQueryResults()
+  zoomToAttributeResults()
+  recordAttributeHistory()
+}
+
+// ── ثبت و اجرای مجدد کوئری‌ها در تاریخچه ──
+const OP_SYMBOLS = { '=': '=', '!=': '≠', '>': '>', '>=': '≥', '<': '<', '<=': '≤', contains: 'شامل' }
+function condText(cond, fields) {
+  const fieldLabel = (fields ?? []).find(f => f.key === cond.field)?.label ?? cond.field
+  const op = OP_SYMBOLS[cond.operator] ?? cond.operator
+  return `${fieldLabel} ${op} ${cond.value}`
+}
+function findLayerName(uuid) {
+  return activeLayers.value.find(l => String(l.uuid) === String(uuid))?.display_name
+    ?? vectorLayers.value.find(l => String(l.uuid) === String(uuid))?.display_name ?? ''
+}
+
+function recordAttributeHistory() {
+  const items = []
+  for (const layer of activeLayers.value) {
+    if (!isLayerVisible(layer.uuid)) continue
+    const conds = (getAppliedConditions(layer.uuid) ?? []).map(c => ({ ...c }))
+    items.push({
+      layerUuid: layer.uuid,
+      layerName: layer.display_name || layer.name,
+      conditions: conds,
+    })
+  }
+  if (!items.length) return
+  const labels = items.map(item => {
+    const active = item.conditions.filter(c => c.value !== '' && c.value !== null && c.value !== undefined)
+    const text = active.length
+      ? active.map(c => condText(c, layerFields(item.layerUuid))).join(' ؛ ')
+      : 'همه عوارض'
+    return `${item.layerName}: ${text}`
+  })
+  pushHistoryEntry({
+    type: 'attribute',
+    scope: attributeScope.value === 'selected' ? 'selected' : 'all',
+    items,
+    label: labels.join(' | ') + (attributeScope.value === 'selected' ? ' (انتخاب‌شده‌ها)' : ''),
+    count: displayRows.value.length,
+  })
+}
+
+function recordRelationHistory() {
+  const c = relationCommitted.value
+  if (!c) return
+  const operatorValue = Array.isArray(c.operator) ? c.operator : [c.operator]
+  const opText = operatorValue.includes('within-distance') && Number.isFinite(+c.radiusKm)
+    ? `${relationLabel(operatorValue)} (${(+c.radiusKm).toLocaleString('fa-IR')} km)`
+    : relationLabel(operatorValue)
+  pushHistoryEntry({
+    type: 'relation',
+    params: JSON.parse(JSON.stringify(c)),
+    label: `${opText} — از ${findLayerName(c.sourceLayerUuid)} به ${findLayerName(c.targetLayerUuid)}`,
+    count: relationResults.value.length,
+  })
+}
+
+// اجرای مجدد یک کوئری ثبت‌شده در تاریخچه
+async function onRerunHistory(entry) {
+  if (!entry || historyRunning.value || historyExporting.value) return
+  historyRunning.value = true
+  try {
+    onClearAllQueries()
+    if (entry.type === 'attribute') await rerunAttributeEntry(entry)
+    else await rerunRelationEntry(entry)
+  } finally {
+    historyRunning.value = false
+  }
+}
+
+// کوئری توصیفی: شرط‌های ثبت‌شده روی همان لایه‌ها ست می‌شود و کوئری اجرا می‌شود
+async function rerunAttributeEntry(entry) {
+  for (const item of (entry.items ?? [])) {
+    // لایه اگر از قبل فعال نباشد، همین‌جا اضافه می‌شود و شرط‌ها ست می‌شوند
+    await loadSavedQuery({ layerUuid: item.layerUuid, conditions: item.conditions })
+    if (!isLayerVisible(item.layerUuid)) toggleLayerVisibility(item.layerUuid)
+  }
+  if (!entry.items?.length) return
+  attributeScope.value = 'all'
+  activeQueryLayer.value = entry.items[0].layerUuid
+  queryKind.value = 'attribute'
+  applyAttributeConditions()
+  selectQueryResults()
+  zoomToAttributeResults()
+}
+
+// رابطه مکانی: پارامترها روی پنل مکانی ست و مجدداً اجرا می‌شود
+async function rerunRelationEntry(entry) {
+  const p = entry.params ?? {}
+  if (!p.targetLayerUuid) return
+  for (const uuid of new Set([p.sourceLayerUuid, p.targetLayerUuid].filter(Boolean))) {
+    await loadSavedQuery({ layerUuid: uuid, conditions: [] })
+    if (!isLayerVisible(uuid)) toggleLayerVisibility(uuid)
+  }
+  setSelectionKeys([...(p.sourceKeys ?? []), ...(p.targetKeys ?? [])])
+  spatialTargetOnlySelected.value = !!p.targetOnlySelected
+  queryKind.value = 'spatial'
+  // حالت «انتخاب‌شده‌ها» فقط وقتی معتبر است که هنوز عارضه‌ای انتخاب شده باشد؛
+  // وگرنه کوئری روی کل لایه مبدأ (همه عوارض) اجرا می‌شود
+  if ((p.sourceMode ?? 'selected') === 'selected' && !selectionCount.value) {
+    relationSourceMode.value = 'layer'
+  } else {
+    relationSourceMode.value = p.sourceMode || 'selected'
+  }
+  relationSourceLayer.value = p.sourceLayerUuid ?? null
+  relationTargetLayer.value = p.targetLayerUuid
+  relationOperator.value = normalizeRelationOperators(p.operator)
+  relationRadiusKm.value = Number.isFinite(+p.radiusKm) ? +p.radiusKm : 3
+  const ok = await commitRelationFilter()
+  if (ok) {
+    selectQueryResults()
+    zoomToResults()
+  }
+}
+
+// حذف مورد/کل تاریخچه
+function onRemoveHistoryEntry(id) {
+  removeHistoryEntry(id)
+}
+function onClearHistory() {
+  if (!confirm('کل تاریخچه کوئری‌ها پاک شود؟')) return
+  clearHistoryEntries()
+}
+
+// خروجی Shapefile نتیجه یک کوئری ثبت‌شده (دکمه ذخیره ذیل جدول TOC)
+async function onExportHistoryShp(entry) {
+  if (!entry || historyRunning.value || historyExporting.value) return
+  historyExporting.value = true
+  try {
+    const rows = []
+    if (entry.type === 'attribute') {
+      const scope = entry.scope === 'selected' ? 'selected' : 'all'
+      for (const item of (entry.items ?? [])) {
+        const part = computeAttributeRows(item.layerUuid, item.conditions, scope)
+        // push(...rows) روی آرایه‌های بزرگ استک را منفجر می‌کند؛ حلقه استفاده شد
+        for (const r of part) rows.push(r)
+      }
+    } else {
+      for (const r of computeRelationRows(entry.params)) rows.push(r)
+    }
+    if (!rows.length) {
+      alert('نتیجه‌ای برای این کوئری یافت نشد (مثلاً لایه حذف شده است).')
+      return
+    }
+    const { exportData } = await import('../composables/useExport.js')
+    exportData('shp', rows, convertFeature, { crs: crs.value })
+  } finally {
+    historyExporting.value = false
+  }
 }
 // حذف یک شرط تأییدشده از خلاصه شرط‌ها
 function onRemoveAppliedCondition(uuid, index) {
   removeAppliedCondition(uuid, index)
 }
 // زوم ملایم روی عارضه‌های نتیجه (در صورت خالی بودن، نما تغییر نمی‌کند)
+function zoomToAttributeResults() {
+  // Fit only the query selection; unrelated layers must not widen the view.
+  const rows = selectedRows.value
+  if (!rows.length) return
+  mapRef.value?.zoomToResults?.(rows, { padding: 64, maxZoom: 11 })
+}
 function zoomToResults() {
   const rows = displayRows.value
   if (!rows.length) return
@@ -945,12 +1212,14 @@ function zoomToResults() {
 function onMapEmptyClick() {
   activeWellId.value = null
   selectedWellId.value = null
+  infoWellId.value = null
   if (queryKind.value === 'spatial') {
     radiusCenter.value = null
     customPoint.value = null
   }
 }
 function onSelectFromMap(well) {
+  setSelectionKeys([rowKey(well)])
   activeWellId.value = rowKey(well)
   selectedWellId.value = rowKey(well)
   if (isPickingPoint.value) {
@@ -959,14 +1228,15 @@ function onSelectFromMap(well) {
     customPoint.value = null
     isPickingPoint.value = false
     mapRef.value?.disablePointPicker()
-  } else if (queryKind.value === 'spatial') {
-    // راحتی: کلیک عادی روی عارضه در تب مکانی هم آن را مرکز می‌کند
-    radiusCenter.value = well
-    customPoint.value = null
   }
   mapRef.value?.zoomToFeature(rowKey(well))
 }
+// ابزار اطلاعات: عارضه کلیک‌شده آبی پر رنگ می‌شود (بدون زوم و بدون تغییر انتخاب)
+function onInfoFromMap(well) {
+  infoWellId.value = rowKey(well)
+}
 function onSelectFromTable(row) {
+  setSelectionKeys([rowKey(row)])
   activeWellId.value = rowKey(row)
   selectedWellId.value = rowKey(row)
   showResultsModal.value = false
@@ -997,9 +1267,17 @@ async function handleExport(format) {
 }
 
 function handleClearData() {
-  if (!confirm('همه داده‌های ذخیره‌شده (لایه‌های فعال، شرط‌ها، کوئری‌های ذخیره‌شده و تنظیمات) پاک شوند؟')) return
+  if (!confirm('کوئری‌ها و تاریخچه پاک شوند؟ لایه‌ها حفظ می‌شوند.')) return
+  onClearAllQueries()
+  clearSavedQueries()
+  clearHistoryEntries()
+  showResultsModal.value = false
+}
+
+function handleClearLayers() {
+  if (!confirm('لایه‌ها پاک شوند؟ کوئری‌های ذخیره‌شده و تاریخچه حفظ می‌شوند.')) return
   clearSymAll()
-  clearAllLocalData()
+  clearLayers()
   activeQueryLayer.value = null
   showResultsModal.value = false
 }

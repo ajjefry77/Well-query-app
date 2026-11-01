@@ -2,107 +2,122 @@
   <div class="map-shell">
     <div ref="mapEl" class="map-el"></div>
 
-    <!-- پنل ابزارها -->
-    <div class="tool-panel-wrap">
-      <button
-        class="tool-toggle-btn"
-        @click="panelOpen = !panelOpen"
-        :class="{ active: panelOpen || activeMode !== null }"
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-        >
-          <path
-            d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"
-          />
-        </svg>
-        ابزارها
-      </button>
-
-      <Transition name="tool-panel">
-        <div class="tool-panel" v-if="panelOpen">
-        <!-- انتخاب رنگ -->
-        <div class="tool-section-label">رنگ</div>
-
-        <div class="color-custom-wrap">
-          <label class="color-custom-input">
-            <input
-              type="color"
-              v-model="selectedColor"
-              title="رنگ دلخواه"
-            />
-            <span
-              class="color-preview-dot"
-              :style="{ background: selectedColor }"
-            ></span>
-          </label>
-          <span class="color-hex" dir="ltr">{{ selectedColor }}</span>
-        </div>
-
-        <div class="tool-divider"></div>
-
-        <!-- ترسیم -->
-        <div class="tool-section-label">ترسیم</div>
+    <!-- نوار ابزارهای کنار نقشه (ثابت، بدون دراپ‌داون؛ آیکون + hint) -->
+    <div class="map-tools" role="toolbar" aria-label="ابزارهای نقشه">
+      <!-- ابزار اطلاعات: جدا و بالاتر از همه ابزارها -->
+      <div class="map-tools__group">
         <button
-          class="tool-item"
+          class="map-tool"
+          :class="{ active: selectionTool === 'info' }"
+          data-tool="info"
+          title="اطلاعات"
+          @click="toggleSelectionTool('info')"
+        >i</button>
+      </div>
+
+      <div class="map-tools__sep"></div>
+
+      <!-- گروه انتخاب -->
+      <div class="map-tools__group">
+        <button
+          v-for="t in SELECT_TOOLS"
+          :key="t.id"
+          class="map-tool"
+          :class="{ active: selectionTool === t.id }"
+          :data-tool="t.id"
+          :title="t.hint"
+          @click="toggleSelectionTool(t.id)"
+        >{{ t.icon }}</button>
+        <button
+          class="map-tool"
+          :disabled="!selectionCount"
+          :title="`زوم به انتخاب (${selectionCount.toLocaleString('fa-IR')})`"
+          @click="$emit('zoom-to-selection')"
+        ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6M7 10h6m-3-3v6"/></svg></button>
+        <button class="map-tool" :disabled="!selectionCount" title="ذخیره انتخاب‌ها (Shapefile)" @click="$emit('save-selection')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></svg></button>
+        <button
+          class="map-tool danger"
+          :disabled="!selectionCount"
+          :title="`پاک کردن انتخاب (${selectionCount.toLocaleString('fa-IR')})`"
+          @click="$emit('selection-clear')"
+        ><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-dasharray="3 2" d="M3 3h14v14H3z"/><path d="m15 15 6 6m0-6-6 6"/></svg></button>
+      </div>
+
+      <div class="map-tools__sep"></div>
+
+      <!-- گروه ترسیم -->
+      <div class="map-tools__group">
+        <label class="map-tool map-tool--color" title="رنگ ترسیم">
+          <input type="color" v-model="selectedColor" />
+          <span class="map-tool__color-dot" :style="{ background: selectedColor }"></span>
+        </label>
+        <button
+          class="map-tool"
           :class="{ active: activeMode === 'draw' && drawSubTool === 'point' }"
+          title="نقطه"
           @click="activateTool('draw', 'point')"
-        >
-          <span class="tool-icon">●</span> نقطه
-        </button>
+        >●</button>
         <button
-          class="tool-item"
+          class="map-tool"
           :class="{ active: activeMode === 'draw' && drawSubTool === 'line' }"
+          title="خط"
           @click="activateTool('draw', 'line')"
-        >
-          <span class="tool-icon">╱</span> خط
-        </button>
+        >╱</button>
         <button
-          class="tool-item"
-          :class="{
-            active: activeMode === 'draw' && drawSubTool === 'polygon',
-          }"
+          class="map-tool"
+          :class="{ active: activeMode === 'draw' && drawSubTool === 'polygon' }"
+          title="پلیگان"
           @click="activateTool('draw', 'polygon')"
-        >
-          <span class="tool-icon">⬡</span> پلیگان
-        </button>
-
-        <div class="tool-divider"></div>
-
-        <!-- اندازه‌گیری -->
-        <div class="tool-section-label">اندازه‌گیری</div>
+        >⬡</button>
         <button
-          class="tool-item"
-          :class="{
-            active: activeMode === 'measure' && drawSubTool === 'line',
-          }"
+          class="map-tool danger"
+          title="حذف ترسیم‌ها"
+          @click="clearAll"
+        ><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button>
+      </div>
+
+      <div class="map-tools__sep"></div>
+
+      <!-- گروه اندازه‌گیری -->
+      <div class="map-tools__group">
+        <button
+          class="map-tool"
+          :class="{ active: activeMode === 'measure' && drawSubTool === 'line' }"
+          title="طول"
           @click="activateTool('measure', 'line')"
-        >
-          <span class="tool-icon">↔</span> طول
-        </button>
+        >↔</button>
         <button
-          class="tool-item"
-          :class="{
-            active: activeMode === 'measure' && drawSubTool === 'polygon',
-          }"
+          class="map-tool"
+          :class="{ active: activeMode === 'measure' && drawSubTool === 'polygon' }"
+          title="مساحت"
           @click="activateTool('measure', 'polygon')"
-        >
-          <span class="tool-icon">⊡</span> مساحت
-        </button>
+        >⊡</button>
+        <button
+          class="map-tool danger"
+          title="حذف اندازه‌ها"
+          @click="clearAll"
+        ><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button>
+      </div>
 
-        <div class="tool-divider"></div>
-
-        <button class="tool-item danger" @click="clearAll">
-          <span class="tool-icon">✕</span> پاک کردن
-        </button>
-        </div>
-      </Transition>
+      <span
+        v-if="selectionCount > 0"
+        class="map-tools__badge"
+        :title="`${selectionCount.toLocaleString('fa-IR')} عارضه انتخاب شده`"
+      >{{ selectionCount.toLocaleString('fa-IR') }}</span>
     </div>
+
+    <!-- نوار شناور ابزار فعال -->
+    <Transition name="tool-chip">
+      <div v-if="activeToolChip" class="active-tool-chip" role="status">
+        <span class="active-tool-chip__pulse"></span>
+        <span class="active-tool-chip__text">{{ activeToolChip }}</span>
+        <button
+          class="active-tool-chip__close"
+          title="غیرفعال کردن ابزار (Esc)"
+          @click="deactivateAllTools()"
+        >✕</button>
+      </div>
+    </Transition>
 
     <div class="status-bar">
       <div class="status-group">
@@ -126,8 +141,34 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, watch } from "vue";
-import { resolveFeatureStyle, rampStops } from "../composables/useSymbology.js";
+import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
+import { resolveFeatureStyle, rampStops, defaultSymbology, DEFAULT_FEATURE_COLOR } from "../composables/useSymbology.js";
+import booleanIntersects from "@turf/boolean-intersects";
+import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
+import pointToLineDistance from "@turf/point-to-line-distance";
+import turfCircle from "@turf/circle";
+import turfBuffer from "@turf/buffer";
+
+// ─── ابزارهای انتخاب عارضه (نقطه‌ای: کلیک اول + حرکت موس + کلیک دوم، بدون نیاز به درگ) ───
+const SELECT_TOOLS = [
+  { id: "rectangle", label: "مستطیل", icon: "▭", hint: "مستطیل" },
+  { id: "circle", label: "دایره", icon: "○", hint: "دایره" },
+  { id: "point", label: "دستی", icon: "●", hint: "دستی" },
+];
+// هایلایت مجموعه انتخاب — دقیقاً هم‌رنگ انتخاب با کلیک عادی (زرد)
+const SEL_COLOR = "#00FFFF";
+const SEL_BORDER = "#1a1a1a";
+// هایلایت آبی پر رنگ برای ابزار «اطلاعات»
+const INFO_COLOR = "#2563eb";
+const INFO_BORDER = "#1e3a8a";
+
+// راهنمای متنی هر ابزار انتخاب (نوار شناور ابزار فعال)
+const SELECT_INSTRUCTIONS = {
+  rectangle: "کلیک اول، حرکت موس، کلیک دوم",
+  circle: "کلیک اول مرکز، حرکت موس، کلیک دوم",
+  point: "روی عارضه کلیک کنید",
+  info: "روی عارضه کلیک کنید",
+};
 
 // ─── سیمبولوژی (ArcGIS-style): استایل پایه هر عارضه از کانفیگ لایه‌اش ───
 function geomKindOf(w) {
@@ -139,7 +180,7 @@ function geomKindOf(w) {
 }
 function symStyleOf(w) {
   try {
-    const cfg = props.symConfigs?.[w?._layerUuid]
+    const cfg = props.symConfigs?.[w?._layerUuid] ?? defaultSymbology(w?._layerUuid, geomKindOf(w))
     if (!cfg || cfg.renderer === 'heatmap') return null
     return resolveFeatureStyle(w, cfg, geomKindOf(w))
   } catch { return null }
@@ -383,6 +424,8 @@ const props = defineProps({
   radiusCenter: { type: Object, default: null },
   radiusKm: { type: Number, default: 0 },
   selectedId: { type: [String, Number], default: null },
+  // عارضه‌ای که ابزار «اطلاعات» روی آن کلیک کرده → آبی پر رنگ + پاپ‌آپ مشخصات
+  infoWellKey: { type: String, default: null },
   // کانفیگ سیمبولوژی هر لایه (uuid -> config) — استایل per-feature داخل همین کامپوننت ساخته می‌شود
   symConfigs: { type: Object, default: () => ({}) },
   symVersion: { type: Number, default: 0 },
@@ -393,11 +436,15 @@ const props = defineProps({
   previewOkIds: { type: Array, default: () => [] },
   previewFailIds: { type: Array, default: () => [] },
   theme: { type: String, default: "light" },
+  // ── انتخاب عارضه (state در والد نگه‌داری می‌شود تا پنل کوئری هم استفاده کند) ──
+  selectionTool: { type: String, default: null },
+  selectionMode: { type: String, default: "new" },
+  selectionIds: { type: Array, default: () => [] },
+  selectionCount: { type: Number, default: 0 },
 });
-const emit = defineEmits(["select-well", "map-empty-click"]);
+const emit = defineEmits(["select-well", "map-empty-click", "update:selection-tool", "update:selection-mode", "selection-change", "selection-clear", "zoom-to-selection", "save-selection", "info-select", "update:info-well-key"]);
 
 const mapEl = ref(null);
-const panelOpen = ref(false);
 const activeMode = ref(null);
 const drawSubTool = ref(null);
 
@@ -413,6 +460,463 @@ let wellsGeoJSON = null;
 // فضای خالی → نقطه دلخواه، کلیک روی عارضه → همان عارضه
 let picking = false;
 let pickerCb = null;
+
+// ─── موتور انتخاب عارضه (نقطه‌ای، بدون درگ) ───
+// مستطیل/دایره: کلیک اول = لنگر، حرکت موس = پیش‌نمایش اندازه، کلیک دوم = ثبت
+let selecting = false;          // ابزار انتخاب فعال است؟
+let selAnchor = null;           // لنگر جاری { type, startX, startY, startLngLat, el }
+
+function toggleSelectionTool(id) {
+  emit("update:selection-tool", props.selectionTool === id ? null : id);
+}
+
+// وضعیت لنگر برای نمایش راهنمای «کلیک دوم» در نوار شناور
+const selAnchorActive = ref(false);
+// متن نوار شناور ابزار فعال (تا کاربر همیشه بداند چه ابزاری فعال است و چه کند)
+const activeToolChip = computed(() => {
+  if (props.selectionTool) {
+    if (props.selectionTool === "info") return "اطلاعات: روی عارضه کلیک کنید";
+    const t = SELECT_TOOLS.find((x) => x.id === props.selectionTool);
+    if (selAnchorActive.value && (props.selectionTool === "rectangle" || props.selectionTool === "circle"))
+      return `${t?.label ?? props.selectionTool}: کلیک دوم = ثبت`;
+    return `${t?.label ?? props.selectionTool}`;
+  }
+  if (activeMode.value === "draw") {
+    const sub = drawSubTool.value === "point" ? "نقطه" : drawSubTool.value === "line" ? "خط" : "پلیگان";
+    return `ترسیم ${sub}`;
+  }
+  if (activeMode.value === "measure") {
+    return drawSubTool.value === "line" ? "طول" : "مساحت";
+  }
+  return "";
+});
+
+// غیرفعال‌سازی همه ابزارها (دکمه ✕ نوار شناور)
+function deactivateAllTools() {
+  clearSelAnchor();
+  cancelSelDrag();
+  if (props.selectionTool) emit("update:selection-tool", null);
+  if (activeMode.value) deactivateAll();
+}
+
+// ─── وضعیت سراسری کلیدهای اصلاح‌کننده (Shift/Ctrl/Alt) ───
+// مرورگر گاهی altKey/shiftKey را در originalEvent کلیک گم می‌کند (و Alt منو را می‌دزدد)؛
+// برای همین وضعیت کلیدها هم از رویداد موس و هم از شنونده صفحه خوانده و OR می‌شود.
+const modHeld = { shift: false, ctrl: false, meta: false, alt: false };
+function syncModsFromDomEvent(domEv) {
+  try {
+    if (!domEv) return;
+    if (typeof domEv.shiftKey === "boolean") modHeld.shift = !!domEv.shiftKey;
+    if (typeof domEv.ctrlKey === "boolean") modHeld.ctrl = !!domEv.ctrlKey;
+    if (typeof domEv.metaKey === "boolean") modHeld.meta = !!domEv.metaKey;
+    if (typeof domEv.altKey === "boolean") modHeld.alt = !!domEv.altKey;
+  } catch {}
+}
+// خروجی یکدست {shift,ctrl,alt} از روی ایونت mapbox/DOM + وضعیت سراسری صفحه
+function domMods(e) {
+  try {
+    const oe = e?.originalEvent ?? e;
+    syncModsFromDomEvent(oe);
+    return {
+      shift: !!(oe?.shiftKey || modHeld.shift),
+      ctrl: !!(oe?.ctrlKey || oe?.metaKey || modHeld.ctrl || modHeld.meta),
+      alt: !!(oe?.altKey || modHeld.alt),
+    };
+  } catch {
+    return { shift: !!modHeld.shift, ctrl: !!(modHeld.ctrl || modHeld.meta), alt: !!modHeld.alt };
+  }
+}
+// سرکوب کلیکِ دنباله‌دار بعد از درگ/مارکر تا یک ژست فقط یک‌بار ثبت شود
+let selSuppressClickUntil = 0;
+function suppressSelClick(ms = 600) {
+  selSuppressClickUntil = Date.now() + ms;
+}
+function isSelClickSuppressed() {
+  return Date.now() < selSuppressClickUntil;
+}
+
+function resolveSelMode(e) {
+  const m = domMods(e);
+  if (m.shift) return "add";
+  // Ctrl (و Meta در مک) = حذف از انتخاب؛ چرخش نقشه غیرفعال شده تا Ctrl آزاد باشد
+  if (m.ctrl) return "remove";
+  return "new";
+}
+
+// Alt = فقط عوارضی که کاملاً داخل محدوده‌اند انتخاب شوند
+function isContainedOnly(e) {
+  return domMods(e).alt;
+}
+
+function applySelection(geom, kind, mode, containedOnly = false) {
+  const keys = selectKeysInGeom(geom, kind, containedOnly);
+  emit("selection-change", keys, mode || "new");
+}
+
+// bbox سریع یک هندسه برای پیش‌فیلتر
+function geomBbox(g) {
+  if (!g || !g.coordinates) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const eat = (x, y) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  };
+  const walk = (c) => {
+    if (!Array.isArray(c)) return;
+    if (typeof c[0] === "number") eat(+c[0], +c[1]);
+    else c.forEach(walk);
+  };
+  try { walk(g.coordinates); } catch { return null; }
+  if (!Number.isFinite(minX)) return null;
+  return [minX, minY, maxX, maxY];
+}
+function bboxDisjoint(a, b) {
+  return !a || !b || a[2] < b[0] || b[2] < a[0] || a[3] < b[1] || b[3] < a[1];
+}
+function wellGeomOf(w) {
+  if (w?._geometry) return w._geometry;
+  if (Number.isFinite(+w?.lat) && Number.isFinite(+w?.lng))
+    return { type: "Point", coordinates: [+w.lng, +w.lat] };
+  return null;
+}
+
+// Alt: آیا «کل» عارضه داخل محدوده است؟
+// تک‌تک رأس‌های عارضه باید داخل پلیگان انتخاب باشند (نه فقط بخشی از آن).
+// این روش نسبت به booleanWithin روی هندسه‌های واقعی داده (Multi، حفره، دقت اعشار) قابل‌اعتمادتر است.
+function allCoordsWithin(wg, shapeGeom) {
+  try {
+    let count = 0;
+    let ok = true;
+    const walk = (c) => {
+      if (!ok || !Array.isArray(c)) return;
+      if (typeof c[0] === "number") {
+        const x = +c[0], y = +c[1];
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        count++;
+        if (booleanPointInPolygon([x, y], shapeGeom) !== true) ok = false;
+        return;
+      }
+      for (let i = 0; i < c.length && ok; i++) walk(c[i]);
+    };
+    walk(wg?.coordinates);
+    return ok && count > 0;
+  } catch { return false; }
+}
+
+// محاسبه کلیدهای عوارض داخل/متقاطع با هندسه انتخاب
+// containedOnly (کلید Alt): فقط عوارضی که کاملاً داخل محدوده‌اند
+function selectKeysInGeom(geom, kind, containedOnly = false) {
+  const out = [];
+  if (!geom) return out;
+  const wells = props.wells || [];
+  const shapeBbox = kind === "line" ? null : geomBbox(geom.type === "Feature" ? geom.geometry : geom);
+  const shapeGeom = geom.type === "Feature" ? geom.geometry : geom;
+  let lineFeature = null, lineTolKm = 0;
+  if (kind === "line") {
+    try {
+      const z = map ? map.getZoom() : 10;
+      const lat = shapeGeom.coordinates?.[0]?.[1] ?? 32;
+      const mpp = (156543.03392 * Math.cos((lat * Math.PI) / 180)) / Math.pow(2, z);
+      lineTolKm = Math.max(0.05, (mpp * 12) / 1000);
+      lineFeature = { type: "Feature", geometry: shapeGeom, properties: {} };
+    } catch { lineFeature = { type: "Feature", geometry: shapeGeom, properties: {} }; lineTolKm = 0.3; }
+  }
+  for (let i = 0; i < wells.length; i++) {
+    const w = wells[i];
+    const wg = wellGeomOf(w);
+    if (!wg) continue;
+    // پیش‌فیلتر bbox (به‌جز خط که بافر تلرانس دارد)
+    if (kind !== "line" && shapeBbox) {
+      const wb = wg.type === "Point" ? [wg.coordinates[0], wg.coordinates[1], wg.coordinates[0], wg.coordinates[1]] : geomBbox(wg);
+      if (bboxDisjoint(shapeBbox, wb)) continue;
+    }
+    let hit = false;
+    try {
+      if (kind === "line") {
+        if (wg.type === "Point") {
+          const d = pointToLineDistance(
+            { type: "Feature", geometry: wg, properties: {} },
+            lineFeature,
+            { units: "kilometers" },
+          );
+          hit = Number.isFinite(d) && d <= lineTolKm;
+        } else {
+          const buf = turfBuffer(lineFeature, lineTolKm, { units: "kilometers" });
+          const bg = buf?.type === "Feature" ? buf.geometry : buf;
+          if (bg) hit = booleanIntersects({ type: "Feature", geometry: wg, properties: {} }, { type: "Feature", geometry: bg, properties: {} });
+        }
+      } else if (containedOnly) {
+        // Alt: کل عارضه (همه رأس‌ها) باید داخل محدوده باشد؛ نقطه هم همین مسیر را می‌رود
+        hit = allCoordsWithin(wg, shapeGeom);
+      } else if (wg.type === "Point") {
+        hit = booleanPointInPolygon(wg.coordinates, shapeGeom) === true;
+      } else {
+        hit = booleanIntersects({ type: "Feature", geometry: wg, properties: {} }, { type: "Feature", geometry: shapeGeom, properties: {} });
+      }
+    } catch { hit = false; }
+    if (hit) {
+      const k = wellKey(w);
+      if (k) out.push(String(k));
+    }
+  }
+  return out;
+}
+
+// غیرفعال‌سازی چرخش/زاویه نقشه تا Ctrl آزاد شود (Ctrl = حذف از انتخاب)
+function disableMapRotation() {
+  if (!map) return;
+  try { map.dragRotate?.disable(); } catch {}
+  try { map.touchPitch?.disable(); } catch {}
+  try { map.touchZoomRotate?.disableRotation(); } catch {}
+  try { if (map.dragRotate && map.dragRotate._pitchWithRotate !== undefined) map.dragRotate._pitchWithRotate = false; } catch {}
+}
+
+// فعال/غیرفعال‌سازی ابزار انتخاب (مستطیل/دایره/دستی)
+function setSelectionToolActive(tool) {
+  selecting = !!tool;
+  // تعویض ابزار یا غیرفعال‌سازی → ژست نیمه‌کاره پاک شود
+  if (selDrag && (!tool || selDrag.type !== tool)) cancelSelDrag();
+  if (!tool || (selAnchor && selAnchor.type !== tool)) clearSelAnchor();
+  // تعارض با ترسیم/اندازه‌گیری و پیکر نقطه: فقط یکی فعال باشد
+  if (tool && draw && map?.hasControl?.(draw)) removeDraw();
+  if (tool) {
+    activeMode.value = null;
+    drawSubTool.value = null;
+    if (picking && map) {
+      try { map.off("click", map._pickerHandler); } catch {}
+      picking = false; pickerCb = null;
+      map.getCanvas().style.cursor = "";
+    }
+  }
+  if (!map) return;
+  try {
+    disableMapRotation();
+    // ابزار «دستی»: درگ کردن بی‌اثر است (نه انتخاب، نه پن نقشه)
+    if (tool === "point") {
+      try { map.dragPan.disable(); } catch {}
+    } else {
+      try { map.dragPan.enable(); } catch {}
+    }
+    if (tool) {
+      map.doubleClickZoom.enable();
+      map.getCanvas().style.cursor = tool === "info" ? "pointer" : "crosshair";
+    } else {
+      map.doubleClickZoom.enable();
+      map.getCanvas().style.cursor = "";
+    }
+  } catch {}
+}
+
+function onSelKeyDown(e) {
+  try {
+    if (e.key === "Shift") modHeld.shift = true;
+    else if (e.key === "Control") modHeld.ctrl = true;
+    else if (e.key === "Meta") modHeld.meta = true;
+    else if (e.key === "Alt") { modHeld.alt = true; e.preventDefault(); }
+  } catch {}
+  if (!selecting) return;
+  if (e.key === "Escape") {
+    // اول ژست نیمه‌کاره لغو شود، بعد ابزار بسته شود
+    if (selDrag) { cancelSelDrag(); return; }
+    if (selAnchor) { clearSelAnchor(); return; }
+    emit("update:selection-tool", null);
+  }
+}
+function onSelKeyUp(e) {
+  try {
+    if (e.key === "Shift") modHeld.shift = false;
+    else if (e.key === "Control") modHeld.ctrl = false;
+    else if (e.key === "Meta") modHeld.meta = false;
+    else if (e.key === "Alt") modHeld.alt = false;
+  } catch {}
+}
+function onSelBlur() {
+  modHeld.shift = false; modHeld.ctrl = false; modHeld.meta = false; modHeld.alt = false;
+}
+
+// حلقه مستطیل پیکسلی به مختصات جغرافیایی
+function boxRing(x0, y0, x1, y1) {
+  const a = map.unproject([Math.min(x0, x1), Math.min(y0, y1)]);
+  const b = map.unproject([Math.max(x0, x1), Math.max(y0, y1)]);
+  return [[a.lng, b.lat], [b.lng, b.lat], [b.lng, a.lat], [a.lng, a.lat], [a.lng, b.lat]];
+}
+// انتخاب نقطه‌ای در یک پیکسل (کلیک ساده با هر ابزار)
+function selectAtPixel(px, py, mode, containedOnly = false, tolPx = 6) {
+  if (!map) return;
+  applySelection(
+    { type: "Polygon", coordinates: [boxRing(px - tolPx, py - tolPx, px + tolPx, py + tolPx)] },
+    "rectangle",
+    mode || "new",
+    containedOnly,
+  );
+}
+
+// ─── انتخاب مستطیل/دایره: کلیک-کلیک (پیش‌فرض) + درگ با Shift/Ctrl/Alt ───
+// درگ ساده = جابه‌جایی نقشه؛ درگ همراه با کلید اصلاح‌کننده = انتخاب با همان کلید.
+function clearSelAnchor() {
+  try { selAnchor?.el?.remove(); } catch {}
+  selAnchor = null;
+  selAnchorActive.value = false;
+}
+function containerXY(clientX, clientY) {
+  try {
+    const r = map.getContainer().getBoundingClientRect();
+    return [clientX - r.left, clientY - r.top];
+  } catch { return [0, 0]; }
+}
+// نقاشی مشترک پیش‌نمایش (لنگر و درگ)
+function paintSelPreview(a, x, y) {
+  const el = a?.el;
+  if (!el) return;
+  if (a.type === "rectangle") {
+    const x0 = Math.min(a.startX, x), y0 = Math.min(a.startY, y);
+    el.style.left = x0 + "px"; el.style.top = y0 + "px";
+    el.style.width = Math.max(1, Math.abs(x - a.startX)) + "px";
+    el.style.height = Math.max(1, Math.abs(y - a.startY)) + "px";
+  } else {
+    const ddx = x - a.startX, ddy = y - a.startY;
+    const r = Math.sqrt(ddx * ddx + ddy * ddy);
+    el.style.left = a.startX - r + "px"; el.style.top = a.startY - r + "px";
+    el.style.width = Math.max(1, r * 2) + "px"; el.style.height = Math.max(1, r * 2) + "px";
+  }
+}
+function makeSelPreviewEl(type, px, py) {
+  const container = map.getContainer();
+  const el = document.createElement("div");
+  el.className = "sel-drag-box";
+  if (type === "circle") el.classList.add("is-circle");
+  el.style.left = px + "px";
+  el.style.top = py + "px";
+  el.style.width = "1px";
+  el.style.height = "1px";
+  container.appendChild(el);
+  return el;
+}
+// ثبت نهایی مشترک (لنگر و درگ): بدون حرکت = نقطه‌ای
+function finalizeSelShape(type, startX, startY, startLngLat, endX, endY, mode, onlyInside) {
+  const moved = Math.abs(endX - startX) + Math.abs(endY - startY);
+  if (moved < 5) {
+    selectAtPixel(endX, endY, mode, onlyInside);
+    return;
+  }
+  if (type === "rectangle") {
+    applySelection({ type: "Polygon", coordinates: [boxRing(startX, startY, endX, endY)] }, "rectangle", mode, onlyInside);
+  } else {
+    try {
+      const edge = map.unproject([endX, endY]);
+      const c = startLngLat || map.unproject([startX, startY]);
+      const rKm = _hav(c.lat, c.lng, edge.lat, edge.lng);
+      if (rKm > 0.0001) {
+        const circ = turfCircle([c.lng, c.lat], rKm, { steps: 64, units: "kilometers" });
+        applySelection(circ.geometry || circ, "circle", mode, onlyInside);
+      }
+    } catch {}
+  }
+}
+// ترکیب کلیدها از شروع و پایان ژست (کافی است در یکی از دو لحظه نگه داشته شده باشند)
+function mergeSelMods(a, b) {
+  return {
+    shift: !!(a?.shift || b?.shift),
+    ctrl: !!(a?.ctrl || b?.ctrl),
+    alt: !!(a?.alt || b?.alt),
+  };
+}
+function modeOfMods(m) {
+  if (m.shift) return "add";
+  if (m.ctrl) return "remove";
+  return "new";
+}
+// پیش‌نمایش زنده با حرکت موس (بدون نگه‌داشتن دکمه)
+function onSelMouseMove(e) {
+  try { syncModsFromDomEvent(e); } catch {}
+  if (!selecting || !map) return;
+  if (selDrag) {
+    try {
+      const [x, y] = containerXY(e.clientX, e.clientY);
+      paintSelPreview(selDrag, x, y);
+    } catch {}
+    return;
+  }
+  if (!selAnchor) return;
+  let x, y;
+  try {
+    if (typeof e.clientX === "number") [x, y] = containerXY(e.clientX, e.clientY);
+    else if (e.point) { x = e.point.x; y = e.point.y; }
+    else return;
+  } catch { return; }
+  paintSelPreview(selAnchor, x, y);
+}
+// درگ با کلید اصلاح‌کننده: Shift=افزودن، Ctrl=حذف، Alt=فقط کاملاً داخل
+// (فقط مستطیل/دایره؛ ابزار دستی درگ ندارد و درگ = پن نقشه)
+let selDrag = null; // { type, startX, startY, startLngLat, el, mods }
+function onSelMouseDown(e) {
+  if (!selecting || !map) return;
+  const tool = props.selectionTool;
+  if (tool !== "rectangle" && tool !== "circle") return;
+  if (e.button !== 0) return;
+  const m = domMods(e);
+  if (!m.shift && !m.ctrl && !m.alt) return; // درگ/کلیک ساده = پن نقشه
+  if (selDrag || selAnchor) return;
+  try { map.dragPan.disable(); } catch {}
+  const [sx, sy] = containerXY(e.clientX, e.clientY);
+  let startLngLat = null;
+  try { startLngLat = map.unproject([sx, sy]); } catch {}
+  selDrag = { type: tool, startX: sx, startY: sy, startLngLat, el: makeSelPreviewEl(tool, sx, sy), mods: m };
+  window.addEventListener("mousemove", onSelDragMove);
+  window.addEventListener("mouseup", onSelDragUp);
+}
+function onSelDragMove(ev) {
+  if (!selDrag) return;
+  try {
+    syncModsFromDomEvent(ev);
+    const [x, y] = containerXY(ev.clientX, ev.clientY);
+    paintSelPreview(selDrag, x, y);
+  } catch {}
+}
+function onSelDragUp(ev) {
+  window.removeEventListener("mousemove", onSelDragMove);
+  window.removeEventListener("mouseup", onSelDragUp);
+  try { map.dragPan.enable(); } catch {}
+  if (!selDrag) return;
+  const d = selDrag;
+  selDrag = null;
+  try { d.el.remove(); } catch {}
+  suppressSelClick();
+  let ex = d.startX, ey = d.startY;
+  try { [ex, ey] = containerXY(ev.clientX, ev.clientY); } catch {}
+  const m = mergeSelMods(d.mods, domMods(ev));
+  finalizeSelShape(d.type, d.startX, d.startY, d.startLngLat, ex, ey, modeOfMods(m), m.alt);
+}
+function cancelSelDrag() {
+  window.removeEventListener("mousemove", onSelDragMove);
+  window.removeEventListener("mouseup", onSelDragUp);
+  try { map.dragPan.enable(); } catch {}
+  try { selDrag?.el?.remove(); } catch {}
+  selDrag = null;
+}
+// کلیک در حالت انتخاب مستطیل/دایره:
+// کلیک اول = ثبت لنگر، کلیک دوم = ثبت نهایی (بدون حرکت = نقطه‌ای)
+function handleSelAnchorClick(px, py, rawEvent) {
+  const tool = props.selectionTool;
+  if (tool !== "rectangle" && tool !== "circle") return false;
+  if (!map) return true;
+  const cur = domMods(rawEvent);
+  if (!selAnchor) {
+    let startLngLat = null;
+    try { startLngLat = map.unproject([px, py]); } catch {}
+    selAnchor = { type: tool, startX: px, startY: py, startLngLat, el: makeSelPreviewEl(tool, px, py), mods: cur };
+    selAnchorActive.value = true;
+    return true;
+  }
+  const a = selAnchor;
+  const m = mergeSelMods(a.mods, cur);
+  clearSelAnchor();
+  finalizeSelShape(a.type, a.startX, a.startY, a.startLngLat, px, py, modeOfMods(m), m.alt);
+  return true;
+}
 
 // ─── RAF batching برای عملکرد بهتر ───
 let renderRaf = null;
@@ -772,6 +1276,9 @@ function removeDraw() {
 }
 
 function activateTool(mode, subTool) {
+  // ابزار انتخاب با ترسیم/اندازه‌گیری هم‌زمان فعال نمی‌ماند
+  clearSelAnchor();
+  if (props.selectionTool) emit("update:selection-tool", null);
   // toggle: همان ابزار → غیرفعال
   if (activeMode.value === mode && drawSubTool.value === subTool) {
     deactivateAll();
@@ -853,7 +1360,7 @@ function clearAll() {
 }
 
 // ─── رندر عوارض ───────────────────────────────────────────
-const WELL_COLOR = "#7ec88a";
+const WELL_COLOR = DEFAULT_FEATURE_COLOR;
 
 // کلید یکتا: شناسه‌ها ممکن است بین لایه‌ها تکراری باشند
 function wellKey(w) {
@@ -1071,36 +1578,75 @@ function collectStackedFeatures(e) {
   return items;
 }
 
+// پاپ‌آپ آخرین کلیک ابزار «اطلاعات» — برای بستن/پاک‌سازی هنگام غیرفعال‌سازی ابزار
+let lastInfoPopup = null;
+// بسته شدن پاپ‌آپ اطلاعات → حذف هایلایت آبی (فقط اگر همان پاپ‌آپ آخری باشد)
+function onInfoPopupClose(popup) {
+  try {
+    if (lastInfoPopup !== popup) return;
+    lastInfoPopup = null;
+    emit("update:info-well-key", null);
+  } catch {}
+}
 function showStackedPopup(items, lngLat) {
   const popup = new mapboxgl.Popup({ maxWidth: "340px" })
     .setLngLat(lngLat)
     .setHTML(multiPopupHTML(items))
     .addTo(map);
   bindPopupTabs(popup);
+  popup.on("close", () => onInfoPopupClose(popup));
+  lastInfoPopup = popup;
   return popup;
 }
 
-let wellsEventsBound = false;
+const boundWellLayers = new Set();
 function bindWellEventsOnce() {
-  if (wellsEventsBound) return;
-  wellsEventsBound = true;
+  // لایه‌هایی که بعداً ساخته می‌شوند (dash/dot/شکل نقطه‌ای) هم در رندرهای بعدی بایند می‌گیرند
   WELL_LAYER_IDS.forEach(
     (layerId) => {
-      if (!map.getLayer(layerId)) return;
+      if (boundWellLayers.has(layerId)) return;
+      let has = false;
+      try { has = !!map.getLayer(layerId); } catch {}
+      if (!has) return;
+      boundWellLayers.add(layerId);
       map.on("click", layerId, (e) => {
         if (activeMode.value) return;
         // در حالت انتخاب هوشمند، هندلر کلیک نقشه تصمیم می‌گیرد (جلوگیری از دابل‌فایر)
         if (picking) return;
-        const items = collectStackedFeatures(e);
-        if (!items.length) return;
-        emit("select-well", items[0].well);
-        showStackedPopup(items, e.lngLat);
+        // ── ابزارهای انتخاب عارضه + ابزار اطلاعات ──
+        if (selecting && props.selectionTool) {
+          if (isSelClickSuppressed()) return;
+          try { syncModsFromDomEvent(e?.originalEvent); } catch {}
+          try {
+            if (props.selectionTool === "info") {
+              // ابزار اطلاعات: عارضه آبی پر رنگ + نمایش مشخصات
+              const items = collectStackedFeatures(e);
+              if (!items.length) return;
+              emit("info-select", items[0].well);
+              showStackedPopup(items, e.lngLat);
+            } else if (props.selectionTool === "point") {
+              if (e.point) selectAtPixel(e.point.x, e.point.y, resolveSelMode(e), isContainedOnly(e));
+            } else if (e.point) {
+              handleSelAnchorClick(e.point.x, e.point.y, e);
+            }
+          } catch {}
+          return;
+        }
+        // ── کلیک عادی (بدون ابزار): انتخاب دستی ──
+        if (isSelClickSuppressed()) return;
+        try { syncModsFromDomEvent(e?.originalEvent); } catch {}
+        try {
+          if (e.point) selectAtPixel(e.point.x, e.point.y, resolveSelMode(e), isContainedOnly(e));
+        } catch {}
       });
       map.on("mouseenter", layerId, () => {
+        if (selecting && props.selectionTool) return;
         map.getCanvas().style.cursor = "pointer";
       });
       map.on("mouseleave", layerId, () => {
-        map.getCanvas().style.cursor = "";
+        map.getCanvas().style.cursor = (selecting && props.selectionTool)
+          ? (props.selectionTool === "info" ? "pointer" : "crosshair")
+          : "";
       });
     },
   );
@@ -1137,15 +1683,19 @@ function fitGeoJSON(geojson) {
 function _statusColorExpr(failC, okC) {
   return [
     "case",
+    ["==", ["get", "_sel"], 1], SEL_COLOR,
+    ["==", ["get", "_infoKey"], 1], INFO_COLOR,
     ["==", ["get", "_pfail"], 1], failC,
     ["==", ["get", "_pok"], 1], okC,
     ["==", ["get", "_psrc"], 1], PREVIEW_SRC_COLOR,
-    ["==", ["get", "_selected"], 1], "#f0a500",
+    ["==", ["get", "_selected"], 1], SEL_COLOR,
     ["==", ["get", "_isCenter"], 1], "#e74c3c",
   ];
 }
 function _polyOutlineColor() {
   return [..._statusColorExpr(PREVIEW_FAIL_BORDER, PREVIEW_OK_BORDER),
+    ["==", ["get", "_match"], 1], "#14532d",
+    ["==", ["get", "_dimmed"], 1], "#8a9490",
     ["!=", ["get", "_sym_color"], null],
     ["coalesce", ["get", "_sym_stroke"], ["get", "_sym_color"]],
     ["==", ["get", "_match"], 1], "#14532d",
@@ -1155,6 +1705,8 @@ function _polyOutlineColor() {
 }
 function _polylineColor() {
   return [..._statusColorExpr(PREVIEW_FAIL_COLOR, PREVIEW_OK_COLOR),
+    ["==", ["get", "_match"], 1], "#22c55e",
+    ["==", ["get", "_dimmed"], 1], "#8a9490",
     ["!=", ["get", "_sym_color"], null], ["get", "_sym_color"],
     ["==", ["get", "_match"], 1], "#22c55e",
     ["==", ["get", "_highlighted"], 1], "#4a9b8e",
@@ -1164,6 +1716,8 @@ function _polylineColor() {
 function _lineWidthPoly() {
   return [
     "case",
+    ["==", ["get", "_sel"], 1], 4,
+    ["==", ["get", "_infoKey"], 1], 4,
     ["==", ["get", "_pfail"], 1], 4,
     ["==", ["get", "_pok"], 1], 4,
     ["==", ["get", "_psrc"], 1], 4,
@@ -1179,13 +1733,15 @@ function _lineWidthPoly() {
 function _lineWidthLine() {
   return [
     "case",
+    ["==", ["get", "_sel"], 1], 4,
+    ["==", ["get", "_infoKey"], 1], 4,
     ["==", ["get", "_pfail"], 1], 4,
     ["==", ["get", "_pok"], 1], 4,
     ["==", ["get", "_psrc"], 1], 4,
     ["==", ["get", "_selected"], 1], 4,
     ["==", ["get", "_isCenter"], 1], 4,
-    ["!=", ["get", "_sym_size"], null], ["get", "_sym_size"],
     ["!=", ["get", "_sym_strokew"], null], ["get", "_sym_strokew"],
+    ["!=", ["get", "_sym_size"], null], ["get", "_sym_size"],
     ["==", ["get", "_match"], 1], 3.5,
     ["==", ["get", "_highlighted"], 1], 3,
     ["==", ["get", "_dimmed"], 1], 1,
@@ -1195,6 +1751,8 @@ function _lineWidthLine() {
 function _lineOpacity(dimmedVal) {
   return [
     "case",
+    ["==", ["get", "_sel"], 1], 1,
+    ["==", ["get", "_infoKey"], 1], 1,
     ["==", ["get", "_pfail"], 1], 1,
     ["==", ["get", "_pok"], 1], 1,
     ["==", ["get", "_psrc"], 1], 1,
@@ -1206,6 +1764,8 @@ function _lineOpacity(dimmedVal) {
 }
 function _pointColor() {
   return [..._statusColorExpr(PREVIEW_FAIL_COLOR, PREVIEW_OK_COLOR),
+    ["==", ["get", "_match"], 1], "#22c55e",
+    ["==", ["get", "_dimmed"], 1], "#8a9490",
     ["!=", ["get", "_sym_color"], null], ["get", "_sym_color"],
     ["==", ["get", "_match"], 1], "#22c55e",
     ["==", ["get", "_dimmed"], 1], "#8a9490",
@@ -1215,14 +1775,21 @@ function _pointColor() {
 function _pointHalo() {
   return [
     "case",
+    ["==", ["get", "_sel"], 1], SEL_BORDER,
+    ["==", ["get", "_infoKey"], 1], "#ffffff",
     ["==", ["get", "_pfail"], 1], PREVIEW_FAIL_BORDER,
     ["==", ["get", "_pok"], 1], PREVIEW_OK_BORDER,
     ["==", ["get", "_psrc"], 1], "#1a1a1a",
     ["==", ["get", "_selected"], 1], "#1a1a1a",
     ["==", ["get", "_isCenter"], 1], "#fff",
     ["==", ["get", "_match"], 1], "#14532d",
+    ["==", ["get", "_dimmed"], 1], "#8a9490",
+    ["!=", ["get", "_sym_stroke"], null], ["get", "_sym_stroke"],
+    ["==", ["get", "_match"], 1], "#14532d",
     ["==", ["get", "_highlighted"], 1], "#1a1a1a",
     ["==", ["get", "_dimmed"], 1], "#666",
+    ["==", ["get", "_match"], 1], "#14532d",
+    ["==", ["get", "_dimmed"], 1], "#8a9490",
     ["!=", ["get", "_sym_stroke"], null], ["get", "_sym_stroke"],
     "#ffffff",
   ];
@@ -1230,22 +1797,20 @@ function _pointHalo() {
 function _pointOpacity() {
   return [
     "case",
+    ["==", ["get", "_sel"], 1], 1,
+    ["==", ["get", "_infoKey"], 1], 1,
     ["==", ["get", "_pfail"], 1], 1,
     ["==", ["get", "_pok"], 1], 1,
     ["==", ["get", "_psrc"], 1], 1,
     ["==", ["get", "_selected"], 1], 1,
     ["==", ["get", "_isCenter"], 1], 1,
-    ["==", ["get", "_dimmed"], 1], 0.3,
+    ["==", ["get", "_dimmed"], 1], 0.5,
     ["coalesce", ["get", "_sym_op"], 1],
   ];
 }
 function _pointTextSize() {
   return [
     "case",
-    ["==", ["get", "_pfail"], 1], 26,
-    ["==", ["get", "_pok"], 1], 26,
-    ["==", ["get", "_psrc"], 1], 26,
-    ["==", ["get", "_selected"], 1], 26,
     ["==", ["get", "_isCenter"], 1], 26,
     ["*", ["coalesce", ["get", "_sym_size"], 6], 2.4],
   ];
@@ -1256,8 +1821,8 @@ function addDashAndShapeLayers() {
   const lineGeoms = ["literal", ["LineString", "MultiLineString"]];
   const ptGeoms = ["literal", ["Point", "MultiPoint"]];
   const dashStyles = [
-    { suffix: "dash", dash: "dash", array: ["literal", [2.5, 2]] },
-    { suffix: "dot", dash: "dot", array: ["literal", [1, 2.5]] },
+    { suffix: "dash", dash: "dash", array: [2.5, 2] },
+    { suffix: "dot", dash: "dot", array: [0, 2.5] },
   ];
   for (const d of dashStyles) {
     const lid = "wells-line-" + d.suffix;
@@ -1269,7 +1834,7 @@ function addDashAndShapeLayers() {
         paint: {
           "line-color": _polyOutlineColor(),
           "line-width": _lineWidthPoly(),
-          "line-opacity": _lineOpacity(0.15),
+          "line-opacity": _lineOpacity(0.4),
           "line-dasharray": d.array,
         },
       });
@@ -1283,7 +1848,7 @@ function addDashAndShapeLayers() {
         paint: {
           "line-color": _polylineColor(),
           "line-width": _lineWidthLine(),
-          "line-opacity": _lineOpacity(0.25),
+          "line-opacity": _lineOpacity(0.5),
           "line-dasharray": d.array,
         },
       });
@@ -1318,6 +1883,7 @@ function renderMarkers(fit = true) {
   const psets = previewSets();
   const centerKey = wellKey(props.radiusCenter);
   const selectedKey = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null;
+  const infoKey = props.infoWellKey != null && props.infoWellKey !== '' ? String(props.infoWellKey) : null;
   const hasGeometry = props.wells.some((w) => w._geometry);
 
   if (hasGeometry) {
@@ -1325,23 +1891,34 @@ function renderMarkers(fit = true) {
     const geojson = buildGeoJSON(props.wells);
     wellsGeoJSON = geojson;
     const fset = filteredSet();
+    const selSet = new Set((props.selectionIds || []).map(String));
+    const inSel = (key, plainId) => {
+      if (!selSet.size) return false;
+      if (key && (selSet.has(key) || (key.includes("::") && selSet.has(key.slice(key.indexOf("::") + 2))))) return true;
+      if (plainId != null && selSet.has(String(plainId))) return true;
+      return false;
+    };
     geojson.features.forEach((f) => {
       const key = wellKey(f);
       const neutral = isNeutralLayer(layerUuidOfFeature(f), fset);
       const hl = neutral ? false : inHighlightSet(key, highlightSet);
       const match = props.hasFilter && hl && !neutral;
       const { isSrc, isOk, isFail, isAny } = previewFlags(key, f.properties.id, psets);
+      const isSel = inSel(key, f.properties.id);
       f.properties._color = WELL_COLOR;
       f.properties._highlighted = hl ? 1 : 0;
-      f.properties._dimmed = (!neutral && props.hasFilter && !hl && !isAny) ? 1 : 0;
+      f.properties._dimmed = (!neutral && props.hasFilter && !hl && !isAny && !isSel) ? 1 : 0;
       f.properties._match = match ? 1 : 0;
+      f.properties._sel = isSel ? 1 : 0;
+      f.properties._infoKey = (infoKey && (key === infoKey || String(f.properties.id) === infoKey)) ? 1 : 0;
       f.properties._psrc = isSrc && !isOk && !isFail ? 1 : 0;
       f.properties._pok = isOk ? 1 : 0;
       f.properties._pfail = isFail ? 1 : 0;
       f.properties._isCenter =
         centerKey && key === centerKey ? 1 : 0;
+      // مجموعه انتخاب هم دقیقاً مسیر کلیک عادی (_selected زرد) را می‌گیرد تا حتماً دیده شود
       f.properties._selected =
-        (selectedKey && (key === selectedKey || String(f.properties.id) === selectedKey)) || isAny ? 1 : 0;
+        ((selectedKey && (key === selectedKey || String(f.properties.id) === selectedKey)) || isAny || isSel) ? 1 : 0;
     });
     // استفاده مجدد از source/layer (بدون بازسازی و بدون fit اضافه)
     if (map.getSource("wells-src")) {
@@ -1360,6 +1937,10 @@ function renderMarkers(fit = true) {
       paint: {
         "fill-color": [
           "case",
+          ["==", ["get", "_sel"], 1],
+          SEL_COLOR,
+          ["==", ["get", "_infoKey"], 1],
+          INFO_COLOR,
           ["==", ["get", "_pfail"], 1],
           PREVIEW_FAIL_COLOR,
           ["==", ["get", "_pok"], 1],
@@ -1367,10 +1948,12 @@ function renderMarkers(fit = true) {
           ["==", ["get", "_psrc"], 1],
           PREVIEW_SRC_COLOR,
           ["==", ["get", "_selected"], 1],
-          "#f0a500",
+          SEL_COLOR,
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
           // سیمبولوژی لایه بر هایلایت/مچ اولویت دارد تا تغییرات کاربر همیشه دیده شود
+          ["==", ["get", "_match"], 1], "#22c55e",
+          ["==", ["get", "_dimmed"], 1], "#8a9490",
           ["!=", ["get", "_sym_color"], null],
           ["get", "_sym_color"], // سیمبولوژی لایه
           ["==", ["get", "_match"], 1],
@@ -1381,6 +1964,10 @@ function renderMarkers(fit = true) {
         ],
         "fill-opacity": [
           "case",
+          ["==", ["get", "_sel"], 1],
+          0.55,
+          ["==", ["get", "_infoKey"], 1],
+          1,
           ["==", ["get", "_pfail"], 1],
           0.6,
           ["==", ["get", "_pok"], 1],
@@ -1396,7 +1983,7 @@ function renderMarkers(fit = true) {
           ["==", ["get", "_highlighted"], 1],
           0.55,
           ["==", ["get", "_dimmed"], 1],
-          0.06,
+          0.25,
           ["coalesce", ["get", "_sym_fillop"], 0.2], // عادی: شفافیت سیمبولوژی
         ],
       },
@@ -1414,6 +2001,10 @@ function renderMarkers(fit = true) {
       paint: {
         "line-color": [
           "case",
+          ["==", ["get", "_sel"], 1],
+          SEL_COLOR,
+          ["==", ["get", "_infoKey"], 1],
+          INFO_COLOR,
           ["==", ["get", "_pfail"], 1],
           PREVIEW_FAIL_BORDER,
           ["==", ["get", "_pok"], 1],
@@ -1421,9 +2012,11 @@ function renderMarkers(fit = true) {
           ["==", ["get", "_psrc"], 1],
           PREVIEW_SRC_COLOR,
           ["==", ["get", "_selected"], 1],
-          "#f0a500",
+          SEL_COLOR,
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
+          ["==", ["get", "_match"], 1], "#14532d",
+          ["==", ["get", "_dimmed"], 1], "#8a9490",
           ["!=", ["get", "_sym_color"], null],
           ["coalesce", ["get", "_sym_stroke"], ["get", "_sym_color"]],
           ["==", ["get", "_match"], 1],
@@ -1434,6 +2027,10 @@ function renderMarkers(fit = true) {
         ],
         "line-width": [
           "case",
+          ["==", ["get", "_sel"], 1],
+          4,
+          ["==", ["get", "_infoKey"], 1],
+          4,
           ["==", ["get", "_pfail"], 1],
           4,
           ["==", ["get", "_pok"], 1],
@@ -1467,7 +2064,7 @@ function renderMarkers(fit = true) {
           ["==", ["get", "_highlighted"], 1],
           1,
           ["==", ["get", "_dimmed"], 1],
-          0.15,
+          0.4,
           0.5,
         ],
       },
@@ -1485,6 +2082,10 @@ function renderMarkers(fit = true) {
       paint: {
         "line-width": [
           "case",
+          ["==", ["get", "_sel"], 1],
+          4,
+          ["==", ["get", "_infoKey"], 1],
+          4,
           ["==", ["get", "_pfail"], 1],
           4,
           ["==", ["get", "_pok"], 1],
@@ -1495,10 +2096,10 @@ function renderMarkers(fit = true) {
           4,
           ["==", ["get", "_isCenter"], 1],
           4,
-          ["!=", ["get", "_sym_size"], null],
-          ["get", "_sym_size"],
           ["!=", ["get", "_sym_strokew"], null],
           ["get", "_sym_strokew"],
+          ["!=", ["get", "_sym_size"], null],
+          ["get", "_sym_size"],
           ["==", ["get", "_match"], 1],
           3.5,
           ["==", ["get", "_highlighted"], 1],
@@ -1509,6 +2110,10 @@ function renderMarkers(fit = true) {
         ],
         "line-color": [
           "case",
+          ["==", ["get", "_sel"], 1],
+          SEL_COLOR,
+          ["==", ["get", "_infoKey"], 1],
+          INFO_COLOR,
           ["==", ["get", "_pfail"], 1],
           PREVIEW_FAIL_COLOR,
           ["==", ["get", "_pok"], 1],
@@ -1516,9 +2121,11 @@ function renderMarkers(fit = true) {
           ["==", ["get", "_psrc"], 1],
           PREVIEW_SRC_COLOR,
           ["==", ["get", "_selected"], 1],
-          "#f0a500",
+          SEL_COLOR,
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
+          ["==", ["get", "_match"], 1], "#22c55e",
+          ["==", ["get", "_dimmed"], 1], "#8a9490",
           ["!=", ["get", "_sym_color"], null],
           ["get", "_sym_color"],
           ["==", ["get", "_match"], 1],
@@ -1527,7 +2134,16 @@ function renderMarkers(fit = true) {
           "#4a9b8e",
           "#8a9490",
         ],
-        "line-opacity": ["case", ["==", ["get", "_dimmed"], 1], 0.25, ["coalesce", ["get", "_sym_op"], 1]],
+        "line-opacity": [
+          "case",
+          ["==", ["get", "_sel"], 1],
+          1,
+          ["==", ["get", "_infoKey"], 1],
+          1,
+          ["==", ["get", "_dimmed"], 1],
+          0.5,
+          ["coalesce", ["get", "_sym_op"], 1],
+        ],
       },
     });
     map.addLayer({
@@ -1538,28 +2154,26 @@ function renderMarkers(fit = true) {
       paint: {
         "circle-radius": [
           "case",
+          ["==", ["get", "_infoKey"], 1],
+          12,
           ["==", ["get", "_pfail"], 1],
           12,
           ["==", ["get", "_pok"], 1],
           12,
           ["==", ["get", "_psrc"], 1],
           12,
-          ["==", ["get", "_selected"], 1],
-          12,
           ["==", ["get", "_isCenter"], 1],
           12,
           ["!=", ["get", "_sym_size"], null],
           ["get", "_sym_size"],
-          ["==", ["get", "_match"], 1],
-          11,
-          ["==", ["get", "_highlighted"], 1],
-          9,
-          ["==", ["get", "_dimmed"], 1],
-          4,
-          6,
+          4.5,
         ],
         "circle-color": [
           "case",
+          ["==", ["get", "_sel"], 1],
+          SEL_COLOR,
+          ["==", ["get", "_infoKey"], 1],
+          INFO_COLOR,
           ["==", ["get", "_pfail"], 1],
           PREVIEW_FAIL_COLOR,
           ["==", ["get", "_pok"], 1],
@@ -1567,9 +2181,11 @@ function renderMarkers(fit = true) {
           ["==", ["get", "_psrc"], 1],
           PREVIEW_SRC_COLOR,
           ["==", ["get", "_selected"], 1],
-          "#f0a500",
+          SEL_COLOR,
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
+          ["==", ["get", "_match"], 1], "#22c55e",
+          ["==", ["get", "_dimmed"], 1], "#8a9490",
           ["!=", ["get", "_sym_color"], null],
           ["get", "_sym_color"],
           ["==", ["get", "_match"], 1],
@@ -1580,6 +2196,10 @@ function renderMarkers(fit = true) {
         ],
         "circle-opacity": [
           "case",
+          ["==", ["get", "_sel"], 1],
+          1,
+          ["==", ["get", "_infoKey"], 1],
+          1,
           ["==", ["get", "_pfail"], 1],
           1,
           ["==", ["get", "_pok"], 1],
@@ -1591,18 +2211,18 @@ function renderMarkers(fit = true) {
           ["==", ["get", "_isCenter"], 1],
           1,
           ["==", ["get", "_dimmed"], 1],
-          0.3,
+          0.5,
           ["coalesce", ["get", "_sym_op"], 1],
         ],
         "circle-stroke-width": [
           "case",
+          ["==", ["get", "_infoKey"], 1],
+          3,
           ["==", ["get", "_pfail"], 1],
           3,
           ["==", ["get", "_pok"], 1],
           3,
           ["==", ["get", "_psrc"], 1],
-          3,
-          ["==", ["get", "_selected"], 1],
           3,
           ["==", ["get", "_isCenter"], 1],
           3,
@@ -1610,28 +2230,38 @@ function renderMarkers(fit = true) {
         ],
         "circle-stroke-color": [
           "case",
+          ["==", ["get", "_infoKey"], 1],
+          INFO_BORDER,
           ["==", ["get", "_pfail"], 1],
           PREVIEW_FAIL_BORDER,
           ["==", ["get", "_pok"], 1],
           PREVIEW_OK_BORDER,
           ["==", ["get", "_psrc"], 1],
           "#1a1a1a",
-          ["==", ["get", "_selected"], 1],
-          "#1a1a1a",
           ["==", ["get", "_isCenter"], 1],
           "#fff",
+          ["==", ["get", "_match"], 1], "#14532d",
+          ["==", ["get", "_dimmed"], 1], "#8a9490",
+          ["!=", ["get", "_sym_stroke"], null],
+          ["get", "_sym_stroke"],
           ["==", ["get", "_match"], 1],
           "#14532d",
           ["==", ["get", "_highlighted"], 1],
           "#1a1a1a",
           ["==", ["get", "_dimmed"], 1],
           "#666",
+          ["==", ["get", "_match"], 1], "#14532d",
+          ["==", ["get", "_dimmed"], 1], "#8a9490",
           ["!=", ["get", "_sym_stroke"], null],
           ["get", "_sym_stroke"],
           "#ffffff",
         ],
         "circle-stroke-opacity": [
           "case",
+          ["==", ["get", "_sel"], 1],
+          1,
+          ["==", ["get", "_infoKey"], 1],
+          1,
           ["==", ["get", "_pfail"], 1],
           1,
           ["==", ["get", "_pok"], 1],
@@ -1660,52 +2290,58 @@ function renderMarkers(fit = true) {
     const MARKER_CAP = 3000;
     const list = props.wells.length > MARKER_CAP ? props.wells.slice(0, MARKER_CAP) : props.wells;
     const fsetPt = filteredSet();
+    const selSetPt = new Set((props.selectionIds || []).map(String));
     list.forEach((w) => {
       if (!Number.isFinite(+w.lat) || !Number.isFinite(+w.lng)) return;
       const key = wellKey(w);
       const neutral = isNeutralLayer(w._layerUuid, fsetPt);
       const isH = neutral ? false : inHighlightSet(key, highlightSet);
       const { isSrc, isOk, isFail, isAny } = previewFlags(key, w.id, psets);
-      const isDimmed = !neutral && props.hasFilter && !isH && !isAny;
+      const inSelSet = selSetPt.size > 0 && (selSetPt.has(String(key)) || selSetPt.has(String(w.id)));
+      const isDimmed = !neutral && props.hasFilter && !isH && !isAny && !inSelSet;
       const isMatch = !neutral && props.hasFilter && isH;
       const isCenter = centerKey && key === centerKey;
-      const isSel = (selectedKey && (key === selectedKey || String(w.id) === selectedKey)) || isAny;
+      const isInfo = infoKey && (key === infoKey || String(w.id) === infoKey);
+      const isSel = (selectedKey && (key === selectedKey || String(w.id) === selectedKey)) || isAny || inSelSet;
       const sym = symStyleOf(w);
       const symColor = sym?.color ?? null;
-      const color = isFail
-        ? PREVIEW_FAIL_COLOR
-        : isOk
-          ? PREVIEW_OK_COLOR
-          : isSrc
-            ? PREVIEW_SRC_COLOR
-            : isSel
-              ? "#f0a500"
-              : isCenter
-                ? "#e74c3c"
-                : (symColor ?? (isMatch
-                  ? "#22c55e"
-                  : isH
-                    ? "#4a9b8e"
-                    : "#8a9490"));
-      const opacity = isSel || isCenter || isMatch ? "1" : isDimmed ? "0.25" : String(sym?.opacity ?? 1);
-      const strokeW = isSel || isCenter || isMatch ? 3 : Math.max(0, Math.min(6, Number(sym?.strokeWidth) ?? 2));
+      const color = inSelSet
+        ? SEL_COLOR
+        : isInfo
+          ? INFO_COLOR
+          : isFail
+          ? PREVIEW_FAIL_COLOR
+          : isOk
+            ? PREVIEW_OK_COLOR
+            : isSrc
+              ? PREVIEW_SRC_COLOR
+              : isSel
+                ? SEL_COLOR
+                : isCenter
+                  ? "#e74c3c"
+                  : (isMatch ? "#22c55e" : isDimmed ? "#8a9490" : (symColor ?? DEFAULT_FEATURE_COLOR));
+      const opacity = inSelSet || isInfo || isSel || isCenter || isMatch ? "1" : isDimmed ? "0.5" : String(sym?.opacity ?? 1);
+      const strokeW = isCenter || isInfo ? 3 : Math.max(0, Math.min(6, Number(sym?.strokeWidth ?? 2)));
       const strokeC = sym?.strokeColor ?? "rgba(255,255,255,0.4)";
-      const border = isFail
-        ? `3px solid ${PREVIEW_FAIL_BORDER}`
-        : isOk
-          ? `3px solid ${PREVIEW_OK_BORDER}`
-          : isSel
-            ? "3px solid #1a1a1a"
+      const border = inSelSet
+        ? strokeW + "px solid " + strokeC
+        : isInfo
+          ? `3px solid ${INFO_BORDER}`
+          : isFail
+          ? `3px solid ${PREVIEW_FAIL_BORDER}`
+          : isOk
+            ? `3px solid ${PREVIEW_OK_BORDER}`
             : isCenter
-              ? "3px solid #fff"
-              : isMatch
-                ? "3px solid #14532d"
-                : isH
-                  ? "3px solid #fff"
-                  : `${strokeW}px solid ${strokeC}`;
-      const symSize = Math.max(4, Math.min(30, Number(sym?.size) || 12));
-      const hasSym = sym?.size != null;
-      const size = isSel ? 22 : isCenter ? 22 : isDimmed ? 8 : hasSym ? symSize : isMatch ? 20 : isH ? 18 : symSize;
+                ? "3px solid #fff"
+                : sym
+                  ? strokeW + "px solid " + strokeC
+                : isMatch
+                  ? "3px solid #14532d"
+                  : isH
+                    ? "3px solid #fff"
+                    : `${strokeW}px solid ${strokeC}`;
+      const symSize = Math.max(4, Math.min(30, Number(sym?.size) || 8));
+      const size = symSize;
       const shape = sym?.shape ?? 'circle';
       const shapeCss = shape === 'square'
         ? 'border-radius:4px;'
@@ -1724,7 +2360,7 @@ function renderMarkers(fit = true) {
       box-shadow:0 2px 6px rgba(0,0,0,0.4);cursor:pointer;
       opacity:${opacity};
       ${shape === 'cross' ? `background:linear-gradient(${color},${color}) center/60% 18% no-repeat, linear-gradient(${color},${color}) center/18% 60% no-repeat;` : ''}
-      ${isSel || isCenter || isMatch ? "outline:3px solid rgba(34,197,94,0.45);outline-offset:3px;" : (isH ? "outline:3px solid rgba(240,165,0,0.4);outline-offset:3px;" : "")}`;
+      ${isCenter || isMatch ? "outline:3px solid rgba(34,197,94,0.45);outline-offset:3px;" : (isInfo ? "outline:3px solid rgba(255,255,255,0.75);outline-offset:3px;" : (isH ? "outline:3px solid rgba(240,165,0,0.4);outline-offset:3px;" : ""))}`;
       // عارضه‌های هم‌مختصات (دو لایه روی هم) → تب در یک پاپ‌آپ
       const stacked = props.wells.filter(
         (o) => Number.isFinite(+o.lat) && Number.isFinite(+o.lng) && +o.lat === +w.lat && +o.lng === +w.lng,
@@ -1736,6 +2372,7 @@ function renderMarkers(fit = true) {
       const popup = new mapboxgl.Popup({ offset: 14, maxWidth: "340px" })
         .setHTML(multiPopupHTML(markerItems));
       popup.on("open", () => bindPopupTabs(popup));
+      popup.on("close", () => onInfoPopupClose(popup));
       el.addEventListener("click", (e) => {
         if (activeMode.value) {
           e.stopPropagation();
@@ -1744,13 +2381,46 @@ function renderMarkers(fit = true) {
         // در حالت انتخاب هوشمند از پیکر نقشه استفاده می‌شود؛ جلوی دابل‌فایر گرفته شود
         if (picking) {
           e.stopPropagation();
+          emit("select-well", w);
+          return;
         }
-        emit("select-well", w);
+        if (selecting && props.selectionTool) {
+          // ابزار اطلاعات: عارضه آبی پر رنگ + نمایش مشخصات
+          if (props.selectionTool === "info") {
+            e.stopPropagation();
+            emit("info-select", w);
+            popup.openPopup();
+            lastInfoPopup = popup;
+            return;
+          }
+          e.stopPropagation();
+          if (isSelClickSuppressed()) return;
+          try { syncModsFromDomEvent(e); } catch {}
+          try {
+            const rect = map.getContainer().getBoundingClientRect();
+            const px = e.clientX - rect.left, py = e.clientY - rect.top;
+            if (props.selectionTool === "point") {
+              selectAtPixel(px, py, resolveSelMode(e), isContainedOnly(e));
+            } else {
+              handleSelAnchorClick(px, py, e);
+            }
+          } catch {}
+          // کلیک مارکر ممکن است به نقشه هم برسد؛ ژست فقط یک‌بار ثبت شود
+          suppressSelClick(300);
+          return;
+        }
+        // کلیک عادی (بدون ابزار) = انتخاب دستی؛ بدون پاپ‌آپ
+        if (isSelClickSuppressed()) return;
+        try { syncModsFromDomEvent(e); } catch {}
+        try {
+          const rect = map.getContainer().getBoundingClientRect();
+          const px = e.clientX - rect.left, py = e.clientY - rect.top;
+          selectAtPixel(px, py, resolveSelMode(e), isContainedOnly(e));
+        } catch {}
       });
       markers.push(
         new mapboxgl.Marker(el)
           .setLngLat([w.lng, w.lat])
-          .setPopup(popup)
           .addTo(map),
       );
     });
@@ -1815,6 +2485,41 @@ onMounted(async () => {
   // کلیک روی فضای خالی → deselect عارضه (فقط وقتی به عارضه/شکل رسم‌شده نخورده)
   map.on("click", (e) => {
     if (picking) return;
+    if (selecting && props.selectionTool) {
+      // دنباله درگ/مارکر: این کلیک قبلاً ثبت شده
+      if (isSelClickSuppressed()) return;
+      try { syncModsFromDomEvent(e?.originalEvent); } catch {}
+      // کلیک روی مارکر DOM را هندلر مارکر انجام داده است
+      try {
+        if (e?.originalEvent?.target?.closest?.(".mapboxgl-marker,.mapboxgl-popup")) return;
+      } catch {}
+      // مستطیل/دایره نقطه‌ای: کلیک اول لنگر، کلیک دوم ثبت (روی عارضه یا فضای خالی فرقی ندارد)
+      if (props.selectionTool === "rectangle" || props.selectionTool === "circle") {
+        try {
+          // اگر کلیک روی عارضه بوده، هندلر لایه قبلاً اجرا شده؛ برای جلوگیری از ثبت دوبار،
+          // فقط وقتی هیچ عارضه‌ای زیر کلیک نیست اینجا لنگر را جلو می‌بریم
+          const layerIds = [...WELL_LAYER_IDS].filter((id) => { try { return map.getLayer(id); } catch { return false; } });
+          let onFeature = false;
+          try {
+            const feats = layerIds.length ? map.queryRenderedFeatures(e.point, { layers: layerIds }) : [];
+            onFeature = !!(feats && feats.length);
+          } catch {}
+          if (onFeature) return; // هندلر لایه مسئول است
+          handleSelAnchorClick(e.point.x, e.point.y, e);
+        } catch {}
+        return;
+      }
+      // ابزار دستی: کلیک روی فضای خالی در حالت «جدید» → پاک شدن انتخاب
+      if (props.selectionTool === "point" && resolveSelMode(e) === "new") {
+        try {
+          const layerIds = [...WELL_LAYER_IDS].filter((id) => map.getLayer(id));
+          const feats = layerIds.length ? map.queryRenderedFeatures(e.point, { layers: layerIds }) : [];
+          if (feats && feats.length) return;
+        } catch {}
+        emit("selection-change", [], "new");
+      }
+      return;
+    }
     try {
       const layerIds = [
         ...WELL_LAYER_IDS,
@@ -1823,11 +2528,26 @@ onMounted(async () => {
       const feats = layerIds.length ? map.queryRenderedFeatures(e.point, { layers: layerIds }) : [];
       if (feats && feats.length) return;
     } catch {}
+    // کلیک عادی روی فضای خالی → پاک کردن انتخاب فعلی (مثل ابزار دستی)
+    if (props.selectionCount > 0) emit("selection-change", [], "new");
     emit("map-empty-click");
   });
+  // چرخش/زاویه نقشه از ابتدا غیرفعال تا Ctrl برای حذف از انتخاب آزاد باشد
+  try { map.dragRotate?.disable(); } catch {}
+  try { map.touchPitch?.disable(); } catch {}
+  try { map.touchZoomRotate?.disableRotation(); } catch {}
   map.on("load", () => {
     initDrawnSource();
+    disableMapRotation();
     map.on("mousemove", onMouseMove);
+    // پیش‌نمایش زنده انتخاب نقطه‌ای (حرکت موس بدون نگه‌داشتن دکمه)
+    try { map.getCanvas().addEventListener("mousemove", onSelMouseMove); } catch {}
+    // درگ با Shift/Ctrl/Alt = انتخاب؛ درگ ساده = پن نقشه
+    try { map.getCanvas().addEventListener("mousedown", onSelMouseDown); } catch {}
+    window.addEventListener("keydown", onSelKeyDown);
+    window.addEventListener("keyup", onSelKeyUp);
+    window.addEventListener("blur", onSelBlur);
+    setSelectionToolActive(props.selectionTool);
     renderMarkers();
   });
 });
@@ -1835,6 +2555,13 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   clearMarkers();
   clearLabelMarkers();
+  clearSelAnchor();
+  cancelSelDrag();
+  try { window.removeEventListener("keydown", onSelKeyDown); } catch {}
+  try { window.removeEventListener("keyup", onSelKeyUp); } catch {}
+  try { window.removeEventListener("blur", onSelBlur); } catch {}
+  try { map?.getCanvas()?.removeEventListener("mousemove", onSelMouseMove); } catch {}
+  try { map?.getCanvas()?.removeEventListener("mousedown", onSelMouseDown); } catch {}
   if (map) map.remove();
 });
 
@@ -1842,31 +2569,41 @@ watch(() => props.wells, () => scheduleRender());
 
 // وقتی فقط highlight یا filter عوض شد، فقط data رو آپدیت کن (سریع‌تر از renderMarkers کامل)
 function updateHighlightData() {
-  if (!map || !map.isStyleLoaded()) return;
+  if (!map) return;
   if (!wellsGeoJSON || !map.getSource("wells-src")) {
-    scheduleRender();
+    if (!map.isStyleLoaded()) {
+      map.once("idle", scheduleHighlight);
+      return;
+    }
+    scheduleRender(true);
     return;
   }
   const highlightSet = new Set((props.highlightedIds || []).map(String));
   const psets = previewSets();
   const centerKey = wellKey(props.radiusCenter);
   const selectedKey = props.selectedId != null && props.selectedId !== '' ? String(props.selectedId) : null;
+  const infoKey = props.infoWellKey != null && props.infoWellKey !== '' ? String(props.infoWellKey) : null;
   const fsetUp = filteredSet();
+  const selSetUp = new Set((props.selectionIds || []).map(String));
   wellsGeoJSON.features.forEach((f) => {
     const key = wellKey(f);
     const neutral = isNeutralLayer(layerUuidOfFeature(f), fsetUp);
     const hl = neutral ? false : inHighlightSet(key, highlightSet);
     const { isSrc, isOk, isFail, isAny } = previewFlags(key, f.properties.id, psets);
+    const isSelUp = selSetUp.size > 0 && (selSetUp.has(String(key)) || selSetUp.has(String(f.properties.id)));
     f.properties._highlighted = hl ? 1 : 0;
-    f.properties._dimmed = (!neutral && props.hasFilter && !hl && !isAny) ? 1 : 0;
+    f.properties._dimmed = (!neutral && props.hasFilter && !hl && !isAny && !isSelUp) ? 1 : 0;
     f.properties._match = (!neutral && props.hasFilter && hl) ? 1 : 0;
+    f.properties._sel = isSelUp ? 1 : 0;
+    f.properties._infoKey = (infoKey && (key === infoKey || String(f.properties.id) === infoKey)) ? 1 : 0;
     f.properties._psrc = isSrc && !isOk && !isFail ? 1 : 0;
     f.properties._pok = isOk ? 1 : 0;
     f.properties._pfail = isFail ? 1 : 0;
     f.properties._isCenter =
       centerKey && key === centerKey ? 1 : 0;
+    // مجموعه انتخاب هم دقیقاً مسیر کلیک عادی (_selected زرد) را می‌گیرد تا حتماً دیده شود
     f.properties._selected =
-      ((selectedKey && (key === selectedKey || String(f.properties.id) === selectedKey)) || isAny) ? 1 : 0;
+      (((selectedKey && (key === selectedKey || String(f.properties.id) === selectedKey)) || isAny) || isSelUp) ? 1 : 0;
   });
   map.getSource("wells-src").setData(wellsGeoJSON);
 }
@@ -1875,6 +2612,8 @@ watch(() => props.highlightedIds, scheduleHighlight);
 watch(() => props.hasFilter, scheduleHighlight);
 watch(() => props.filteredLayerUuids, scheduleHighlight);
 watch(() => props.selectedId, scheduleHighlight);
+// عارضه اطلاعات (آبی) با تغییر انتخاب از ابزار «اطلاعات» به‌روز می‌شود
+watch(() => props.infoWellKey, scheduleHighlight);
 function schedulePreviewRefresh() {
   // حالت نقطه‌ای (بدون wells-src) نیاز به رندر کامل مارکرها دارد
   if (!wellsGeoJSON || !map?.getSource?.("wells-src")) scheduleRender();
@@ -1886,6 +2625,23 @@ watch(() => props.previewOkIds, schedulePreviewRefresh);
 watch(() => props.previewFailIds, schedulePreviewRefresh);
 // عارضه مرجع (قرمز) با تغییر انتخاب به‌روز می‌شود
 watch(() => props.radiusCenter, scheduleHighlight);
+// ابزار انتخاب: فعال/غیرفعال‌سازی تعامل‌های نقشه
+// خروج از ابزار «اطلاعات» → بستن پاپ‌آپ و برگشت رنگ عارضه به حالت عادی
+watch(() => props.selectionTool, (t, prev) => {
+  if (prev === "info" && t !== "info") {
+    try { lastInfoPopup?.remove?.(); } catch {}
+    lastInfoPopup = null;
+    emit("update:info-well-key", null);
+  }
+  setSelectionToolActive(t);
+});
+// تغییر مجموعه انتخاب → فقط استایل‌ها به‌روز شوند (هایلایت زرد)
+// نکته: در حالت مارکری (لایه بدون هندسه) باید رندر کامل اجباری شود، چون
+// scheduleRender عادی با wellsKey بدون‌تغییر هیچ کاری نمی‌کند و رنگ عوض نمی‌شد
+watch(() => props.selectionIds, () => {
+  if (!wellsGeoJSON || !map?.getSource?.("wells-src")) scheduleRender(true);
+  else scheduleHighlight();
+});
 
 // ─── سیمبولوژی: به‌روزرسانی زنده ──────────────────────────
 // تغییر رنگ/اندازه → فقط propertyها + setData (سریع)
@@ -1895,7 +2651,11 @@ function symStructSig() {
 }
 let lastSymStruct = symStructSig()
 function updateSymData() {
-  if (!map || !map.isStyleLoaded()) return
+  if (!map) return
+  if (!map.isStyleLoaded() && !map.getSource("wells-src")) {
+    map.once("idle", onSymChange)
+    return
+  }
   if (!wellsGeoJSON || !map.getSource("wells-src")) {
     scheduleRender(true)
     return
@@ -1960,7 +2720,7 @@ function applyMapTheme(t) {
   if (draw && map.hasControl(draw)) removeDraw();
 
   map.setStyle(next);
-  wellsEventsBound = false;
+  boundWellLayers.clear();
   map.once("style.load", () => {
     initDrawnSource();
     refreshDrawnSource();
@@ -1980,7 +2740,7 @@ function applyMapTheme(t) {
 watch(() => props.theme, applyMapTheme);
 
 // زوم ملایم روی مجموعه‌ای از سطرهای نتیجه (مبنای دکمه‌های «اجرا/اعمال»)
-function fitRowsToBounds(feats) {
+function fitRowsToBounds(feats, { padding = 60, maxZoom = 14 } = {}) {
   if (!map || !Array.isArray(feats) || !feats.length) return;
   const bounds = new mapboxgl.LngLatBounds();
   let has = false;
@@ -2002,7 +2762,7 @@ function fitRowsToBounds(feats) {
     }
   });
   if (has && !bounds.isEmpty())
-    map.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 800 });
+    map.fitBounds(bounds, { padding, maxZoom, duration: 800 });
 }
 
 // ─── expose ────────────────────────────────────────────────
@@ -2016,34 +2776,16 @@ defineExpose({
     const well = props.wells.find((w) => wellKey(w) === key)
       ?? props.wells.find((w) => String(w.id) === key);
     if (!well) return;
-    if (well._geometry) {
-      const g = well._geometry;
-      if (g.type === "Point") {
-        map.flyTo({ center: g.coordinates, zoom: 10, duration: 800 });
-        return;
-      }
-      const bounds = new mapboxgl.LngLatBounds();
-      if (g.type === "LineString")
-        g.coordinates.forEach((c) => bounds.extend(c));
-      else if (g.type === "MultiLineString")
-        g.coordinates.forEach((l) => l.forEach((c) => bounds.extend(c)));
-      else if (g.type === "Polygon")
-        g.coordinates[0].forEach((c) => bounds.extend(c));
-      else if (g.type === "MultiPolygon")
-        g.coordinates.forEach((p) => p[0].forEach((c) => bounds.extend(c)));
-      if (!bounds.isEmpty())
-        map.fitBounds(bounds, { padding: 60, maxZoom: 13, duration: 800 });
-    } else if (well.lat && well.lng)
-      map.flyTo({ center: [well.lng, well.lat], zoom: 10, duration: 800 });
+    fitRowsToBounds([well]);
   },
   zoomToLayer(uuid) {
     if (!map) return;
     const feats = props.wells.filter((w) => String(w._layerUuid) === String(uuid));
     fitRowsToBounds(feats);
   },
-  zoomToResults(rows) {
+  zoomToResults(rows, options) {
     if (!map || !Array.isArray(rows) || !rows.length) return;
-    fitRowsToBounds(rows);
+    fitRowsToBounds(rows, options);
   },
   enablePointPicker(callback) {
     if (!map) return;
@@ -2128,38 +2870,100 @@ defineExpose({
   background: var(--bg-deep);
 }
 
-.tool-panel-wrap {
+/* ─── نوار ابزارهای ثابت کنار نقشه (آیکونی، گروه‌بندی‌شده) ─── */
+.map-tools {
   position: absolute;
   top: 12px;
   right: 12px;
   z-index: 500;
-}
-.tool-toggle-btn {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 6px;
-  padding: 7px 10px;
+  padding: 8px 6px;
   background: var(--bg-panel);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  max-height: calc(100% - 60px);
+  overflow-y: auto;
+}
+.map-tools__group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.map-tools__sep {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 2px 2px;
+}
+.map-tool {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  background: transparent;
+  border: 1.5px solid transparent;
   border-radius: var(--radius-sm);
-  font-size: 11.5px;
-  font-weight: 600;
+  color: var(--text-secondary);
   font-family: inherit;
-  color: var(--text-primary);
   cursor: pointer;
-  box-shadow: var(--shadow-sm);
-  white-space: nowrap;
+  padding: 0;
+  position: relative;
 }
-.tool-toggle-btn:hover {
-  border-color: var(--border-strong);
-  background: var(--bg-panel-raised);
+.map-tool:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-subtle);
 }
-.tool-toggle-btn.active {
-  border-color: var(--brand);
-  color: var(--brand);
+.map-tool.active {
+  background: rgba(6, 182, 212, 0.12);
+  border-color: #06b6d4;
+  color: #0891b2;
+  box-shadow: 0 0 0 1px #06b6d4;
 }
-.tool-toggle-btn.active svg {
-  stroke: var(--brand);
+/* آیکون «i» ابزار اطلاعات */
+.map-tool[data-tool="info"] {
+  font-weight: 800;
+}
+.map-tool:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.map-tool.danger:hover:not(:disabled) {
+  color: var(--accent-danger);
+  border-color: var(--accent-danger);
+}
+.map-tool--color {
+  overflow: hidden;
+}
+.map-tool--color input[type="color"] {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+}
+.map-tool__color-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  display: block;
+}
+.map-tools__badge {
+  background: #06b6d4;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 99px;
+  font-family: var(--font-mono);
+  text-align: center;
+  line-height: 18px;
 }
 
 .tool-panel {
@@ -2168,13 +2972,16 @@ defineExpose({
   right: 0;
   background: var(--bg-panel);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  padding: 6px;
-  min-width: 150px;
+  border-radius: var(--radius-md);
+  padding: 10px;
+  width: 292px;
+  max-width: calc(100vw - 24px);
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
   box-shadow: var(--shadow-md);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 8px;
   transform-origin: top right;
 }
 /* انیمیشن باز/بسته شدن پنل ابزارها */
@@ -2241,6 +3048,306 @@ defineExpose({
   font-size: 14px;
   width: 18px;
   text-align: center;
+}
+
+/* ─── دسته‌بندی پنل ابزار (بدون تب) ─── */
+.tool-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tool-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-primary);
+  padding: 2px 8px 0;
+}
+.tool-group-title__icon {
+  color: #0891b2;
+  font-size: 13px;
+  line-height: 1;
+}
+.tool-divider--group {
+  margin: 2px 4px;
+  height: 1px;
+  background: var(--border-subtle);
+  opacity: 0.9;
+}
+
+/* ─── راهنمای سه‌مرحله‌ای تب انتخاب ─── */
+.tool-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(240, 165, 0, 0.08);
+  border: 1px solid rgba(240, 165, 0, 0.35);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+.tool-steps__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+.tool-steps__item span {
+  width: 19px;
+  height: 19px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0a500;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  border-radius: 50%;
+}
+
+/* ─── کارت‌های ابزار انتخاب ─── */
+.sel-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+.sel-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 9px 2px 7px;
+  background: var(--bg-panel-raised);
+  border: 1.5px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: inherit;
+  cursor: pointer;
+}
+.sel-card:hover:not(.sel-card--active) {
+  border-color: #06b6d4;
+  color: #0891b2;
+}
+.sel-card--active {
+  border-color: #06b6d4;
+  color: #0891b2;
+  background: rgba(6, 182, 212, 0.12);
+  box-shadow: 0 0 0 1px #06b6d4;
+}
+.sel-card__icon {
+  font-size: 17px;
+  line-height: 1;
+}
+.sel-card__label {
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.sel-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+.sel-mode {
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: inherit;
+  font-weight: 600;
+  padding: 7px 4px;
+  cursor: pointer;
+  text-align: center;
+  white-space: nowrap;
+}
+.sel-mode:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.sel-mode.active {
+  background: rgba(6, 182, 212, 0.14);
+  border-color: #06b6d4;
+  color: #0891b2;
+  font-weight: 700;
+}
+.sel-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+.sel-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0891b2;
+  white-space: nowrap;
+}
+.sel-count--empty {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.sel-actions {
+  display: flex;
+  gap: 5px;
+}
+.sel-btn {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-family: inherit;
+  font-weight: 600;
+  padding: 5px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sel-btn:hover:not(:disabled) {
+  border-color: #06b6d4;
+  color: #0891b2;
+}
+.sel-btn--danger:hover:not(:disabled) {
+  border-color: var(--accent-danger);
+  color: var(--accent-danger);
+}
+.sel-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.tool-tip-box {
+  background: rgba(6, 182, 212, 0.07);
+  border: 1px solid rgba(6, 182, 212, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.tool-tip-box p {
+  margin: 0;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+.tool-tip-box b {
+  color: #0891b2;
+}
+.draw-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.tool-finish-btn {
+  width: 100%;
+  padding: 8px 14px;
+  background: rgba(6, 182, 212, 0.12);
+  border: 1px solid #06b6d4;
+  border-radius: var(--radius-sm);
+  color: #0891b2;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+}
+.tool-finish-btn:hover {
+  background: rgba(6, 182, 212, 0.2);
+}
+/* نشان شمارش انتخاب روی دکمه ابزارها */
+.tool-badge {
+  background: #06b6d4;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 0 7px;
+  border-radius: 99px;
+  font-family: var(--font-mono);
+  line-height: 19px;
+  min-width: 22px;
+  text-align: center;
+}
+.tool-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #06b6d4;
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.25);
+  flex-shrink: 0;
+}
+/* ─── نوار شناور ابزار فعال ─── */
+.active-tool-chip {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 600;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: calc(100% - 220px);
+  background: rgba(20, 30, 38, 0.92);
+  border: 1px solid #06b6d4;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 99px;
+  box-shadow: var(--shadow-md);
+  pointer-events: auto;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.active-tool-chip__pulse {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #06b6d4;
+  flex-shrink: 0;
+  animation: chip-pulse 1.4s ease-in-out infinite;
+}
+@keyframes chip-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.6); }
+  50% { box-shadow: 0 0 0 6px rgba(6, 182, 212, 0); }
+}
+.active-tool-chip__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.active-tool-chip__close {
+  background: rgba(255, 255, 255, 0.12);
+  border: none;
+  color: #fff;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.active-tool-chip__close:hover {
+  background: var(--accent-danger);
+}
+.tool-chip-enter-active {
+  transition: opacity 0.2s var(--ease-out), transform 0.25s var(--ease-smooth);
+}
+.tool-chip-leave-active {
+  transition: opacity 0.15s var(--ease-out), transform 0.15s var(--ease-out);
+}
+.tool-chip-enter-from,
+.tool-chip-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -8px);
 }
 
 .color-custom-wrap {
@@ -2369,5 +3476,20 @@ defineExpose({
     white-space: nowrap;
   }
   .status-group { gap: 6px; }
+}
+</style>
+
+<style>
+/* مستطیل/دایره درگ انتخاب — سراسری چون به‌صورت داینامیک ساخته می‌شود */
+.sel-drag-box {
+  position: absolute;
+  z-index: 600;
+  border: 2px dashed #06b6d4;
+  background: rgba(6, 182, 212, 0.12);
+  pointer-events: none;
+  border-radius: 2px;
+}
+.sel-drag-box.is-circle {
+  border-radius: 50%;
 }
 </style>

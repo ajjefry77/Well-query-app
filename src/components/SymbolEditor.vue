@@ -83,7 +83,7 @@ const prevStyle = computed(() => {
   const sz = Math.max(14, Math.min(44, (local.value.size ?? 7) * 2.4))
   const shapes = { circle: '50%', square: '6px', diamond: '6px', triangle: '6px', cross: '50%', star: '50%' }
   return {
-    background: c, border: `2px solid ${s}`, width: sz + 'px', height: sz + 'px',
+    background: c, border: `${local.value.strokeWidth ?? 2}px solid ${s}`, width: sz + 'px', height: sz + 'px',
     borderRadius: shapes[local.value.shape] ?? '50%',
     transform: local.value.shape === 'diamond' ? 'rotate(45deg)' : 'none',
   }
