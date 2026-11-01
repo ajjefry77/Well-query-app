@@ -156,7 +156,7 @@ const SELECT_TOOLS = [
   { id: "point", label: "دستی", icon: "●", hint: "دستی" },
 ];
 // هایلایت مجموعه انتخاب — دقیقاً هم‌رنگ انتخاب با کلیک عادی (زرد)
-const SEL_COLOR = "#f0a500";
+const SEL_COLOR = "#00FFFF";
 const SEL_BORDER = "#1a1a1a";
 // هایلایت آبی پر رنگ برای ابزار «اطلاعات»
 const INFO_COLOR = "#2563eb";
@@ -1688,7 +1688,7 @@ function _statusColorExpr(failC, okC) {
     ["==", ["get", "_pfail"], 1], failC,
     ["==", ["get", "_pok"], 1], okC,
     ["==", ["get", "_psrc"], 1], PREVIEW_SRC_COLOR,
-    ["==", ["get", "_selected"], 1], "#f0a500",
+    ["==", ["get", "_selected"], 1], SEL_COLOR,
     ["==", ["get", "_isCenter"], 1], "#e74c3c",
   ];
 }
@@ -1948,7 +1948,7 @@ function renderMarkers(fit = true) {
           ["==", ["get", "_psrc"], 1],
           PREVIEW_SRC_COLOR,
           ["==", ["get", "_selected"], 1],
-          "#f0a500",
+          SEL_COLOR,
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
           // سیمبولوژی لایه بر هایلایت/مچ اولویت دارد تا تغییرات کاربر همیشه دیده شود
@@ -2012,7 +2012,7 @@ function renderMarkers(fit = true) {
           ["==", ["get", "_psrc"], 1],
           PREVIEW_SRC_COLOR,
           ["==", ["get", "_selected"], 1],
-          "#f0a500",
+          SEL_COLOR,
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
           ["==", ["get", "_match"], 1], "#14532d",
@@ -2121,7 +2121,7 @@ function renderMarkers(fit = true) {
           ["==", ["get", "_psrc"], 1],
           PREVIEW_SRC_COLOR,
           ["==", ["get", "_selected"], 1],
-          "#f0a500",
+          SEL_COLOR,
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
           ["==", ["get", "_match"], 1], "#22c55e",
@@ -2181,7 +2181,7 @@ function renderMarkers(fit = true) {
           ["==", ["get", "_psrc"], 1],
           PREVIEW_SRC_COLOR,
           ["==", ["get", "_selected"], 1],
-          "#f0a500",
+          SEL_COLOR,
           ["==", ["get", "_isCenter"], 1],
           "#e74c3c",
           ["==", ["get", "_match"], 1], "#22c55e",
@@ -2316,7 +2316,7 @@ function renderMarkers(fit = true) {
             : isSrc
               ? PREVIEW_SRC_COLOR
               : isSel
-                ? "#f0a500"
+                ? SEL_COLOR
                 : isCenter
                   ? "#e74c3c"
                   : (isMatch ? "#22c55e" : isDimmed ? "#8a9490" : (symColor ?? DEFAULT_FEATURE_COLOR));
@@ -2740,7 +2740,7 @@ function applyMapTheme(t) {
 watch(() => props.theme, applyMapTheme);
 
 // زوم ملایم روی مجموعه‌ای از سطرهای نتیجه (مبنای دکمه‌های «اجرا/اعمال»)
-function fitRowsToBounds(feats) {
+function fitRowsToBounds(feats, { padding = 60, maxZoom = 14 } = {}) {
   if (!map || !Array.isArray(feats) || !feats.length) return;
   const bounds = new mapboxgl.LngLatBounds();
   let has = false;
@@ -2762,7 +2762,7 @@ function fitRowsToBounds(feats) {
     }
   });
   if (has && !bounds.isEmpty())
-    map.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 800 });
+    map.fitBounds(bounds, { padding, maxZoom, duration: 800 });
 }
 
 // ─── expose ────────────────────────────────────────────────
@@ -2776,34 +2776,16 @@ defineExpose({
     const well = props.wells.find((w) => wellKey(w) === key)
       ?? props.wells.find((w) => String(w.id) === key);
     if (!well) return;
-    if (well._geometry) {
-      const g = well._geometry;
-      if (g.type === "Point") {
-        map.flyTo({ center: g.coordinates, zoom: 10, duration: 800 });
-        return;
-      }
-      const bounds = new mapboxgl.LngLatBounds();
-      if (g.type === "LineString")
-        g.coordinates.forEach((c) => bounds.extend(c));
-      else if (g.type === "MultiLineString")
-        g.coordinates.forEach((l) => l.forEach((c) => bounds.extend(c)));
-      else if (g.type === "Polygon")
-        g.coordinates[0].forEach((c) => bounds.extend(c));
-      else if (g.type === "MultiPolygon")
-        g.coordinates.forEach((p) => p[0].forEach((c) => bounds.extend(c)));
-      if (!bounds.isEmpty())
-        map.fitBounds(bounds, { padding: 60, maxZoom: 13, duration: 800 });
-    } else if (well.lat && well.lng)
-      map.flyTo({ center: [well.lng, well.lat], zoom: 10, duration: 800 });
+    fitRowsToBounds([well]);
   },
   zoomToLayer(uuid) {
     if (!map) return;
     const feats = props.wells.filter((w) => String(w._layerUuid) === String(uuid));
     fitRowsToBounds(feats);
   },
-  zoomToResults(rows) {
+  zoomToResults(rows, options) {
     if (!map || !Array.isArray(rows) || !rows.length) return;
-    fitRowsToBounds(rows);
+    fitRowsToBounds(rows, options);
   },
   enablePointPicker(callback) {
     if (!map) return;

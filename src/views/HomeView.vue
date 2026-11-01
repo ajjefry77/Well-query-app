@@ -69,7 +69,7 @@
            :wells="mapWells"
            :wells-key="mapWellsKey"
            :highlighted-ids="highlightedIds"
-            :has-filter="hasAnyFilter"
+            :has-filter="hasAnyFilter && selectionCount > 0"
             :filtered-layer-uuids="filteredLayerUuids"
             :radius-center="showRadiusOnMap ? committedRadiusCenter : null"
            :radius-km="committedRadiusKm"
@@ -277,7 +277,7 @@ const {
   spatialLoading, commitSpatialFilter,
   relationSourceLayer, relationTargetLayer, relationOperator, relationRadiusKm,
   relationSourceMode, spatialTargetOnlySelected,
-  selectedIds, selectionCount, attributeScope,
+  selectedIds, selectedRows, selectionCount, attributeScope,
   applySelectionKeys, setSelectionKeys, clearSelection,
   relationCommitted, relationResults, relationProgress, relationError,
   commitRelationFilter, clearRelation,
@@ -713,7 +713,6 @@ async function handleLayerDataExport(format) {
   exportData(format, layerDataRows.value, convertFeature, { crs: crs.value })
 }
 // سقف ارسال به نقشه برای جلوگیری از فریز روی 100k سطر (کمتر = سریع‌تر روی سیستم ضعیف)
-const MAX_HIGHLIGHT = 2000
 
 // ── نمونه‌برداری عادلانه per-layer ──
 // مشکل: نمونه‌برداری سراسری روی آرایه الحاقی لایه‌ها، سهم هر لایه را متناسب با
@@ -753,7 +752,7 @@ function fairSamplePerLayer(src, cap) {
   }
   return out
 }
-const highlightedIds = computed(() => fairSamplePerLayer(combinedResults.value, MAX_HIGHLIGHT).map(rowKey))
+const highlightedIds = computed(() => selectedIds.value)
 
 // لایه‌های مخفی (با آیکون چشم) از روی نقشه حذف می‌شوند؛ ولی داده‌های آن‌ها در نتایج/جدول باقی می‌ماند
 const visibleWells = computed(() =>
@@ -936,11 +935,12 @@ function onToggleLayerVisibility(uuid) {
 }
 async function onLoadQuery(q) {
   const uuid = await loadSavedQuery(q)
+  if (uuid) selectQueryResults()
   queryKind.value = 'attribute'
   if (uuid) {
     activeQueryLayer.value = uuid
     queryPanelOpen.value = true
-    zoomToResults()
+    zoomToAttributeResults()
   }
 }
 function onPickPoint() {
@@ -990,11 +990,23 @@ function onClearAllQueries() {
 // ── انتخاب عارضه (ArcGIS-like) ──
 // incoming: آرایه کلیدها از ابزار نقشه؛ mode: new/add/remove/subset
 function onSelectionChange(keys, mode) {
+  selectedWellId.value = null
+  activeWellId.value = null
   applySelectionKeys(keys ?? [], mode || selectionMode.value || 'new')
 }
 function onClearSelection() {
   clearSelection()
   selectedWellId.value = null
+  activeWellId.value = null
+  infoWellId.value = null
+}
+// Query output replaces the same selection set used by the map tools.
+function selectQueryResults() {
+  const affected = new Set(filteredLayerUuids.value.map(String))
+  const rows = displayRows.value.filter(r => isLayerVisible(r._layerUuid)
+    && (!hasAnyFilter.value || !affected.size || affected.has(String(r._layerUuid))))
+  onClearSelection()
+  setSelectionKeys(rows.map(rowKey))
 }
 async function onSaveSelection() {
   const keys = new Set(selectedIds.value.map(String))
@@ -1005,21 +1017,18 @@ async function onSaveSelection() {
 }
 // زوم روی عوارض انتخاب‌شده
 function zoomToSelection() {
-  const set = new Set(selectedIds.value.map(String))
-  const rows = allWells.value.filter(r => {
-    const k = r._layerUuid ? `${r._layerUuid}::${r.id}` : String(r.id ?? '')
-    return set.has(k)
-  })
-  if (rows.length) mapRef.value?.zoomToResults?.(rows)
+  if (selectedRows.value.length) mapRef.value?.zoomToResults?.(selectedRows.value)
 }
 async function onApplySpatial() {
   await commitSpatialFilter()
+  selectQueryResults()
   zoomToResults()
 }
 // اعمال رابطه مکانی و زوم روی نتایج (+ ثبت در تاریخچه)
 async function onApplyRelation() {
   const ok = await commitRelationFilter()
   if (ok) {
+    selectQueryResults()
     zoomToResults()
     recordRelationHistory()
   }
@@ -1030,7 +1039,8 @@ function onClearRelation() {
 // اجرای کوئری توصیفی: تأیید پیش‌نویس‌ها و زوم روی نتایج (+ ثبت در تاریخچه)
 function onApplyAttribute() {
   applyAttributeConditions()
-  zoomToResults()
+  selectQueryResults()
+  zoomToAttributeResults()
   recordAttributeHistory()
 }
 
@@ -1114,7 +1124,8 @@ async function rerunAttributeEntry(entry) {
   activeQueryLayer.value = entry.items[0].layerUuid
   queryKind.value = 'attribute'
   applyAttributeConditions()
-  zoomToResults()
+  selectQueryResults()
+  zoomToAttributeResults()
 }
 
 // رابطه مکانی: پارامترها روی پنل مکانی ست و مجدداً اجرا می‌شود
@@ -1140,7 +1151,10 @@ async function rerunRelationEntry(entry) {
   relationOperator.value = normalizeRelationOperators(p.operator)
   relationRadiusKm.value = Number.isFinite(+p.radiusKm) ? +p.radiusKm : 3
   const ok = await commitRelationFilter()
-  if (ok) zoomToResults()
+  if (ok) {
+    selectQueryResults()
+    zoomToResults()
+  }
 }
 
 // حذف مورد/کل تاریخچه
@@ -1183,6 +1197,12 @@ function onRemoveAppliedCondition(uuid, index) {
   removeAppliedCondition(uuid, index)
 }
 // زوم ملایم روی عارضه‌های نتیجه (در صورت خالی بودن، نما تغییر نمی‌کند)
+function zoomToAttributeResults() {
+  // Fit only the query selection; unrelated layers must not widen the view.
+  const rows = selectedRows.value
+  if (!rows.length) return
+  mapRef.value?.zoomToResults?.(rows, { padding: 64, maxZoom: 11 })
+}
 function zoomToResults() {
   const rows = displayRows.value
   if (!rows.length) return
@@ -1199,6 +1219,7 @@ function onMapEmptyClick() {
   }
 }
 function onSelectFromMap(well) {
+  setSelectionKeys([rowKey(well)])
   activeWellId.value = rowKey(well)
   selectedWellId.value = rowKey(well)
   if (isPickingPoint.value) {
@@ -1215,6 +1236,7 @@ function onInfoFromMap(well) {
   infoWellId.value = rowKey(well)
 }
 function onSelectFromTable(row) {
+  setSelectionKeys([rowKey(row)])
   activeWellId.value = rowKey(row)
   selectedWellId.value = rowKey(row)
   showResultsModal.value = false

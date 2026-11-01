@@ -102,6 +102,8 @@ export function useWellQuery() {
   const selectedKeys = ref(new Set())
   // محدوده کوئری توصیفی: همه عوارض یا فقط انتخاب‌شده‌ها
   const attributeScope = ref('all')
+  // Keep the committed input independent of the next mouse/query selection.
+  const appliedAttributeKeys = ref(null)
   // حالت مبدأ رابطه مکانی: عوارض انتخاب‌شده یا کل لایه مبدأ
   const relationSourceMode = ref('layer')
   // محدود کردن نامزدهای هدف رابطه به عوارض انتخاب‌شده
@@ -407,6 +409,8 @@ export function useWellQuery() {
 
   // تأیید پیش‌نویس همه لایه‌ها (دکمه «اجرای کوئری»)
   function applyAttributeConditions() {
+    appliedAttributeKeys.value = attributeScope.value === 'selected'
+      ? new Set(selectedKeys.value) : null
     for (const layer of activeLayers.value) {
       ensureLayerConditions(layer.uuid)
       appliedConditions.value[layer.uuid] = JSON.parse(JSON.stringify(layerConditions.value[layer.uuid] ?? []))
@@ -421,6 +425,7 @@ export function useWellQuery() {
 
   // ── پاک کردن تمام شرط‌های توصیفی فعال (پیش‌نویس و تأییدشده) ──
   function clearAllConditions() {
+    appliedAttributeKeys.value = null
     for (const layer of activeLayers.value) {
       const uuid = layer.uuid
       const fields = layerFieldsMap.value[uuid] ?? []
@@ -464,8 +469,8 @@ export function useWellQuery() {
   // اگر محدوده «فقط انتخاب‌شده‌ها» فعال باشد، نامزدهای هر لایه به انتخاب‌شده‌ها محدود می‌شود
   const attributeResults = computed(() => {
     if (!activeLayers.value.length) return allFeatures.value
-    const onlySel = attributeScope.value === 'selected' && selectedKeys.value.size > 0
-    const selSet = selectedKeys.value
+    const selSet = appliedAttributeKeys.value
+    const onlySel = selSet !== null
     const results = []
     for (const layer of activeLayers.value) {
       if (!isLayerVisible(layer.uuid)) continue
@@ -479,7 +484,7 @@ export function useWellQuery() {
   })
 
   const hasAttributeFilter = computed(() =>
-    activeLayers.value.some(layer => {
+    appliedAttributeKeys.value !== null || activeLayers.value.some(layer => {
       const conds = appliedConditions.value[layer.uuid] ?? []
       return conds.some(c => c.value !== '' && c.value !== null && c.value !== undefined)
     })
@@ -803,6 +808,7 @@ export function useWellQuery() {
       await addLayer(layer)
     }
 
+    appliedAttributeKeys.value = null
     layerConditions.value[uuid] = JSON.parse(JSON.stringify(safeConds))
     appliedConditions.value[uuid] = JSON.parse(JSON.stringify(safeConds))
     return uuid
@@ -838,6 +844,7 @@ export function useWellQuery() {
     clearRelation()
     clearSelection()
     attributeScope.value = 'all'
+    appliedAttributeKeys.value = null
     relationSourceMode.value = 'selected'
     spatialTargetOnlySelected.value = false
     _countCache.clear()
