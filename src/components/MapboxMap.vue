@@ -2651,6 +2651,7 @@ function updateHighlightData() {
   if (!mapLifecycle.active || !map) return;
   if (!wellsGeoJSON || !map.getSource("wells-src")) {
     if (!map.isStyleLoaded()) {
+      map.off("idle", scheduleHighlight);
       map.once("idle", scheduleHighlight);
       return;
     }
@@ -2732,6 +2733,7 @@ let lastSymStruct = symStructSig()
 function updateSymData() {
   if (!mapLifecycle.active || !map) return
   if (!map.isStyleLoaded() && !map.getSource("wells-src")) {
+    map.off("idle", onSymChange)
     map.once("idle", onSymChange)
     return
   }

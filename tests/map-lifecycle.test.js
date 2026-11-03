@@ -203,3 +203,21 @@ test('failed draw loading resets the active tool and exposes a useful error', as
   assert.equal(setup.activeMode, null)
   assert.match(setup.toolError, /بارگذاری نشد/)
 })
+
+test('style waits for highlight and symbology do not accumulate idle callbacks', async t => {
+  const {setup,maps}=await mountMap(t)
+  maps[0].loaded=false
+  for(let i=0;i<5;i++) { setup.updateHighlightData(); setup.updateSymData() }
+  assert.equal(maps[0].handlers.get('idle').size,2)
+})
+
+test('an empty query result dims only the queried layer', async t => {
+  const {setup,maps}=await mountMap(t,{props:{hasFilter:true,filteredLayerUuids:['a'],highlightedIds:[],wells:[
+    {id:'1',_layerUuid:'a',_geometry:{type:'Point',coordinates:[53,32]}},
+    {id:'1',_layerUuid:'b',_geometry:{type:'Point',coordinates:[54,33]}},
+  ]}})
+  setup.renderMarkers(false)
+  const features=maps[0].getSource('wells-src').data.features
+  assert.equal(features.find(f=>f.properties._layerUuid==='a').properties._dimmed,1)
+  assert.equal(features.find(f=>f.properties._layerUuid==='b').properties._dimmed,0)
+})

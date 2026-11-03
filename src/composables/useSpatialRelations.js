@@ -1,15 +1,17 @@
 // روابط مکانی بین عارضه‌ها (مشابه عملگرهای Spatial Relationship در ArcGIS)
 // آبی = عارضه مبدأ (Source)، قرمز = عارضه هدف (Target)
 import booleanWithin from '@turf/boolean-within'
-import booleanContains from '@turf/boolean-contains'
 import booleanEqual from '@turf/boolean-equal'
 import booleanTouches from '@turf/boolean-touches'
 import intersect from '@turf/intersect'
 import booleanIntersects from '@turf/boolean-intersects'
 import booleanOverlap from '@turf/boolean-overlap'
-import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
-import centroid from '@turf/centroid'
 import distance from '@turf/distance'
+import difference from '@turf/difference'
+import pointToLineDistance from '@turf/point-to-line-distance'
+import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
+import booleanPointOnLine from '@turf/boolean-point-on-line'
+import lineSplit from '@turf/line-split'
 import { isValidLatLng } from './useGeoUtils.js'
 
 export const RELATION_OPERATORS = [
@@ -46,7 +48,7 @@ export const RELATION_OPERATORS = [
   {
     value: 'within-distance',
     label: 'در فاصله مشخص از عارضه مبدأ باشند',
-    hint: 'عارضه‌های هدف که فاصله‌شان (تا مرکز عارضه) از شعاع واردشده کمتر است. همان جستجوی شعاعی، ولی روی همه عارضه‌های مبدأ انتخاب‌شده.',
+    hint: 'کمترین فاصله تا هندسه عارضه مبدأ، بر حسب کیلومتر؛ فاصله نقطه داخل پلیگون یا عوارض متقاطع صفر است.',
   },
 ]
 
@@ -120,8 +122,8 @@ function bboxesDisjoint(a, b) {
 }
 
 const OP_FNS = {
-  within: (target, source) => booleanWithin(target, source),
-  contains: (target, source) => booleanContains(target, source),
+  within: (target, source) => withinGeometry(target.geometry, source.geometry),
+  contains: (target, source) => withinGeometry(source.geometry, target.geometry),
   identical: (target, source) => booleanEqual(target, source),
   touches: (target, source) => {
     const polygonTypes = new Set(['Polygon', 'MultiPolygon'])
@@ -138,9 +140,7 @@ const OP_FNS = {
 }
 
 // ارزیابی یک رابطه بین دو هندسه؛ خطا (ترکیب نامعتبر) → false
-// نسخه مقاوم: هندسه‌ها اول تمیز می‌شوند (حذف نقاط تکراری/بُعد سوم/حلقه باز) و
-// اگر موتور turf روی زوج تمیز هم خطا داد، برای within/contains/intersects
-// از آزمون رأسی جایگزین استفاده می‌شود تا عارضه واقعاً داخل، جا نماند.
+// هندسه‌ها ابتدا تمیز می‌شوند؛ خطای موتور به نتیجه مثبت حدسی تبدیل نمی‌شود.
 export function evaluateRelation(sourceGeom, targetGeom, operator) {
   const fn = OP_FNS[operator]
   if (!fn || !sourceGeom || !targetGeom) return false
@@ -158,9 +158,6 @@ export function evaluateRelation(sourceGeom, targetGeom, operator) {
     return false
   } catch {
     lastRelationStats.errors++
-    try {
-      if (relationFallback(s, t, operator)) { lastRelationStats.fallbacks++; return true }
-    } catch {}
     return false
   }
 }
@@ -177,7 +174,7 @@ export function resetRelationStats() {
 // داده واقعی (مثل قطعات ثبتی با اضلاع مشترک) گاهی حلقه باز، نقطه تکراری،
 /// مختصات سه‌بعدی یا GeometryCollection دارد که موتور topo را به خطا می‌اندازد.
 function cleanPos(p) {
-  if (!Array.isArray(p) || !Number.isFinite(+p[0]) || !Number.isFinite(+p[1])) return null
+  if (!Array.isArray(p) || !isValidLatLng({ lng: p[0], lat: p[1] })) return null
   return [+p[0], +p[1]]
 }
 // حلقه چندضلعی: حذف تکراری‌های متوالی + بستن حلقه؛ حداقل ۴ موقعیت
@@ -186,7 +183,7 @@ function cleanRing(ring) {
   const out = []
   for (const p of ring) {
     const q = cleanPos(p)
-    if (!q) continue
+    if (!q) return null
     const l = out[out.length - 1]
     if (!l || l[0] !== q[0] || l[1] !== q[1]) out.push(q)
   }
@@ -201,18 +198,19 @@ function cleanLineCoords(coords) {
   const out = []
   for (const p of coords) {
     const q = cleanPos(p)
-    if (!q) continue
+    if (!q) return null
     const l = out[out.length - 1]
     if (!l || l[0] !== q[0] || l[1] !== q[1]) out.push(q)
   }
   return out.length >= 2 ? out : null
 }
 function cleanPolygonCoords(coords) {
-  if (!Array.isArray(coords)) return null
+  if (!Array.isArray(coords) || !coords.length) return null
   const out = []
   for (const r of coords) {
     const c = cleanRing(r)
-    if (c) out.push(c)
+    if (!c) return null
+    out.push(c)
   }
   return out.length ? out : null
 }
@@ -254,59 +252,84 @@ function cleanGeometry(geom) {
         if (s.type === 'Polygon') polys.push(s.coordinates)
         else if (s.type === 'MultiPolygon') polys.push(...s.coordinates)
       }
-      if (polys.length) return { type: 'MultiPolygon', coordinates: polys }
-      return subs[0] ?? null
+      if (polys.length && subs.every(s => ['Polygon', 'MultiPolygon'].includes(s.type))) return { type: 'MultiPolygon', coordinates: polys }
+      return subs.length ? { type: 'GeometryCollection', geometries: subs } : null
     }
     default:
       return null
   }
 }
 
-// حلقه‌های بیرونی یک هندسه (برای آزمون رأسی)
-function outerRingsOf(geom) {
-  if (!geom) return []
-  if (geom.type === 'Polygon') return geom.coordinates.length ? [geom.coordinates[0]] : []
-  if (geom.type === 'MultiPolygon') return geom.coordinates.map(p => p[0]).filter(r => Array.isArray(r) && r.length)
-  return []
+// Polygon difference checks the whole area, including holes and concave edges.
+// A vertex-only fallback can incorrectly accept a polygon covering a hole.
+function withinGeometry(target, source) {
+  const polygon = g => ['Polygon', 'MultiPolygon'].includes(g.type)
+  if (polygon(target) && polygon(source)) {
+    return difference({ type: 'FeatureCollection', features: [target, source].map(geometry =>
+      ({ type: 'Feature', geometry, properties: {} })) }) === null
+  }
+  if (target.type === 'Point' && source.type === 'Point') return booleanEqual(target, source)
+  if (target.type === 'MultiPoint') {
+    const parts = target.coordinates.map(coordinates => ({type:'Point',coordinates}))
+    return parts.every(g => booleanIntersects(g,source)) && parts.some(g => withinGeometry(g,source))
+  }
+  if (target.type === 'Point' && source.type === 'MultiLineString') {
+    const endpoints = source.coordinates.flatMap(coords => [coords[0],coords.at(-1)])
+    const boundaryCount = endpoints.filter(p => p[0]===target.coordinates[0] && p[1]===target.coordinates[1]).length
+    return boundaryCount % 2 === 0 && source.coordinates.some(coordinates => booleanPointOnLine(target,{type:'LineString',coordinates}))
+  }
+  if (['LineString','MultiLineString'].includes(target.type) && ['LineString','MultiLineString'].includes(source.type)) {
+    const targets = target.type === 'LineString' ? [target.coordinates] : target.coordinates
+    const sources = source.type === 'LineString' ? [source.coordinates] : source.coordinates
+    return targets.every(coords => coords.slice(1).every((end,i) => segmentCovered(coords[i],end,sources)))
+  }
+  if (['LineString','MultiLineString'].includes(target.type) && polygon(source)) {
+    const lines = target.type === 'LineString' ? [target.coordinates] : target.coordinates
+    const locations = lines.map(coordinates => lineInPolygon(coordinates,source))
+    return locations.every(l => l.covered) && locations.some(l => l.interior)
+  }
+  if (target.type === 'GeometryCollection') return target.geometries.every(g => withinGeometry(g, source))
+  if (target.type === 'MultiLineString') return target.coordinates.every(coordinates => withinGeometry({ type:'LineString', coordinates }, source))
+  if (source.type === 'GeometryCollection') return source.geometries.some(g => withinGeometry(target, g))
+  if (source.type === 'MultiLineString') return source.coordinates.some(coordinates => withinGeometry(target, { type:'LineString', coordinates }))
+  return booleanWithin(target, source)
 }
-// همه رئوس یک هندسه هدف
-function verticesOf(geom) {
-  if (!geom) return []
-  if (geom.type === 'Point') return [geom.coordinates]
-  if (geom.type === 'MultiPoint') return geom.coordinates
-  if (geom.type === 'LineString') return geom.coordinates
-  if (geom.type === 'MultiLineString') return geom.coordinates.flat()
-  if (geom.type === 'Polygon' || geom.type === 'MultiPolygon') return outerRingsOf(geom).flat()
-  return []
+
+function segmentCovered(start, end, lines) {
+  const dx=end[0]-start[0], dy=end[1]-start[1], length2=dx*dx+dy*dy
+  if (!length2) return false
+  const intervals=[]
+  const cross = p => dx*(p[1]-start[1])-dy*(p[0]-start[0])
+  const fraction = p => ((p[0]-start[0])*dx+(p[1]-start[1])*dy)/length2
+  for (const coords of lines) for (let i=1;i<coords.length;i++) {
+    const a=coords[i-1], b=coords[i]
+    if (Math.abs(cross(a))>1e-12 || Math.abs(cross(b))>1e-12) continue
+    const t1=fraction(a),t2=fraction(b)
+    intervals.push([Math.max(0,Math.min(t1,t2)),Math.min(1,Math.max(t1,t2))])
+  }
+  let covered=0
+  for (const [a,b] of intervals.sort((a,b)=>a[0]-b[0])) {
+    if (a>covered+1e-12) return false
+    covered=Math.max(covered,b)
+    if (covered>=1-1e-12) return true
+  }
+  return false
 }
-function pointInAnyPart(pt, geom) {
-  try {
-    for (const ring of outerRingsOf(geom)) {
-      if (booleanPointInPolygon(pt, { type: 'Polygon', coordinates: [ring] }) === true) return true
+
+function lineInPolygon(coordinates, polygon) {
+  let interior=false
+  if (!coordinates.every(p=>booleanPointInPolygon(p,polygon))) return {covered:false,interior}
+  for (let i=1;i<coordinates.length;i++) {
+    const segment={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:[coordinates[i-1],coordinates[i]]}}
+    const split=lineSplit(segment,polygon).features
+    for (const part of split.length ? split : [segment]) {
+      const [a,b]=part.geometry.coordinates
+      const midpoint=[(a[0]+b[0])/2,(a[1]+b[1])/2]
+      if (!booleanPointInPolygon(midpoint,polygon)) return {covered:false,interior:false}
+      if (booleanPointInPolygon(midpoint,polygon,{ignoreBoundary:true})) interior=true
     }
-  } catch {}
-  return false
-}
-// آزمون جایگزین وقتی موتور اصلی خطا داده (نه وقتی cleanly false برگردانده):
-// within = همه رئوس هدف داخل مبدأ؛ contains = همه رئوس مبدأ داخل هدف؛
-// intersects = رأسی از یک طرف داخل طرف دیگر
-function relationFallback(sourceGeom, targetGeom, operator) {
-  if (operator === 'within') {
-    const vs = verticesOf(targetGeom)
-    if (!vs.length) return false
-    return vs.every(v => pointInAnyPart(v, sourceGeom))
   }
-  if (operator === 'contains') {
-    const vs = verticesOf(sourceGeom)
-    if (!vs.length) return false
-    return vs.every(v => pointInAnyPart(v, targetGeom))
-  }
-  if (operator === 'intersects') {
-    if (verticesOf(targetGeom).some(v => pointInAnyPart(v, sourceGeom))) return true
-    if (verticesOf(sourceGeom).some(v => pointInAnyPart(v, targetGeom))) return true
-    return false
-  }
-  return false
+  return {covered:true,interior}
 }
 
 // مقدار ویژه «کل لایه» در دراپ‌داون عارضه مبدأ/هدف
@@ -321,27 +344,43 @@ export function findMatchingRows(sourceRow, targetRows, operator) {
 }
 
 // ─── فاصله (جستجوی شعاعی چندمبدأیی) ───
-// فاصله مرکزوار (centroid) هدف تا نزدیک‌ترین مبدأ؛ برحسب کیلومتر
-function centroidOf(feature) {
-  try {
-    const c = centroid(feature)
-    return c?.geometry?.coordinates ?? null
-  } catch { return null }
+// کمترین فاصله هندسه هدف تا هندسه مبدأ؛ برحسب کیلومتر
+function distanceParts(geometry) {
+  const points = [], lines = []
+  const visit = g => {
+    switch (g.type) {
+      case 'Point': points.push(g.coordinates); break
+      case 'MultiPoint': points.push(...g.coordinates); break
+      case 'LineString': lines.push(g); points.push(...g.coordinates); break
+      case 'MultiLineString': g.coordinates.forEach(coordinates => visit({ type:'LineString', coordinates })); break
+      case 'Polygon': g.coordinates.forEach(coordinates => visit({ type:'LineString', coordinates })); break
+      case 'MultiPolygon': g.coordinates.forEach(coordinates => visit({ type:'Polygon', coordinates })); break
+      case 'GeometryCollection': g.geometries.forEach(visit); break
+    }
+  }
+  visit(geometry)
+  return { geometry, points, lines }
 }
-
-function minDistanceToSources(targetFeature, sourceCentroids) {
-  let tc = null
-  try {
-    tc = centroid(targetFeature)?.geometry?.coordinates ?? null
-  } catch { tc = null }
-  if (!tc) return Infinity
+function prepareDistance(row) {
+  const geometry = cleanGeometry(rowToFeature(row)?.geometry)
+  return geometry ? distanceParts(geometry) : null
+}
+function minDistanceToSources(target, sources) {
   let best = Infinity
-  for (const sc of sourceCentroids) {
-    if (!sc) continue
+  for (const source of sources) {
     try {
-      const d = distance(tc, sc, { units: 'kilometers' })
-      if (Number.isFinite(d) && d < best) best = d
-    } catch {}
+      if (booleanIntersects(target.geometry, source.geometry)) return 0
+      for (const p of target.points) {
+        if (source.lines.length) {
+          for (const l of source.lines) best = Math.min(best, pointToLineDistance(p, l, { units:'kilometers' }))
+        } else {
+          for (const q of source.points) best = Math.min(best, distance(p, q, { units:'kilometers' }))
+        }
+      }
+      for (const p of source.points) {
+        for (const l of target.lines) best = Math.min(best, pointToLineDistance(p, l, { units:'kilometers' }))
+      }
+    } catch { lastRelationStats.errors++ }
   }
   return best
 }
@@ -355,20 +394,18 @@ export function findWithinDistanceMulti(sourceRows, targetRows, radiusKm) {
   const sourceCentroids = []
   const sourceKeys = new Set()
   for (const s of sourceRows) {
-    const f = rowToFeature(s)
-    if (!f?.geometry) continue
-    const c = centroidOf(f)
+    const c = prepareDistance(s)
     if (!c) continue
     sourceCentroids.push(c)
     sourceKeys.add(keyOf(s))
   }
   if (!sourceCentroids.length) return []
-  const rClamped = Math.min(r, 20000)
+  const rClamped = r
   const out = []
   for (const row of targetRows) {
     const key = keyOf(row)
     if (key && sourceKeys.has(key)) continue
-    const tf = rowToFeature(row)
+    const tf = prepareDistance(row)
     if (!tf) continue
     if (minDistanceToSources(tf, sourceCentroids) <= rClamped) out.push(row)
   }
@@ -377,6 +414,7 @@ export function findWithinDistanceMulti(sourceRows, targetRows, radiusKm) {
 
 export async function findWithinDistanceMultiAsync(sourceRows, targetRows, radiusKm, opts = {}) {
   const { chunkTargets = 400, yieldEveryMs = 0, signal = null, onProgress = null } = opts
+  const yieldTick = () => new Promise(res => setTimeout(res, yieldEveryMs))
   const r = Number(radiusKm)
   if (!Array.isArray(sourceRows) || !Array.isArray(targetRows) || !sourceRows.length) return []
   if (!Number.isFinite(r) || r <= 0) return []
@@ -385,32 +423,41 @@ export async function findWithinDistanceMultiAsync(sourceRows, targetRows, radiu
   const sourceKeys = new Set()
   for (const s of sourceRows) {
     if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
-    const f = rowToFeature(s)
-    if (!f?.geometry) continue
-    const c = centroidOf(f)
+    const c = prepareDistance(s)
     if (!c) continue
     sourceCentroids.push(c)
     sourceKeys.add(keyOf(s))
+    if (sourceCentroids.length % 500 === 0) await yieldTick()
   }
   if (!sourceCentroids.length) return []
-  const rClamped = Math.min(r, 20000)
+  const rClamped = r
   const out = []
   const total = targetRows.length
-  const yieldTick = () => new Promise(res => setTimeout(res, yieldEveryMs))
   for (let t = 0; t < targetRows.length; t++) {
     if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
     const row = targetRows[t]
     const key = keyOf(row)
     if (!key || !sourceKeys.has(key)) {
-      const tf = rowToFeature(row)
-      if (tf && minDistanceToSources(tf, sourceCentroids) <= rClamped) out.push(row)
+      const tf = prepareDistance(row)
+      if (tf) {
+        for (let start = 0; start < sourceCentroids.length; start += 100) {
+          if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
+          if (minDistanceToSources(tf, sourceCentroids.slice(start, start + 100)) <= rClamped) { out.push(row); break }
+          if (start + 100 < sourceCentroids.length) {
+            try { onProgress?.(t, total) } catch {}
+            await yieldTick()
+          }
+        }
+      }
     }
     if ((t + 1) % chunkTargets === 0) {
       try { onProgress?.(t + 1, total) } catch {}
       await yieldTick()
     }
   }
+  if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
   try { onProgress?.(total, total) } catch {}
+  if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
   return out
 }
 
@@ -420,13 +467,14 @@ export async function findWithinDistanceMultiAsync(sourceRows, targetRows, radiu
 // قبلاً evaluateRelation داخل حلقه تودرتو برای هر جفت، bbox مبدأ و هدف را
 // از نو روی همه مختصات راه می‌رفت (O(S*T*N)) که روی لایه‌های بزرگ مرورگر را فریز می‌کرد.
 export function findMatchingRowsMulti(sourceRows, targetRows, operator, opts = {}) {
+  if (!opts.nested) resetRelationStats()
   const operators = normalizeRelationOperators(operator)
   if (!operators.length) return []
   if (operators.length > 1) {
     const seen = new Set()
     const merged = []
     for (const op of operators) {
-      const rows = findMatchingRowsMulti(sourceRows, targetRows, op, opts)
+      const rows = findMatchingRowsMulti(sourceRows, targetRows, op, { ...opts, nested: true })
       for (const row of rows) {
         const key = row?._layerUuid ? `${row._layerUuid}::${row.id}` : String(row.id ?? '')
         if (!key || !seen.has(key)) {
@@ -442,7 +490,6 @@ export function findMatchingRowsMulti(sourceRows, targetRows, operator, opts = {
     return findWithinDistanceMulti(sourceRows, targetRows, opts.radiusKm)
   }
   if (!Array.isArray(sourceRows) || !Array.isArray(targetRows) || !sourceRows.length) return []
-  resetRelationStats()
   const keyOf = (r) => (r._layerUuid ? `${r._layerUuid}::${r.id}` : String(r.id ?? ''))
   const sourceGeoms = []
   for (const r of sourceRows) {
@@ -451,7 +498,8 @@ export function findMatchingRowsMulti(sourceRows, targetRows, operator, opts = {
     const key = keyOf(r)
     const bbox = featureBbox(f)
     // هندسه تمیزشده یک بار برای همه جفت‌ها (خطای topo تکرار نشود)
-    const geom = cleanGeometry(f.geometry) ?? f.geometry
+    const geom = cleanGeometry(f.geometry)
+    if (!geom) { lastRelationStats.errors++; continue }
     sourceGeoms.push({ key, geom, bbox })
   }
   if (!sourceGeoms.length) return []
@@ -462,7 +510,8 @@ export function findMatchingRowsMulti(sourceRows, targetRows, operator, opts = {
     const targetFeature = rowToFeature(row)
     if (!targetFeature) continue
     const tb = featureBbox(targetFeature)
-    const tGeom = cleanGeometry(targetFeature.geometry) ?? targetFeature.geometry
+    const tGeom = cleanGeometry(targetFeature.geometry)
+    if (!tGeom) { lastRelationStats.errors++; continue }
     for (const { key: sKey, geom: sGeom, bbox: sb } of sourceGeoms) {
       if (key && key === sKey) continue
       if (sb && tb && bboxesDisjoint(sb, tb)) continue
@@ -483,23 +532,17 @@ export function findMatchingRowsMulti(sourceRows, targetRows, operator, opts = {
 }
 
 // ارزیابی سریع وقتی bboxها از قبل محاسبه شده‌اند (بدون محاسبه مجدد bbox)
-// هندسه‌ها از قبل تمیز شده‌اند؛ اگر باز هم خطا داد، آزمون جایگزین اعمال می‌شود
+// هندسه‌ها از قبل تمیز شده‌اند؛ خطای موتور ثبت می‌شود.
 function evaluateRelationFast(sourceGeom, targetGeom, operator) {
   const fn = OP_FNS[operator]
   if (!fn || !sourceGeom || !targetGeom) return false
-  let threw = false
   try {
     const source = { type: 'Feature', geometry: sourceGeom, properties: {} }
     const target = { type: 'Feature', geometry: targetGeom, properties: {} }
     if (fn(target, source) === true) return true
   } catch {
-    threw = true
     lastRelationStats.errors++
   }
-  if (!threw) return false
-  try {
-    if (relationFallback(sourceGeom, targetGeom, operator)) { lastRelationStats.fallbacks++; return true }
-  } catch {}
   return false
 }
 
@@ -507,13 +550,18 @@ function evaluateRelationFast(sourceGeom, targetGeom, operator) {
 // فرصت می‌دهد تا دیالوگ "long script / wait" مرورگر ظاهر نشود و
 // بتوان پیشرفت و لغو (AbortSignal) را گزارش کرد.
 export async function findMatchingRowsMultiAsync(sourceRows, targetRows, operator, opts = {}) {
+  if (opts.signal?.aborted) throw new DOMException('aborted', 'AbortError')
+  if (!opts.nested) resetRelationStats()
   const operators = normalizeRelationOperators(operator)
   if (!operators.length) return []
   if (operators.length > 1) {
     const seen = new Set()
     const merged = []
     for (const op of operators) {
-      const rows = await findMatchingRowsMultiAsync(sourceRows, targetRows, op, opts)
+      const index = operators.indexOf(op)
+      const rows = await findMatchingRowsMultiAsync(sourceRows, targetRows, op, { ...opts, nested: true,
+        onProgress: (done, total) => opts.onProgress?.(index * total + done, operators.length * total),
+      })
       for (const row of rows) {
         const key = row?._layerUuid ? `${row._layerUuid}::${row.id}` : String(row.id ?? '')
         if (!key || !seen.has(key)) {
@@ -529,21 +577,23 @@ export async function findMatchingRowsMultiAsync(sourceRows, targetRows, operato
     return findWithinDistanceMultiAsync(sourceRows, targetRows, opts.radiusKm, opts)
   }
   if (!Array.isArray(sourceRows) || !Array.isArray(targetRows) || !sourceRows.length) return []
-  resetRelationStats()
   const {
     chunkTargets = 400,
     yieldEveryMs = 0,
     signal = null,
     onProgress = null,
   } = opts
+  const yieldTick = () => new Promise(r => setTimeout(r, yieldEveryMs))
   const keyOf = (r) => (r._layerUuid ? `${r._layerUuid}::${r.id}` : String(r.id ?? ''))
   const sourceGeoms = []
   for (const r of sourceRows) {
     if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
     const f = rowToFeature(r)
     if (!f?.geometry) continue
-    const geom = cleanGeometry(f.geometry) ?? f.geometry
+    const geom = cleanGeometry(f.geometry)
+    if (!geom) { lastRelationStats.errors++; continue }
     sourceGeoms.push({ key: keyOf(r), geom, bbox: featureBbox(f) })
+    if (sourceGeoms.length % 500 === 0) await yieldTick()
   }
   if (!sourceGeoms.length) return []
   // برای لایه‌های خیلی بزرگ، نمونه‌برداری مبدأ برای تخمین سریع؟ نه — کامل ولی تکه‌تکه
@@ -551,7 +601,7 @@ export async function findMatchingRowsMultiAsync(sourceRows, targetRows, operato
   const out = []
   const total = targetRows.length
   let processed = 0
-  const yieldTick = () => new Promise(r => setTimeout(r, yieldEveryMs))
+  let pairs = 0
   for (let t = 0; t < targetRows.length; t++) {
     if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
     const row = targetRows[t]
@@ -559,8 +609,14 @@ export async function findMatchingRowsMultiAsync(sourceRows, targetRows, operato
     const targetFeature = rowToFeature(row)
     if (targetFeature) {
       const tb = featureBbox(targetFeature)
-      const tGeom = cleanGeometry(targetFeature.geometry) ?? targetFeature.geometry
+      const tGeom = cleanGeometry(targetFeature.geometry)
+      if (!tGeom) { lastRelationStats.errors++ }
       for (const { key: sKey, geom: sGeom, bbox: sb } of sourceGeoms) {
+        if (++pairs % 2000 === 0) {
+          try { onProgress?.(processed, total) } catch {}
+          await yieldTick()
+        }
+        if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
         if (key && key === sKey) continue
         if (sb && tb && bboxesDisjoint(sb, tb)) continue
         let ok = false
@@ -581,6 +637,8 @@ export async function findMatchingRowsMultiAsync(sourceRows, targetRows, operato
       await yieldTick()
     }
   }
+  if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
   try { onProgress?.(total, total) } catch {}
+  if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
   return out
 }

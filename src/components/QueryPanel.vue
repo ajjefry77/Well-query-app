@@ -105,6 +105,7 @@
         @update:operator="$emit('update:relation-operator', $event)"
         @update:radius-km="$emit('update:radius-km', $event)"
         @apply-relation="$emit('apply-relation')"
+        @cancel-relation="$emit('cancel-relation')"
       />
       <div class="side-divider"></div>
       <SavedQueries :queries="savedQueries" @load="$emit('load-query', $event)" @delete="$emit('delete-query', $event)" />
@@ -167,6 +168,7 @@ defineEmits([
   'update:relation-target-layer',
   'update:relation-operator',
   'apply-relation',
+  'cancel-relation',
   'load-query',
   'delete-query',
   'clear-data',
