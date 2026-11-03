@@ -23,12 +23,11 @@ async function getToken() {
 
   if (tokenPromise) return tokenPromise
 
-  tokenPromise = (async () => {
+  const pending = (async () => {
     const username = import.meta.env.VITE_API_USER
     const password = import.meta.env.VITE_API_PASS
 
     if (!username || !password) {
-      tokenPromise = null
       throw new Error('اطلاعات ورود (VITE_API_USER / VITE_API_PASS) در فایل .env تنظیم نشده است.')
     }
 
@@ -36,42 +35,49 @@ async function getToken() {
     formData.append('username', username)
     formData.append('password', password)
 
-    let res
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS)
     try {
-      res = await fetch(`${API_BASE}/auth/token/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData
-      })
-    } catch {
-      tokenPromise = null
-      throw new Error('اتصال به سرور برقرار نشد. اینترنت یا VPN را بررسی کنید.')
-    }
-
-    if (!res.ok) {
-      tokenPromise = null
-      if (res.status === 502 || res.status === 504) {
-        throw new Error('سرور Geobox در دسترس نیست. چند دقیقه دیگر امتحان کنید.')
+      let res
+      try {
+        res = await fetch(`${API_BASE}/auth/token/`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: formData,
+          signal: controller.signal,
+        })
+      } catch {
+        if (controller.signal.aborted) throw new Error('سرور پاسخ نداد (تایم‌اوت). دوباره تلاش کنید.')
+        throw new Error('اتصال به سرور برقرار نشد. اینترنت یا VPN را بررسی کنید.')
       }
-      if (res.status === 401 || res.status === 422) {
-        throw new Error('نام کاربری یا رمز عبور اشتباه است.')
+
+      if (!res.ok) {
+        if (res.status === 502 || res.status === 504) {
+          throw new Error('سرور Geobox در دسترس نیست. چند دقیقه دیگر امتحان کنید.')
+        }
+        if (res.status === 401 || res.status === 422) {
+          throw new Error('نام کاربری یا رمز عبور اشتباه است.')
+        }
+        throw new Error(`خطای سرور: ${res.status}`)
       }
-      throw new Error(`خطای سرور: ${res.status}`)
-    }
 
-    const data = await res.json()
-    if (!data.access_token) {
-      tokenPromise = null
-      throw new Error('توکن دریافت نشد.')
-    }
+      const data = await res.json()
+      if (!data.access_token) throw new Error('توکن دریافت نشد.')
 
-    accessToken = data.access_token
-    tokenExp = parseJwtExp(accessToken)
-    tokenPromise = null
-    return accessToken
+      accessToken = data.access_token
+      tokenExp = parseJwtExp(accessToken)
+      return accessToken
+    } finally {
+      clearTimeout(timer)
+    }
   })()
 
-  return tokenPromise
+  tokenPromise = pending
+  try {
+    return await pending
+  } finally {
+    if (tokenPromise === pending) tokenPromise = null
+  }
 }
 
 // -------------------------------
@@ -84,7 +90,24 @@ export function isAbortError(e) {
 }
 
 async function apiFetch(path, params = {}, retried = false, opts = {}) {
-  const token = await getToken();
+  const checkAbort = () => {
+    if (opts.signal?.aborted) throw new DOMException('aborted', 'AbortError')
+  }
+  checkAbort()
+  // A caller may cancel its wait without cancelling authentication shared by others.
+  const token = await new Promise((resolve, reject) => {
+    const cleanup = () => opts.signal?.removeEventListener('abort', onAbort)
+    const onAbort = () => {
+      cleanup()
+      reject(new DOMException('aborted', 'AbortError'))
+    }
+    opts.signal?.addEventListener('abort', onAbort, { once: true })
+    getToken().then(
+      value => { cleanup(); resolve(value) },
+      error => { cleanup(); reject(error) },
+    )
+  })
+  checkAbort()
 
   const url = Object.keys(params).length
     ? `${API_BASE}${path}?${new URLSearchParams(params)}`
@@ -95,9 +118,8 @@ async function apiFetch(path, params = {}, retried = false, opts = {}) {
   const onAbort = () => controller.abort(opts.signal?.reason)
   opts.signal?.addEventListener?.('abort', onAbort, { once: true })
 
-  let res
   try {
-    res = await fetch(url, {
+    const res = await fetch(url, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -105,8 +127,33 @@ async function apiFetch(path, params = {}, retried = false, opts = {}) {
       },
       signal: controller.signal,
     });
+    if (!res.ok) {
+      if (res.status === 401 && !retried) {
+        // A late 401 must not invalidate a token another request just refreshed.
+        if (accessToken === token) {
+          accessToken = null
+          tokenExp = 0
+        }
+        return await apiFetch(path, params, true, opts)
+      }
+      const messages = {
+        401: 'نشست معتبر نیست. دوباره تلاش کنید.',
+        403: 'اجازه دسترسی به این داده را ندارید.',
+        429: 'تعداد درخواست‌ها زیاد است. کمی بعد دوباره تلاش کنید.',
+      }
+      const error = new Error(messages[res.status] ?? (res.status >= 500
+        ? 'سرور Geobox در دسترس نیست. کمی بعد دوباره تلاش کنید.'
+        : `خطای سرور: ${res.status}`))
+      error.status = res.status
+      throw error
+    }
+    const data = await res.json()
+    checkAbort()
+    return data
   } catch (e) {
-    if (isAbortError(e) && opts.signal?.aborted) throw e
+    checkAbort()
+    if (e.status) throw e
+    if (e instanceof SyntaxError) throw new Error('پاسخ سرور قالب JSON معتبر ندارد.')
     if (e?.message === 'timeout' || e?.name === 'AbortError') {
       throw new Error('سرور پاسخ نداد (تایم‌اوت). دوباره تلاش کنید.')
     }
@@ -116,22 +163,6 @@ async function apiFetch(path, params = {}, retried = false, opts = {}) {
     opts.signal?.removeEventListener?.('abort', onAbort)
   }
 
-  if (!res.ok) {
-    // توکن منقضی شده → توکن را پاک کن و یک بار دیگر تلاش کن
-    if (res.status === 401 && !retried) {
-      accessToken = null
-      tokenExp = 0
-      return apiFetch(path, params, true, opts)
-    }
-    let msg = `HTTP ${res.status}`;
-    try {
-      const d = await res.json();
-      msg = d.detail || d.message || msg;
-    } catch {}
-    throw new Error(msg);
-  }
-
-  return res.json();
 }
 
 // ===============================
@@ -141,6 +172,7 @@ async function apiFetch(path, params = {}, retried = false, opts = {}) {
 export async function fetchVectorLayers(opts = {}) {
   // صفحه‌بندی کامل تا سقف معقول، بدون پارامترهای متناقض
   const pageSize = Number(opts.pageSize ?? 100)
+  if (!Number.isSafeInteger(pageSize) || pageSize < 1) throw new Error('اندازه صفحه نامعتبر است.')
   const all = []
   let page = 1
   for (;;) {
@@ -154,7 +186,7 @@ export async function fetchVectorLayers(opts = {}) {
     all.push(...items)
     if (!items.length || items.length < pageSize) break
     page += 1
-    if (page > 50) break
+    if (page > 50) throw new Error('فهرست لایه‌ها از سقف دریافت بیشتر است؛ داده ناقص نمایش داده نشد.')
   }
   return all
 }
@@ -223,7 +255,7 @@ export async function fetchAllFeatures(layerUuid, opts = {}) {
         : (data.features ?? data.results ?? data.data ?? [])
     } catch (e) {
       if (isAbortError(e)) throw e
-      if (attempt < 2) {
+      if (attempt < 2 && (!e.status || e.status === 429 || e.status >= 500)) {
         await sleep(500 * (attempt + 1))
         return fetchPage(page, attempt + 1)
       }
@@ -245,11 +277,11 @@ export async function fetchAllFeatures(layerUuid, opts = {}) {
     let reachedEnd = false
     for (const features of results) {
       all.push(...features)
-      if (features.length < pageSize) reachedEnd = true
+      if (features.length < pageSize) { reachedEnd = true; break }
     }
     if (reachedEnd) break
     page += pages.length
-    if (page > MAX_PAGE) break
+    if (page > MAX_PAGE) throw new Error('حجم عوارض از سقف دریافت بیشتر است؛ برای جلوگیری از نتیجه ناقص، بارگذاری متوقف شد.')
     if (opts.onProgress) opts.onProgress(all.length)
     // فرصت به event-loop تا در حین لود چندده‌هزاری، UI قفل نشود
     await sleep(0)

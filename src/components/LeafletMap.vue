@@ -648,6 +648,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  if (renderRaf !== null) cancelAnimationFrame(renderRaf);
+  if (highlightRaf !== null) cancelAnimationFrame(highlightRaf);
   if (map) map.remove();
 });
 

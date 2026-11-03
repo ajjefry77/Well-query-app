@@ -2553,6 +2553,8 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  if (renderRaf !== null) cancelAnimationFrame(renderRaf);
+  if (highlightRaf !== null) cancelAnimationFrame(highlightRaf);
   clearMarkers();
   clearLabelMarkers();
   clearSelAnchor();

@@ -1,4 +1,4 @@
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onScopeDispose } from 'vue'
 import { findWithinRadius } from './useGeoUtils.js'
 import { findMatchingRowsMulti, findMatchingRowsMultiAsync, lastRelationStats } from './useSpatialRelations.js'
 import {
@@ -166,6 +166,9 @@ export function useWellQuery() {
   // ── بارگذاری فیلدها و عوارض یک لایه (با صفحه‌بندی کامل) ──
   // فیلدها و عوارض مستقل‌اند → موازی گرفته می‌شوند
   const inFlight = new Map()
+  let layerRevision = 0
+  let disposed = false
+  let layersController = null
   async function loadLayerData(layer, opts = {}) {
     const needFields = !layerFieldsMap.value[layer.uuid]
     const needFeatures = !layerFeaturesMap.value[layer.uuid]
@@ -173,13 +176,18 @@ export function useWellQuery() {
     inFlight.get(layer.uuid)?.abort()
     const ctrl = new AbortController()
     inFlight.set(layer.uuid, ctrl)
-    const signal = opts.signal ?? ctrl.signal
+    const signal = ctrl.signal
+    const onAbort = () => ctrl.abort()
+    opts.signal?.addEventListener('abort', onAbort, { once: true })
+    if (opts.signal?.aborted) ctrl.abort()
     try {
       const [fields, raw] = await Promise.all([
         needFields ? fetchLayerFields(layer.uuid, { signal }) : null,
         needFeatures ? fetchAllFeatures(layer.uuid, { signal }) : null,
       ])
-      if (signal.aborted) return
+      if (signal.aborted || disposed || inFlight.get(layer.uuid) !== ctrl) {
+        throw new DOMException('aborted', 'AbortError')
+      }
       if (needFields) {
         layerFieldsMap.value[layer.uuid] = buildQueryableFields(Array.isArray(fields) ? fields : (fields?.fields ?? fields?.results ?? []))
       }
@@ -190,17 +198,27 @@ export function useWellQuery() {
           _layerName: layer.display_name || layer.name,
         }))
       }
+    } catch (error) {
+      ctrl.abort()
+      throw error
     } finally {
+      opts.signal?.removeEventListener('abort', onAbort)
       if (inFlight.get(layer.uuid) === ctrl) inFlight.delete(layer.uuid)
     }
   }
 
   // ── بارگذاری لایه‌ها ──
   async function loadVectorLayers() {
+    if (disposed) return
+    layersController?.abort()
+    const controller = new AbortController()
+    layersController = controller
     loadingLayers.value = true
     apiError.value = null
     try {
-      vectorLayers.value = await fetchVectorLayers()
+      const layers = await fetchVectorLayers({ signal: controller.signal })
+      if (disposed || controller.signal.aborted) return
+      vectorLayers.value = layers
       // بازیابی لایه‌های انتخاب‌شده از نشست قبل
       try {
         const saved = lsGet(LS_KEYS.activeLayers, [])
@@ -213,9 +231,9 @@ export function useWellQuery() {
         }
       } catch {}
     } catch (e) {
-      apiError.value = e.message
+      if (!disposed && !controller.signal.aborted) apiError.value = e.message
     } finally {
-      loadingLayers.value = false
+      if (!disposed && layersController === controller) loadingLayers.value = false
     }
   }
 
@@ -259,6 +277,8 @@ export function useWellQuery() {
 
   // ── اضافه کردن یک لایه ──
   async function addLayer(layer) {
+    if (disposed) return
+    const revision = layerRevision
     if (activeLayers.value.find(l => l.uuid === layer.uuid)) return
     apiError.value = null
     const needData = !layerFieldsMap.value[layer.uuid] || !layerFeaturesMap.value[layer.uuid]
@@ -268,13 +288,15 @@ export function useWellQuery() {
       try {
         await loadLayerData(layer)
       } catch (e) {
-        apiError.value = e.message
+        if (e?.name !== 'AbortError' && revision === layerRevision && !disposed) apiError.value = e.message
         return
       } finally {
-        loadingFields.value   = false
-        loadingFeatures.value = false
+        loadingFields.value   = inFlight.size > 0
+        loadingFeatures.value = inFlight.size > 0
       }
     }
+    if (disposed || revision !== layerRevision) return
+    if (activeLayers.value.some(l => l.uuid === layer.uuid)) return
     activeLayers.value = [...activeLayers.value, layer]
     rebuildAggregated()
     ensureLayerConditions(layer.uuid)
@@ -309,10 +331,13 @@ export function useWellQuery() {
 
   // ── تنظیم دسته‌ای لایه‌ها ──
   async function setActiveLayers(layers) {
+    if (disposed) return
+    const revision = ++layerRevision
+    for (const [, c] of inFlight) c.abort()
+    inFlight.clear()
     if (!layers.length) {
-      for (const [, c] of inFlight) c.abort()
-      inFlight.clear()
       activeLayers.value = []
+      loadingFields.value = loadingFeatures.value = false
       rebuildAggregated()
       return
     }
@@ -325,9 +350,10 @@ export function useWellQuery() {
       loadingFields.value   = true
       loadingFeatures.value = true
       try {
-        const results = await Promise.allSettled(needsLoad.map(loadLayerData))
+        const results = await Promise.allSettled(needsLoad.map(layer => loadLayerData(layer)))
+        if (disposed || revision !== layerRevision) return
         results.forEach((r, i) => {
-          if (r.status === 'rejected' && r.reason?.name !== 'AbortError') {
+          if (r.status === 'rejected') {
             failed.add(needsLoad[i].uuid)
           }
         })
@@ -335,10 +361,13 @@ export function useWellQuery() {
           apiError.value = `بارگذاری ${failed.size} لایه ناموفق بود و نادیده گرفته شد.`
         }
       } finally {
-        loadingFields.value   = false
-        loadingFeatures.value = false
+        if (revision === layerRevision && !disposed) {
+          loadingFields.value   = inFlight.size > 0
+          loadingFeatures.value = inFlight.size > 0
+        }
       }
     }
+    if (disposed || revision !== layerRevision) return
     const okLayers = layers.filter(l => !failed.has(l.uuid))
     activeLayers.value = okLayers
     const stillActive = new Set(okLayers.map(l => String(l.uuid)))
@@ -825,11 +854,13 @@ export function useWellQuery() {
   }
 
   function clearLayers() {
+    layerRevision++
     // پاک کردن localStorage (کوئری‌های ذخیره‌شده + لایه‌های انتخاب‌شده)
     localStorage.removeItem(LS_KEYS.activeLayers)
     try { LEGACY_RADIUS_KEYS.forEach(k => localStorage.removeItem(k)) } catch {}
     for (const [, c] of inFlight) c.abort()
     inFlight.clear()
+    loadingFields.value = loadingFeatures.value = false
     // ریست state بدون reload
     activeLayers.value    = []
     hiddenLayers.value    = new Set()
@@ -850,6 +881,17 @@ export function useWellQuery() {
     _countCache.clear()
     rebuildAggregated()
   }
+
+  onScopeDispose(() => {
+    disposed = true
+    layerRevision++
+    relationReqId++
+    relationAbortCtrl?.abort()
+    clearTimeout(_relRetimer)
+    layersController?.abort()
+    for (const [, controller] of inFlight) controller.abort()
+    inFlight.clear()
+  })
 
   return {
     vectorLayers, activeLayers, selectedLayer,
