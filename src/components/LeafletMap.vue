@@ -102,6 +102,8 @@ let picking = false;
 let pickerCb = null;
 let pickerMarker = null;
 let mapClickHandler = null;
+let popupTabContainer = null;
+let popupTabHandler = null;
 
 function pickFeature(e, well) {
   // همیشه propagation را متوقف کن تا کلیک عارضه به نقشه نرسد و deselect نشود
@@ -367,9 +369,9 @@ function openStackedPopup(latlng, items) {
 function bindTabDelegation() {
   try {
     const container = map?.getContainer?.();
-    if (!container || container._wqaTabBound) return;
-    container._wqaTabBound = true;
-    container.addEventListener("click", (ev) => {
+    if (!container || popupTabHandler) return;
+    popupTabContainer = container;
+    popupTabHandler = (ev) => {
       const btn = ev.target?.closest?.(".wqa-popup__tab");
       if (!btn || !container.contains(btn)) return;
       ev.stopPropagation();
@@ -378,7 +380,8 @@ function bindTabDelegation() {
       const idx = btn.getAttribute("data-idx");
       root.querySelectorAll(".wqa-popup__tab").forEach((t) => t.classList.toggle("wqa-popup__tab--active", t.getAttribute("data-idx") === idx));
       root.querySelectorAll(".wqa-popup__page").forEach((p) => p.classList.toggle("wqa-popup__page--active", p.getAttribute("data-idx") === idx));
-    });
+    };
+    container.addEventListener("click", popupTabHandler);
   } catch {}
 }
 
@@ -650,7 +653,14 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (renderRaf !== null) cancelAnimationFrame(renderRaf);
   if (highlightRaf !== null) cancelAnimationFrame(highlightRaf);
+  popupTabContainer?.removeEventListener("click", popupTabHandler);
+  popupTabContainer = popupTabHandler = null;
+  picking = false;
+  pickerCb = null;
+  featureRefs.clear();
   if (map) map.remove();
+  map = geoLayer = tileLayers = null;
+  pickerMarker = mapClickHandler = null;
 });
 
 watch(() => props.theme, syncTheme);
