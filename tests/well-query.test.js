@@ -7,6 +7,26 @@ const deferred = () => { let resolve; const promise = new Promise(r => { resolve
 const layer = uuid => ({ uuid, name: uuid })
 let instance = 0
 
+test('selected scope with no selected rows returns no preview or export rows', async t => {
+  const { query } = await setup(t, { features: () => [{ id: 1, score: 10 }] })
+  await query.addLayer(layer('a'))
+  query.attributeScope.value = 'selected'
+  assert.equal(query.getLayerResultCount('a'), 0)
+  assert.deepEqual(query.computeAttributeRows('a', [], 'selected'), [])
+})
+
+test('preview cache tracks selection identity even when its size stays the same', async t => {
+  const { query } = await setup(t, { features: () => [{ id: 1, score: 10 }, { id: 2, score: 20 }] })
+  await query.addLayer(layer('a'))
+  query.getLayerConditions('a').push({ field: 'score', operator: '>', value: 15 })
+  query.attributeScope.value = 'selected'
+  const rows = query.allWells.value
+  query.setSelectionKeys([query.rowKeyOf(rows[0])])
+  assert.equal(query.getLayerResultCount('a'), 0)
+  query.setSelectionKeys([query.rowKeyOf(rows[1])])
+  assert.equal(query.getLayerResultCount('a'), 1)
+})
+
 async function setup(t, handlers = {}) {
   const calls = []
   globalThis.__queryTestApi = {

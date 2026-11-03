@@ -10,6 +10,7 @@ import booleanOverlap from '@turf/boolean-overlap'
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
 import centroid from '@turf/centroid'
 import distance from '@turf/distance'
+import { isValidLatLng } from './useGeoUtils.js'
 
 export const RELATION_OPERATORS = [
   {
@@ -78,7 +79,7 @@ export function rowToFeature(row) {
   if (row._geometry) {
     return { type: 'Feature', geometry: row._geometry, properties: {} }
   }
-  if (Number.isFinite(+row.lat) && Number.isFinite(+row.lng)) {
+  if (isValidLatLng(row)) {
     return {
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [+row.lng, +row.lat] },

@@ -475,9 +475,11 @@ export function useWellQuery() {
   const _countCache = new Map()
   function getLayerResultCount(uuid) {
     if (!isLayerVisible(uuid)) return 0
-    let rows = layerFeaturesMap.value[uuid] ?? []
+    const sourceRows = layerFeaturesMap.value[uuid] ?? []
+    let rows = sourceRows
+    const selection = attributeScope.value === 'selected' ? selectedKeys.value : null
     // محدوده «فقط انتخاب‌شده‌ها»: شمارش زنده هم فقط روی انتخاب‌شده‌ها
-    if (attributeScope.value === 'selected' && selectedKeys.value.size) {
+    if (selection !== null) {
       const set = selectedKeys.value
       rows = rows.filter(r => set.has(rowKeyOf(r)))
     }
@@ -486,9 +488,9 @@ export function useWellQuery() {
     if (!active.length) return rows.length
     const sig = JSON.stringify([attributeScope.value, selectedKeys.value.size, active.map(c => [c.field, c.operator, c.value, c.logic, !!c.not])])
     const cached = _countCache.get(uuid)
-    if (cached && cached.sig === sig && cached.rowsLen === rows.length) return cached.count
+    if (cached && cached.sig === sig && cached.sourceRows === sourceRows && cached.selection === selection) return cached.count
     const count = rows.filter(row => evaluateGroup(row, active)).length
-    _countCache.set(uuid, { sig, rowsLen: rows.length, count })
+    _countCache.set(uuid, { sig, sourceRows, selection, count })
     // جلوگیری از رشد بی‌نهایت کش
     if (_countCache.size > 64) _countCache.delete(_countCache.keys().next().value)
     return count
@@ -549,7 +551,7 @@ export function useWellQuery() {
   // (مبنای دکمه «ذخیره/خروجی Shapefile» ذیل جدول TOC)
   function computeAttributeRows(uuid, conditions, scope = 'all') {
     let rows = (layerFeaturesMap.value[uuid] ?? []).slice()
-    if (scope === 'selected' && selectedKeys.value.size) {
+    if (scope === 'selected') {
       const set = selectedKeys.value
       rows = rows.filter(r => set.has(rowKeyOf(r)))
     }
