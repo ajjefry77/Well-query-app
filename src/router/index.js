@@ -35,6 +35,8 @@ export const routes = [
   // دیپ‌لینک تب‌ها
   { path: '/attribute', redirect: '/?view=attribute' },
   { path: '/spatial', redirect: '/?view=spatial' },
+  { path: '/contour', redirect: '/?view=contour' },
+  { path: '/thematic', redirect: '/?view=thematic' },
   { path: '/stratigraphy', redirect: '/?view=stratigraphy' },
   // ۴۰۴ — باید آخر باشد
   {

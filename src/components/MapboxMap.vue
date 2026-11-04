@@ -145,6 +145,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
 import { resolveFeatureStyle, rampStops, defaultSymbology, DEFAULT_FEATURE_COLOR } from "../composables/useSymbology.js";
+import { syncContourOverlay } from '../utils/contourOverlay.js';
 import booleanIntersects from "@turf/boolean-intersects";
 import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import pointToLineDistance from "@turf/point-to-line-distance";
@@ -433,6 +434,7 @@ const props = defineProps({
   // کانفیگ سیمبولوژی هر لایه (uuid -> config) — استایل per-feature داخل همین کامپوننت ساخته می‌شود
   symConfigs: { type: Object, default: () => ({}) },
   symVersion: { type: Number, default: 0 },
+  contourLayer: { type: Object, default: null },
   // هایلایت فوری عارضه‌های مبدأ/هدف رابطه مکانی (قبل از Apply)
   previewIds: { type: Array, default: () => [] },
   // تفکیک رنگی: مبدأ زرد، هدف سبز (رابطه برقرار) / قرمز (برقرار نیست)
@@ -460,6 +462,7 @@ let styleLoadHandler = null;
 const selectedColor = ref("#3498db");
 
 let map = null;
+let containerObserver = null;
 let draw = null;
 let markers = [];
 let labelMarkers = [];
@@ -940,6 +943,18 @@ let pendingWells = false;
 let pendingHighlight = false;
 let firstRender = true;
 let lastWellsKey = '';
+let pendingRenderFit = false;
+function renderOnIdle() {
+  const fit = pendingRenderFit;
+  pendingRenderFit = false;
+  renderMarkers(fit);
+}
+function refreshContourOverlay() {
+  if (!mapLifecycle.active || !map) return;
+  map.off('idle', refreshContourOverlay);
+  if (!map.isStyleLoaded()) { map.once('idle', refreshContourOverlay); return; }
+  syncContourOverlay(map, props.contourLayer);
+}
 
 function scheduleRender(force = false) {
   if (!mapLifecycle.active || !map) return;
@@ -1942,7 +1957,14 @@ function addDashAndShapeLayers() {
 }
 
 function renderMarkers(fit = true) {
-  if (!map || !map.isStyleLoaded()) return;
+  if (!mapLifecycle.active || !map) return;
+  if (!map.isStyleLoaded()) {
+    pendingRenderFit ||= fit;
+    map.off('idle', renderOnIdle);
+    map.once('idle', renderOnIdle);
+    return;
+  }
+  map.off('idle', renderOnIdle);
   const highlightSet = new Set((props.highlightedIds || []).map(String));
   const psets = previewSets();
   const centerKey = wellKey(props.radiusCenter);
@@ -2492,6 +2514,7 @@ function renderMarkers(fit = true) {
   }
   lastSymStruct = symStructSig();
   refreshSymLayers();
+  refreshContourOverlay();
 }
 
 // ─── mount ─────────────────────────────────────────────────
@@ -2547,6 +2570,10 @@ onMounted(async () => {
     fadeDuration: weak ? 0 : 300,
   });
   map.addControl(new mapboxgl.NavigationControl(), "bottom-left");
+  if (typeof ResizeObserver !== 'undefined') {
+    containerObserver = new ResizeObserver(() => { if (mapLifecycle.active && map) map.resize(); });
+    containerObserver.observe(mapEl.value);
+  }
   // کلیک روی فضای خالی → deselect عارضه (فقط وقتی به عارضه/شکل رسم‌شده نخورده)
   map.on("click", (e) => {
     if (picking) return;
@@ -2620,6 +2647,9 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  containerObserver?.disconnect();
+  map?.off('idle', renderOnIdle);
+  map?.off('idle', refreshContourOverlay);
   mapLifecycle.dispose();
   mouseRevision++;
   picking = false;
@@ -2800,6 +2830,9 @@ function applyMapTheme(t) {
   if (styleLoadHandler) map.off("style.load", styleLoadHandler);
 
   unbindWellEvents();
+  map.off('idle', renderOnIdle);
+  map.off('idle', refreshContourOverlay);
+  pendingRenderFit = false;
   map.setStyle(next);
   styleLoadHandler = () => {
     if (!mapLifecycle.active) return;
@@ -2815,6 +2848,7 @@ function applyMapTheme(t) {
   map.once("style.load", styleLoadHandler);
 }
 watch(() => props.theme, applyMapTheme);
+watch(() => props.contourLayer, refreshContourOverlay);
 
 // زوم ملایم روی مجموعه‌ای از سطرهای نتیجه (مبنای دکمه‌های «اجرا/اعمال»)
 function fitRowsToBounds(feats, { padding = 60, maxZoom = 14 } = {}) {

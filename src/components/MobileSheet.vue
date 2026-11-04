@@ -6,7 +6,7 @@
         class="mobile-sheet__tab"
         :class="{ 'mobile-sheet__tab--active': mobileTab === 'query' }"
         @click="$emit('update:mobile-tab', 'query')"
-      >کوئری</button>
+      >{{ queryLabel }}</button>
       <button
         class="mobile-sheet__tab"
         :class="{ 'mobile-sheet__tab--active': mobileTab === 'layers' }"
@@ -24,6 +24,7 @@
 <script setup>
 defineProps({
   mobileTab: { type: String, required: true },
+  queryLabel: { type: String, default: 'کوئری' },
   open: { type: Boolean, default: true },
   dragging: { type: Boolean, default: false },
 })

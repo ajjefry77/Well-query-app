@@ -52,7 +52,7 @@
             </div>
             <div v-if="isNumericRenderer" class="sym-row" style="margin-top:8px">
               <label class="sym-lbl">نرمال‌سازی (اختیاری)</label>
-              <select v-model="local.normField" @change="emitUpdate" class="sym-select">
+              <select v-model="local.normField" @change="onFieldChange" class="sym-select">
                 <option :value="null">بدون نرمال‌سازی</option>
                 <option v-for="f in numericFields" :key="f.key" :value="f.key">{{ f.label }}</option>
               </select>
@@ -82,6 +82,7 @@
               <label class="sym-lbl">سقف: {{ local.uniqueLimit }}</label>
               <input type="range" min="5" max="100" step="5" v-model.number="local.uniqueLimit" @change="addAllValues" style="width:90px" />
             </div>
+            <p v-if="local.method === 'jenks' && numericValues(rows, local.field).length > 1000" class="sym-note">مرزهای Jenks از ۱۰۰۰ مقدار نمونه محاسبه می‌شوند؛ شمارش کلاس‌ها از همه مقادیر معتبر لایه است.</p>
             <div class="sym-row" style="margin-top:8px">
               <input v-model="uniqueSearch" placeholder="جستجوی مقدار…" class="sym-input" />
               <label class="chk"><input type="checkbox" v-model="local.showOther" @change="emitUpdate" /> نمایش سایر مقادیر</label>
@@ -232,7 +233,7 @@
 import { ref, computed, watch, defineAsyncComponent } from 'vue'
 import {
   RENDERERS, CLASS_METHODS, COLOR_RAMPS, sampleRamp, classifyBreaks,
-  buildGraduatedClasses, buildUniqueValues, numericValues, legendItems,
+  buildGraduatedClasses, buildUniqueValues, numericValues, normalizedValues, valueForNorm, legendItems,
 } from '../composables/useSymbology.js'
 
 const RampPicker = defineAsyncComponent(() => import('./RampPicker.vue'))
@@ -285,11 +286,11 @@ const filteredUnique = computed(() => {
   return arr.filter(u => String(u.label).toLowerCase().includes(q))
 })
 const dataMin = computed(() => {
-  const v = numericValues(props.rows, local.value.field)
+  const v = normalizedValues(props.rows, local.value)
   return v.length ? v[0] : '—'
 })
 const dataMax = computed(() => {
-  const v = numericValues(props.rows, local.value.field)
+  const v = normalizedValues(props.rows, local.value)
   return v.length ? v[v.length - 1] : '—'
 })
 const legend = computed(() => legendItems(local.value, props.geomKind))
@@ -319,7 +320,7 @@ const heatPreview = computed(() => {
 function emitUpdate() {
   // بازه proportional برای نرمال‌سازی سریع در رزولور
   if (local.value.renderer === 'proportional' && local.value.field) {
-    const v = numericValues(props.rows, local.value.field)
+    const v = props.rows.map(row => valueForNorm(row, local.value)).filter(Number.isFinite).sort((a, b) => a - b)
     if (v.length) {
       local.value._minValue = v[0]
       local.value._maxValue = v[v.length - 1]
@@ -333,7 +334,7 @@ function setRenderer(id) {
   const fnum = numericFields.value[0]?.key ?? null
   const fany = props.fields[0]?.key ?? null
   if (id === 'unique' && !local.value.field) local.value.field = fany
-  if (['graduated', 'unclassed', 'graduated-sym', 'proportional'].includes(id) && !local.value.field) local.value.field = fnum
+  if (['graduated', 'unclassed', 'graduated-sym', 'proportional'].includes(id) && !numericFields.value.some(f => f.key === local.value.field)) local.value.field = fnum
   if (['graduated', 'unclassed', 'graduated-sym'].includes(id)) reclassify()
   else if (id === 'unique') { if (!local.value.uniqueValues?.length) addAllValues() }
   else emitUpdate()
@@ -348,7 +349,7 @@ function reclassify(rampId = null) {
   if (!local.value.field) { local.value.classes = []; emitUpdate(); return }
   if (local.value.method === 'manual' && !(local.value.manualBreaks?.length >= 2)) {
     // seed: شروع از فواصل مساوی تا کاربر دستی ویرایش کند
-    const seed = numericValues(props.rows, local.value.field)
+    const seed = normalizedValues(props.rows, local.value)
     local.value.manualBreaks = classifyBreaks(seed, 'equal', local.value.numClasses)
   }
   if (local.value.renderer === 'unclassed') {

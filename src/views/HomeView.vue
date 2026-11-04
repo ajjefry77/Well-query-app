@@ -16,11 +16,11 @@
     </div>
 
     <!-- صفحه اصلی -->
-    <main v-else class="app-main" :style="isMobile ? { '--sheet-h': sheetHeight + 'px' } : {}">
+    <main v-else class="app-main" :class="{ 'app-main--analysis': ['contour', 'thematic'].includes(queryKind) }" :style="isMobile ? { '--sheet-h': sheetHeight + 'px' } : {}">
 
       <!-- پنل چپ: کوئری‌ساز -->
       <QueryPanel
-        v-show="!isMobile || (sheetOpen && mobileTab === 'query')"
+        v-show="['attribute', 'spatial'].includes(queryKind) && (!isMobile || (sheetOpen && mobileTab === 'query'))"
         :open="queryPanelOpen"
         :query-kind="queryKind"
         :layers="visibleActiveLayers"
@@ -63,6 +63,18 @@
         @clear-data="handleClearData"
       />
 
+      <ContourPanel
+        v-show="queryKind === 'contour' && (!isMobile || (sheetOpen && mobileTab === 'query'))"
+        :layers="visibleActiveLayers" :rows-map="_layerFeaturesMap" :fields-map="_layerFieldsMap"
+        v-model="contourLayer" @zoom="zoomContour"
+      />
+      <ThematicPanel
+        v-show="queryKind === 'thematic' && (!isMobile || (sheetOpen && mobileTab === 'query'))"
+        :layers="visibleActiveLayers" :entries="legendEntries"
+        v-model="thematicPurpose"
+        @configure="onOpenSymbology" @reset="resetThematic"
+      />
+
       <!-- نقشه + دکمه FAB نتایج -->
       <section class="map-panel">
         <MapboxMap
@@ -83,6 +95,7 @@
              :theme="theme"
              :sym-configs="symConfigs"
              :sym-version="symVersion"
+             :contour-layer="visibleContourLayer"
             @select-well="onSelectFromMap"
             @info-select="onInfoFromMap"
             @update:info-well-key="infoWellId = $event"
@@ -95,7 +108,8 @@
             @save-selection="onSaveSelection"
           />
           <!-- لجند سیمبولوژی -->
-          <MapLegend :entries="legendEntries" />
+          <MapLegend :entries="mapLegendEntries" />
+          <div v-if="queryKind === 'thematic' && thematicPurpose.trim()" class="analysis-map-title" :title="thematicPurpose">{{ thematicPurpose }}</div>
 
         <!-- لودینگ افزودن لایه تا آماده‌شدن نقشه -->
         <div v-if="mapLoading" class="map-loading-overlay">
@@ -167,6 +181,7 @@
         :open="sheetOpen"
         :dragging="dragging"
         :mobile-tab="mobileTab"
+        :query-label="queryKind === 'contour' ? 'هم‌مقدار' : queryKind === 'thematic' ? 'موضوعی' : 'کوئری'"
         @update:mobile-tab="mobileTab = $event"
         @grab-start="onSheetGrabStart"
         @close="closeSheet"
@@ -256,6 +271,8 @@ const MapboxMap = defineAsyncComponent(() => import('../components/MapboxMap.vue
 const StratigraphyChart = defineAsyncComponent(() => import('../components/StratigraphyChart.vue'))
 const SymbologyModal = defineAsyncComponent(() => import('../components/SymbologyModal.vue'))
 const MapLegend = defineAsyncComponent(() => import('../components/MapLegend.vue'))
+const ContourPanel = defineAsyncComponent(() => import('../components/ContourPanel.vue'))
+const ThematicPanel = defineAsyncComponent(() => import('../components/ThematicPanel.vue'))
 
 const { crs, convertFeature } = useCoordinates()
 const { theme, toggle: toggleTheme } = useTheme()
@@ -307,7 +324,7 @@ function layerRows(uuid) {
 }
 
 // ── همگام‌سازی تب با URL (route managing) ──
-const VALID_VIEWS = ['attribute', 'spatial', 'stratigraphy']
+const VALID_VIEWS = ['attribute', 'spatial', 'stratigraphy', 'contour', 'thematic']
 const route = useRoute()
 const router = useRouter()
 function viewFromUrl() {
@@ -874,6 +891,23 @@ const selectionLayerUuids = computed(() => {
 })
 
 // ── سیمبولوژی به سبک ArcGIS (کلیک‌راست روی لایه) ──
+const contourLayer = shallowRef(null)
+const thematicPurpose = ref('')
+const visibleContourLayer = computed(() => {
+  const layer = contourLayer.value
+  return layer && isLayerVisible(layer.layerUuid) && activeLayers.value.some(l => String(l.uuid) === layer.layerUuid) ? layer : null
+})
+watch(() => contourLayer.value ? _layerFeaturesMap.value[contourLayer.value.layerUuid] : null, rows => {
+  const layer = contourLayer.value
+  if (layer && rows !== layer.sourceRows) contourLayer.value = null
+})
+watch(() => activeLayers.value.map(l => String(l.uuid)), uuids => {
+  if (contourLayer.value && !uuids.includes(contourLayer.value.layerUuid)) contourLayer.value = null
+})
+function zoomContour(coordinates) {
+  mapRef.value?.zoomToResults(coordinates.map(coordinate => ({ _geometry: { type: 'Point', coordinates: coordinate } })))
+}
+function resetThematic(uuid) { resetSymConfig(uuid, layerGeomKind(uuid)); symVersion.value++ }
 const {
   configs: symConfigs,
   getConfig: getSymConfig,
@@ -908,6 +942,15 @@ const legendEntries = computed(() =>
     })
     .filter(Boolean)
 )
+const mapLegendEntries = computed(() => {
+  const layer = visibleContourLayer.value
+  if (!layer || !layer.visible) return legendEntries.value
+  const format = v => Number(v.toPrecision(7)).toLocaleString('fa-IR')
+  return [...legendEntries.value, { uuid: 'contour-analysis', name: `${layer.title} — ${layer.field}`, geomKind: 'line', items: [
+    ...(layer.surface ? [{ gradient: layer.colors, label: `${format(layer.min)} تا ${format(layer.max)} ${layer.unit}` }] : []),
+    { color: layer.lineColor, label: `IDW · فاصله ${format(layer.interval)} ${layer.unit}` },
+  ] }]
+})
 function onOpenSymbology(uuid) {
   const layer = activeLayers.value.find(l => String(l.uuid) === String(uuid))
   if (!layer) return
@@ -1297,6 +1340,7 @@ function handleClearLayers() {
 }
 
 /* ---------- نقشه ---------- */
+.analysis-map-title { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 500; max-width: 50%; padding: 8px 12px; background: var(--bg-panel); color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: 8px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .map-panel {
   min-height: 0;
   border-radius: var(--radius-md);
@@ -1406,6 +1450,10 @@ function handleClearLayers() {
     height: 36px;
     max-height: 36px;
   }
+}
+@media (min-width: 761px) and (max-width: 1024px) {
+  .app-main--analysis { grid-template-columns: 280px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .app-main--analysis :deep(.analysis-panel), .app-main--analysis :deep(.thematic-panel) { width: 280px; }
 }
 
 @media (max-width: 760px) {

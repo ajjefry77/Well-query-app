@@ -114,6 +114,8 @@ const collapsed = ref(false)
 const tabs = [
   { value: 'attribute',    label: 'کوئری توصیفی' },
   { value: 'spatial',      label: 'کوئری مکانی' },
+  { value: 'contour',      label: 'نقشه هم‌مقدار' },
+  { value: 'thematic',     label: 'نقشه موضوعی' },
   { value: 'stratigraphy', label: 'چینه‌شناسی' },
 ]
 const crsOptions = [
@@ -154,6 +156,8 @@ const crsOptions = [
   flex: 1 1 auto;
   min-width: 0;
 }
+.app-header__tabs { min-width: 0; overflow-x: auto; flex-shrink: 1; }
+.app-header__tabs :deep(.sc__btn) { flex-shrink: 0; }
 
 .app-header__brand {
   display: flex;

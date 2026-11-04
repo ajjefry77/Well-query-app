@@ -90,8 +90,8 @@ export const RENDERERS = [
   { id: 'unique', name: 'مقادیر یکتا (Unique Values)', desc: 'رنگ/نماد مجزا برای هر مقدار متمایز', needsField: true, fieldType: 'any' },
   { id: 'graduated', name: 'رنگ‌های مدرج (Graduated Colors)', desc: 'طیف رنگی بر اساس بازه‌های عددی', needsField: true, fieldType: 'number' },
   { id: 'unclassed', name: 'رنگ پیوسته (Unclassed Colors)', desc: 'گرادیان پیوسته بدون کلاس‌بندی', needsField: true, fieldType: 'number' },
-  { id: 'graduated-sym', name: 'نمادهای مدرج (Graduated Symbols)', desc: 'اندازه نماد در چند کلاس عددی', needsField: true, fieldType: 'number' },
-  { id: 'proportional', name: 'نماد متناسب (Proportional Symbols)', desc: 'اندازه پیوسته متناسب با مقدار', needsField: true, fieldType: 'number' },
+  { id: 'graduated-sym', name: 'نمادهای مدرج (Graduated Symbols)', desc: 'اندازه نماد در چند کلاس عددی', needsField: true, fieldType: 'number', pointsOnly: true },
+  { id: 'proportional', name: 'نماد متناسب (Proportional Symbols)', desc: 'اندازه پیوسته متناسب با مقدار', needsField: true, fieldType: 'number', pointsOnly: true },
   { id: 'heatmap', name: 'نقشه حرارتی (Heat Map)', desc: 'تراکم نقطه‌ای — فقط لایه نقطه‌ای', needsField: false, pointsOnly: true },
   { id: 'dot', name: 'تراکم نقطه‌ای (Dot Density)', desc: 'نقطه‌گذاری تصادفی داخل پلیگان', needsField: false, polygonsOnly: true },
 ]
@@ -146,6 +146,7 @@ export function hexToRgba(hex, alpha = 1) {
 export function numericValues(rows, field) {
   const out = []
   for (const r of rows ?? []) {
+    if (r?.[field] == null || typeof r[field] === 'boolean' || String(r[field]).trim() === '') continue
     const v = Number(r?.[field])
     if (Number.isFinite(v)) out.push(v)
   }
@@ -172,7 +173,7 @@ function quantileBreaks(sorted, n) {
   b.push(sorted[sorted.length - 1])
   return b
 }
-// جنکس — الگوریتم کانونیک Jenks-Caspall (برای > 20k مقدار نمونه‌برداری می‌شود)
+// Jenks uses at most 1000 evenly spaced sorted values, retaining both extrema.
 function jenksMatrices(data, n) {
   const lower = [], variance = []
   for (let i = 0; i < data.length + 1; i++) {
@@ -207,8 +208,8 @@ function jenksMatrices(data, n) {
   return lower
 }
 function jenksBreaks(sorted, n) {
-  const data = sorted.length > 20000
-    ? sorted.filter((_, i) => i % Math.ceil(sorted.length / 20000) === 0)
+  const data = sorted.length > 1000
+    ? Array.from({ length: 1000 }, (_, i) => sorted[Math.round(i * (sorted.length - 1) / 999)])
     : sorted
   const m = data.length
   if (!m) return []
@@ -349,7 +350,7 @@ export function useSymbology() {
 
 // ---------- ساخت کلاس‌ها / مقادیر یکتا ----------
 export function buildGraduatedClasses(rows, cfg) {
-  const vals = numericValues(rows, cfg.field)
+  const vals = normalizedValues(rows, cfg)
   if (!vals.length || !cfg.field) return []
   const breaks = classifyBreaks(vals, cfg.method, cfg.numClasses, cfg.manualBreaks)
   if (breaks.length < 2) return []
@@ -395,14 +396,20 @@ export function buildUniqueValues(rows, cfg) {
 
 // ---------- رزولوشن استایل یک عارضه ----------
 export function valueForNorm(row, cfg) {
+  const missing = value => value == null || typeof value === 'boolean' || String(value).trim() === ''
+  if (missing(row?.[cfg.field])) return NaN
   const v = Number(row?.[cfg.field])
   if (!Number.isFinite(v)) return NaN
   if (cfg.normField) {
+    if (missing(row?.[cfg.normField])) return NaN
     const d = Number(row?.[cfg.normField])
     if (!Number.isFinite(d) || d === 0) return NaN
     return v / d
   }
   return v
+}
+export function normalizedValues(rows, cfg) {
+  return (rows || []).map(row => valueForNorm(row, cfg)).filter(Number.isFinite).sort((a, b) => a - b)
 }
 export function resolveFeatureStyle(row, cfg, geomKind = 'point') {
   const t = 1 - Math.max(0, Math.min(100, cfg.transparency || 0)) / 100
@@ -451,17 +458,12 @@ export function resolveFeatureStyle(row, cfg, geomKind = 'point') {
     const min = cls[0].min, max = cls[cls.length - 1].max
     if (v <= min) return { ...base, color: cls[0].color }
     if (v >= max) return { ...base, color: cls[cls.length - 1].color }
-    // درون‌یابی پیوسته بین دو رنگ همسایه
-    for (let i = 0; i < cls.length; i++) {
-      const c = cls[i]
-      if (v > c.min && v <= c.max) {
-        const f = (v - c.min) / Math.max(1e-12, c.max - c.min)
-        const a = hexToRgb(cls[Math.max(0, i - (f < 0.5 ? 1 : 0))]?.color ?? c.color)
-        void a
-        return { ...base, color: c.color }
-      }
-    }
-    return { ...base, color: cls[cls.length - 1].color }
+    const colors = [...rampStops(cfg.colorRamp)]
+    if (cfg.reversed) colors.reverse()
+    const position = (v - min) / (max - min) * (colors.length - 1)
+    const index = Math.floor(position), fraction = position - index
+    const a = hexToRgb(colors[index]), b = hexToRgb(colors[Math.min(colors.length - 1, index + 1)])
+    return { ...base, color: rgbToHex(a.r + (b.r - a.r) * fraction, a.g + (b.g - a.g) * fraction, a.b + (b.b - a.b) * fraction) }
   }
   if (r === 'proportional' && cfg.field) {
     const v = valueForNorm(row, cfg)
