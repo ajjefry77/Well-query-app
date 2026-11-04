@@ -23,14 +23,15 @@ function lsSet(key, value) {
 // امضای یک کوئری برای تشخیص تکراری (اجرای دوباره همان کوئری به‌جای رکورد جدید، بالای لیست می‌رود)
 function entrySignature(entry) {
   if (entry.type === 'attribute') {
-    return '__attribute__|' + (entry.scope ?? 'all') + '|' + JSON.stringify(entry.items ?? [])
+    return '__attribute__|' + JSON.stringify([entry.scope ?? 'all', entry.selectionKeys ?? null, entry.items ?? [], entry.spatial ?? null])
   }
-  return '__relation__|' + JSON.stringify(entry.params ?? {})
+  return '__relation__|' + JSON.stringify([entry.params ?? {}, entry.attribute ?? null, entry.radius ?? null])
 }
 
 export function useQueryHistory() {
+  const stored = lsGet(LS_KEY, [])
   const entries = ref(
-    (lsGet(LS_KEY, []) ?? []).filter(e => e && typeof e.type === 'string' && typeof e.id === 'string')
+    (Array.isArray(stored) ? stored : []).filter(e => e && typeof e.type === 'string' && typeof e.id === 'string')
   )
 
   watch(entries, val => {
@@ -43,7 +44,7 @@ export function useQueryHistory() {
       id: crypto.randomUUID(),
       at: Date.now(),
       count: 0,
-      ...entry,
+      ...JSON.parse(JSON.stringify(entry)),
     }
     const sig = entrySignature(record)
     // اجرای دوباره همان کوئری → رکورد قبلی حذف و تا بالای لیست بیاید

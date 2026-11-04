@@ -135,6 +135,7 @@
       {{ relationLoading ? 'در حال اجرا…' : 'اجرای کوئری' }}
     </button>
     <p v-else class="sq__hint sq__hint--tiny">{{ applyHint }}</p>
+    <button v-if="relationLoading" class="sel-clear" @click="$emit('cancel-relation')">لغو محاسبه</button>
     <p v-if="relationError" class="sq__error" role="alert">{{ relationError }}</p>
   </div>
 </template>
@@ -169,6 +170,7 @@ const emit = defineEmits([
   "update:operator",
   "update:radius-km",
   "apply-relation",
+  "cancel-relation",
 ]);
 
 const layerOptions = computed(() =>

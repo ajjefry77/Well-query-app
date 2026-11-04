@@ -1,5 +1,5 @@
 // composables/useExport.js
-import { toCSV, downloadFile } from './useGeoUtils.js'
+import { toCSV, downloadFile, isValidLatLng } from './useGeoUtils.js'
 
 // ─── KML helpers ─────────────────────────────────────────
 
@@ -83,7 +83,7 @@ export async function exportData(format, rows, convertFeature, opts = {}) {
 
   const toFeatures = () =>
     rows
-      .filter(r => r._geometry || (Number.isFinite(+r.lat) && Number.isFinite(+r.lng)))
+      .filter(r => r._geometry || isValidLatLng(r))
       .map(r => {
         const geometry = r._geometry ?? { type: 'Point', coordinates: [+r.lng, +r.lat] }
         const { _geometry, _layerUuid, lat, lng, distanceKm, ...props } = r

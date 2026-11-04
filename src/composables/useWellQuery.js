@@ -1,5 +1,5 @@
-import { ref, computed, watch } from 'vue'
-import { findWithinRadius } from './useGeoUtils.js'
+import { ref, computed, watch, onScopeDispose } from 'vue'
+import { findWithinRadius, isValidLatLng } from './useGeoUtils.js'
 import { findMatchingRowsMulti, findMatchingRowsMultiAsync, lastRelationStats } from './useSpatialRelations.js'
 import {
   fetchVectorLayers,
@@ -36,7 +36,7 @@ function lsSet(key, value) {
 
 function evaluateCondition(row, { field, operator, value }) {
   const rowValue = row[field]
-  if (rowValue === null || rowValue === undefined) return false
+  if (rowValue === null || rowValue === undefined) return null
   const v = typeof value === 'string' ? value.trim() : value
   switch (operator) {
     // مقایسه متنی بدون حساسیت به بزرگی/کوچکی حروف
@@ -46,8 +46,9 @@ function evaluateCondition(row, { field, operator, value }) {
     case '>=':
     case '<':
     case '<=': {
+      if (typeof rowValue === 'string' && rowValue.trim() === '') return null
       const a = Number(rowValue), b = Number(v)
-      if (!Number.isFinite(a) || !Number.isFinite(b)) return false
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return null
       if (operator === '>') return a > b
       if (operator === '>=') return a >= b
       if (operator === '<') return a < b
@@ -70,7 +71,7 @@ function evaluateGroup(row, conditions) {
   return segments.some(seg =>
     seg.every(cond => {
       let r = evaluateCondition(row, cond)
-      return cond.not ? !r : r
+      return cond.not ? r === false : r === true
     })
   )
 }
@@ -104,6 +105,7 @@ export function useWellQuery() {
   const attributeScope = ref('all')
   // Keep the committed input independent of the next mouse/query selection.
   const appliedAttributeKeys = ref(null)
+  const appliedAttributeLayers = ref(null)
   // حالت مبدأ رابطه مکانی: عوارض انتخاب‌شده یا کل لایه مبدأ
   const relationSourceMode = ref('layer')
   // محدود کردن نامزدهای هدف رابطه به عوارض انتخاب‌شده
@@ -166,6 +168,9 @@ export function useWellQuery() {
   // ── بارگذاری فیلدها و عوارض یک لایه (با صفحه‌بندی کامل) ──
   // فیلدها و عوارض مستقل‌اند → موازی گرفته می‌شوند
   const inFlight = new Map()
+  let layerRevision = 0
+  let disposed = false
+  let layersController = null
   async function loadLayerData(layer, opts = {}) {
     const needFields = !layerFieldsMap.value[layer.uuid]
     const needFeatures = !layerFeaturesMap.value[layer.uuid]
@@ -173,13 +178,18 @@ export function useWellQuery() {
     inFlight.get(layer.uuid)?.abort()
     const ctrl = new AbortController()
     inFlight.set(layer.uuid, ctrl)
-    const signal = opts.signal ?? ctrl.signal
+    const signal = ctrl.signal
+    const onAbort = () => ctrl.abort()
+    opts.signal?.addEventListener('abort', onAbort, { once: true })
+    if (opts.signal?.aborted) ctrl.abort()
     try {
       const [fields, raw] = await Promise.all([
         needFields ? fetchLayerFields(layer.uuid, { signal }) : null,
         needFeatures ? fetchAllFeatures(layer.uuid, { signal }) : null,
       ])
-      if (signal.aborted) return
+      if (signal.aborted || disposed || inFlight.get(layer.uuid) !== ctrl) {
+        throw new DOMException('aborted', 'AbortError')
+      }
       if (needFields) {
         layerFieldsMap.value[layer.uuid] = buildQueryableFields(Array.isArray(fields) ? fields : (fields?.fields ?? fields?.results ?? []))
       }
@@ -190,17 +200,27 @@ export function useWellQuery() {
           _layerName: layer.display_name || layer.name,
         }))
       }
+    } catch (error) {
+      ctrl.abort()
+      throw error
     } finally {
+      opts.signal?.removeEventListener('abort', onAbort)
       if (inFlight.get(layer.uuid) === ctrl) inFlight.delete(layer.uuid)
     }
   }
 
   // ── بارگذاری لایه‌ها ──
   async function loadVectorLayers() {
+    if (disposed) return
+    layersController?.abort()
+    const controller = new AbortController()
+    layersController = controller
     loadingLayers.value = true
     apiError.value = null
     try {
-      vectorLayers.value = await fetchVectorLayers()
+      const layers = await fetchVectorLayers({ signal: controller.signal })
+      if (disposed || controller.signal.aborted) return
+      vectorLayers.value = layers
       // بازیابی لایه‌های انتخاب‌شده از نشست قبل
       try {
         const saved = lsGet(LS_KEYS.activeLayers, [])
@@ -213,9 +233,9 @@ export function useWellQuery() {
         }
       } catch {}
     } catch (e) {
-      apiError.value = e.message
+      if (!disposed && !controller.signal.aborted) apiError.value = e.message
     } finally {
-      loadingLayers.value = false
+      if (!disposed && layersController === controller) loadingLayers.value = false
     }
   }
 
@@ -237,6 +257,8 @@ export function useWellQuery() {
       for (let i = 0; i < rows.length; i++) combined[idx++] = rows[i]
     }
     allFeatures.value = combined
+    const available = new Set(combined.map(rowKeyOf))
+    selectedKeys.value = new Set([...selectedKeys.value].filter(key => available.has(key)))
 
     const fieldMap = {}
     for (const layer of activeLayers.value) {
@@ -259,6 +281,8 @@ export function useWellQuery() {
 
   // ── اضافه کردن یک لایه ──
   async function addLayer(layer) {
+    if (disposed) return
+    const revision = layerRevision
     if (activeLayers.value.find(l => l.uuid === layer.uuid)) return
     apiError.value = null
     const needData = !layerFieldsMap.value[layer.uuid] || !layerFeaturesMap.value[layer.uuid]
@@ -268,13 +292,15 @@ export function useWellQuery() {
       try {
         await loadLayerData(layer)
       } catch (e) {
-        apiError.value = e.message
+        if (e?.name !== 'AbortError' && revision === layerRevision && !disposed) apiError.value = e.message
         return
       } finally {
-        loadingFields.value   = false
-        loadingFeatures.value = false
+        loadingFields.value   = inFlight.size > 0
+        loadingFeatures.value = inFlight.size > 0
       }
     }
+    if (disposed || revision !== layerRevision) return
+    if (activeLayers.value.some(l => l.uuid === layer.uuid)) return
     activeLayers.value = [...activeLayers.value, layer]
     rebuildAggregated()
     ensureLayerConditions(layer.uuid)
@@ -282,6 +308,7 @@ export function useWellQuery() {
 
   // ── حذف یک لایه ──
   function removeLayer(uuid) {
+    cancelSpatialQuery()
     inFlight.get(uuid)?.abort()
     inFlight.delete(uuid)
     activeLayers.value = activeLayers.value.filter(l => String(l.uuid) !== String(uuid))
@@ -305,15 +332,26 @@ export function useWellQuery() {
     rebuildAggregated()
     delete layerConditions.value[uuid]
     delete appliedConditions.value[uuid]
+    if (appliedAttributeLayers.value?.has(String(uuid))) {
+      const remaining = new Set(appliedAttributeLayers.value)
+      remaining.delete(String(uuid))
+      appliedAttributeLayers.value = remaining.size ? remaining : null
+      if (!remaining.size) appliedAttributeKeys.value = null
+    }
   }
 
   // ── تنظیم دسته‌ای لایه‌ها ──
   async function setActiveLayers(layers) {
+    if (disposed) return
+    cancelSpatialQuery()
+    const revision = ++layerRevision
+    for (const [, c] of inFlight) c.abort()
+    inFlight.clear()
     if (!layers.length) {
-      for (const [, c] of inFlight) c.abort()
-      inFlight.clear()
       activeLayers.value = []
+      loadingFields.value = loadingFeatures.value = false
       rebuildAggregated()
+      clearRelation()
       return
     }
     apiError.value = null
@@ -325,9 +363,10 @@ export function useWellQuery() {
       loadingFields.value   = true
       loadingFeatures.value = true
       try {
-        const results = await Promise.allSettled(needsLoad.map(loadLayerData))
+        const results = await Promise.allSettled(needsLoad.map(layer => loadLayerData(layer)))
+        if (disposed || revision !== layerRevision) return
         results.forEach((r, i) => {
-          if (r.status === 'rejected' && r.reason?.name !== 'AbortError') {
+          if (r.status === 'rejected') {
             failed.add(needsLoad[i].uuid)
           }
         })
@@ -335,11 +374,17 @@ export function useWellQuery() {
           apiError.value = `بارگذاری ${failed.size} لایه ناموفق بود و نادیده گرفته شد.`
         }
       } finally {
-        loadingFields.value   = false
-        loadingFeatures.value = false
+        if (revision === layerRevision && !disposed) {
+          loadingFields.value   = inFlight.size > 0
+          loadingFeatures.value = inFlight.size > 0
+        }
       }
     }
+    if (disposed || revision !== layerRevision) return
     const okLayers = layers.filter(l => !failed.has(l.uuid))
+    for (const old of activeLayers.value) {
+      if (!okLayers.some(l => String(l.uuid) === String(old.uuid))) removeLayer(old.uuid)
+    }
     activeLayers.value = okLayers
     const stillActive = new Set(okLayers.map(l => String(l.uuid)))
     const pruned = new Set([...hiddenLayers.value].filter(u => stillActive.has(u)))
@@ -408,9 +453,13 @@ export function useWellQuery() {
   }
 
   // تأیید پیش‌نویس همه لایه‌ها (دکمه «اجرای کوئری»)
-  function applyAttributeConditions() {
-    appliedAttributeKeys.value = attributeScope.value === 'selected'
-      ? new Set(selectedKeys.value) : null
+  function applyAttributeConditions(snapshot = null) {
+    const visible = activeLayers.value.filter(l => isLayerVisible(l.uuid))
+    const constrained = visible.filter(l => (layerConditions.value[l.uuid] ?? [])
+      .some(c => c.value !== '' && c.value !== null && c.value !== undefined))
+    appliedAttributeLayers.value = new Set(snapshot?.layerUuids ?? (constrained.length ? constrained : visible).map(l => String(l.uuid)))
+    appliedAttributeKeys.value = (snapshot?.scope ?? attributeScope.value) === 'selected'
+      ? new Set(snapshot?.selectionKeys ?? selectedKeys.value) : null
     for (const layer of activeLayers.value) {
       ensureLayerConditions(layer.uuid)
       appliedConditions.value[layer.uuid] = JSON.parse(JSON.stringify(layerConditions.value[layer.uuid] ?? []))
@@ -426,6 +475,7 @@ export function useWellQuery() {
   // ── پاک کردن تمام شرط‌های توصیفی فعال (پیش‌نویس و تأییدشده) ──
   function clearAllConditions() {
     appliedAttributeKeys.value = null
+    appliedAttributeLayers.value = null
     for (const layer of activeLayers.value) {
       const uuid = layer.uuid
       const fields = layerFieldsMap.value[uuid] ?? []
@@ -446,9 +496,11 @@ export function useWellQuery() {
   const _countCache = new Map()
   function getLayerResultCount(uuid) {
     if (!isLayerVisible(uuid)) return 0
-    let rows = layerFeaturesMap.value[uuid] ?? []
+    const sourceRows = layerFeaturesMap.value[uuid] ?? []
+    let rows = sourceRows
+    const selection = attributeScope.value === 'selected' ? selectedKeys.value : null
     // محدوده «فقط انتخاب‌شده‌ها»: شمارش زنده هم فقط روی انتخاب‌شده‌ها
-    if (attributeScope.value === 'selected' && selectedKeys.value.size) {
+    if (selection !== null) {
       const set = selectedKeys.value
       rows = rows.filter(r => set.has(rowKeyOf(r)))
     }
@@ -457,9 +509,9 @@ export function useWellQuery() {
     if (!active.length) return rows.length
     const sig = JSON.stringify([attributeScope.value, selectedKeys.value.size, active.map(c => [c.field, c.operator, c.value, c.logic, !!c.not])])
     const cached = _countCache.get(uuid)
-    if (cached && cached.sig === sig && cached.rowsLen === rows.length) return cached.count
+    if (cached && cached.sig === sig && cached.sourceRows === sourceRows && cached.selection === selection) return cached.count
     const count = rows.filter(row => evaluateGroup(row, active)).length
-    _countCache.set(uuid, { sig, rowsLen: rows.length, count })
+    _countCache.set(uuid, { sig, sourceRows, selection, count })
     // جلوگیری از رشد بی‌نهایت کش
     if (_countCache.size > 64) _countCache.delete(_countCache.keys().next().value)
     return count
@@ -474,17 +526,19 @@ export function useWellQuery() {
     const results = []
     for (const layer of activeLayers.value) {
       if (!isLayerVisible(layer.uuid)) continue
+      if (appliedAttributeLayers.value && !appliedAttributeLayers.value.has(String(layer.uuid))) continue
       let rows  = layerFeaturesMap.value[layer.uuid] ?? []
       if (onlySel) rows = rows.filter(r => selSet.has(rowKeyOf(r)))
       const conds = appliedConditions.value[layer.uuid] ?? []
       const active = conds.filter(c => c.value !== '' && c.value !== null && c.value !== undefined)
-      results.push(...(active.length ? rows.filter(row => evaluateGroup(row, active)) : rows))
+      for (const row of rows) if (!active.length || evaluateGroup(row, active)) results.push(row)
     }
     return results
   })
 
   const hasAttributeFilter = computed(() =>
-    appliedAttributeKeys.value !== null || activeLayers.value.some(layer => {
+    appliedAttributeLayers.value !== null || appliedAttributeKeys.value !== null || activeLayers.value.some(layer => {
+      if (!isLayerVisible(layer.uuid)) return false
       const conds = appliedConditions.value[layer.uuid] ?? []
       return conds.some(c => c.value !== '' && c.value !== null && c.value !== undefined)
     })
@@ -518,29 +572,85 @@ export function useWellQuery() {
   // ── بازمحاسبه بدون‌اثر (برای تاریخچه کوئری‌ها) ──
   // نتیجه یک کوئری ثبت‌شده در تاریخچه، بدون تغییر state فعلی دوباره محاسبه می‌شود
   // (مبنای دکمه «ذخیره/خروجی Shapefile» ذیل جدول TOC)
-  function computeAttributeRows(uuid, conditions, scope = 'all') {
+  function computeAttributeRows(uuid, conditions, scope = 'all', selectionKeys = selectedKeys.value) {
     let rows = (layerFeaturesMap.value[uuid] ?? []).slice()
-    if (scope === 'selected' && selectedKeys.value.size) {
-      const set = selectedKeys.value
+    if (scope === 'selected') {
+      const set = new Set(selectionKeys ?? [])
       rows = rows.filter(r => set.has(rowKeyOf(r)))
     }
     const active = (conditions ?? []).filter(c => c.value !== '' && c.value !== null && c.value !== undefined)
     return active.length ? rows.filter(row => evaluateGroup(row, active)) : rows
   }
 
+  const attributeQueryLayerUuids = computed(() => activeLayers.value
+    .filter(l => isLayerVisible(l.uuid) && (!appliedAttributeLayers.value || appliedAttributeLayers.value.has(String(l.uuid))))
+    .map(l => String(l.uuid)))
+
+  function captureAttributeQuery() {
+    return {
+      scope: appliedAttributeKeys.value === null ? 'all' : 'selected',
+      selectionKeys: appliedAttributeKeys.value === null ? null : [...appliedAttributeKeys.value],
+      items: attributeQueryLayerUuids.value.map(uuid => ({ layerUuid: uuid,
+        layerName: activeLayers.value.find(l => String(l.uuid) === uuid)?.display_name
+          || activeLayers.value.find(l => String(l.uuid) === uuid)?.name,
+        conditions: JSON.parse(JSON.stringify(appliedConditions.value[uuid] ?? [])),
+      })),
+    }
+  }
+
+  async function restoreAttributeQuery(snapshot) {
+    if (snapshot.scope === 'selected' && !Array.isArray(snapshot.selectionKeys)) {
+      throw new Error('انتخاب اولیه این تاریخچه قدیمی ذخیره نشده است؛ کوئری را دوباره بسازید.')
+    }
+    for (const item of snapshot.items ?? []) {
+      if (!await loadSavedQuery(item)) throw new Error('لایه مورد نیاز تاریخچه در دسترس نیست.')
+      if (!isLayerVisible(item.layerUuid)) toggleLayerVisibility(item.layerUuid)
+    }
+    attributeScope.value = snapshot.scope === 'selected' ? 'selected' : 'all'
+    applyAttributeConditions({ scope: attributeScope.value, selectionKeys: snapshot.selectionKeys,
+      layerUuids: (snapshot.items ?? []).map(item => String(item.layerUuid)) })
+  }
+
   function computeRelationRows(params) {
     if (!params?.targetLayerUuid) return []
-    const sourceRows = params.sourceKeys
-      ? findRelationRows(params.sourceLayerUuid).filter(row => params.sourceKeys.includes(rowKeyOf(row)))
-      : getRelationSourceRows(params.sourceLayerUuid, params.sourceMode || 'layer')
+    const sourceRows = params.sourceMode === 'selected'
+      ? (params.sourceLayerUuid ? findRelationRows(params.sourceLayerUuid) : allFeatures.value).filter(row => (params.sourceKeys ?? []).includes(rowKeyOf(row)))
+      : findRelationRows(params.sourceLayerUuid)
     if (!sourceRows.length) return []
     let targets = allFeatures.value.filter(r => String(r._layerUuid) === String(params.targetLayerUuid))
     if (params.targetOnlySelected) {
-      const set = new Set(params.targetKeys ?? selectedKeys.value)
+      const set = new Set(params.targetKeys ?? [])
       targets = targets.filter(r => set.has(rowKeyOf(r)))
     }
     if (!targets.length) return []
     return findMatchingRowsMulti(sourceRows, targets, params.operator, { radiusKm: params.radiusKm })
+  }
+
+  function computeHistoryRows(entry) {
+    const attribute = entry.type === 'attribute' ? entry : entry.attribute
+    const relation = entry.type === 'relation' ? entry.params : entry.spatial?.relation
+    const radius = entry.type === 'relation' ? entry.radius : entry.spatial?.radius
+    if (attribute?.scope === 'selected' && !Array.isArray(attribute.selectionKeys)) {
+      throw new Error('انتخاب اولیه این تاریخچه قدیمی موجود نیست.')
+    }
+    if ((relation?.sourceMode === 'selected' && !Array.isArray(relation.sourceKeys)) ||
+        (relation?.targetOnlySelected && !Array.isArray(relation.targetKeys))) {
+      throw new Error('انتخاب اولیه رابطه در این تاریخچه قدیمی موجود نیست.')
+    }
+    let rows = null
+    if (attribute) {
+      rows = []
+      for (const item of attribute.items ?? []) {
+        for (const row of computeAttributeRows(item.layerUuid, item.conditions, attribute.scope, attribute.selectionKeys)) rows.push(row)
+      }
+    }
+    if (relation) {
+      const related = computeRelationRows(relation)
+      const keys = new Set(related.map(rowKeyOf))
+      rows = rows ? rows.filter(row => keys.has(rowKeyOf(row))) : related
+    }
+    if (radius) rows = filterRadiusRows(rows ?? allFeatures.value, radius.center, radius.radiusKm)
+    return rows ?? []
   }
 
   // ── کوئری مکانی (فقط کیلومتر، بدون سقف) ──
@@ -552,31 +662,50 @@ export function useWellQuery() {
   const committedRadiusCenter = ref(null)
   const committedRadiusKm = ref(DEFAULT_RADIUS_KM)
   const spatialLoading = ref(false)
+  let spatialRevision = 0
+  function cancelSpatialQuery() {
+    spatialRevision++
+    relationReqId++
+    relationAbortCtrl?.abort()
+    clearTimeout(_relRetimer)
+    spatialLoading.value = false
+  }
+  function clearSpatialFilter() {
+    cancelSpatialQuery()
+    radiusCenter.value = committedRadiusCenter.value = null
+    radiusKm.value = committedRadiusKm.value = DEFAULT_RADIUS_KM
+  }
   // پاک‌سازی مقادیر قدیمی ذخیره‌شده (نسخه‌های قبلی) تا حتماً دیفالت اعمال شود
   try { LEGACY_RADIUS_KEYS.forEach(k => localStorage.removeItem(k)) } catch {}
 
-  const radiusResults = computed(() => {
-    if (!committedRadiusCenter.value) return []
-    const center = committedRadiusCenter.value
-    const rKm = Number(committedRadiusKm.value)
+  function filterRadiusRows(rows, center, km) {
+    if (!center) return []
+    const rKm = Number(km)
     if (!Number.isFinite(rKm) || rKm <= 0) return []
     const centerKey = center._layerUuid ? `${center._layerUuid}::${center.id}` : null
-    const candidates = allFeatures.value.filter(f => {
-      if (!Number.isFinite(+f.lat) || !Number.isFinite(+f.lng)) return false
+    const candidates = rows.filter(f => {
+      if (!isValidLatLng(f)) return false
       if (centerKey) return `${f._layerUuid}::${f.id}` !== centerKey
       return center.id === undefined || String(f.id) !== String(center.id)
     })
-    const clampedKm = Math.min(rKm, 20000)
-    return findWithinRadius(candidates, center, clampedKm)
-  })
+    return findWithinRadius(candidates, center, rKm)
+  }
+  const radiusResults = computed(() => filterRadiusRows(allFeatures.value, committedRadiusCenter.value, committedRadiusKm.value))
 
   // ── اعمال تغییرات مکانی (با لودینگ) ──
   async function commitSpatialFilter() {
+    const center = radiusCenter.value ? { ...radiusCenter.value } : null
+    const km = Number(radiusKm.value)
+    if (disposed || !isValidLatLng(center) || !Number.isFinite(km) || km <= 0) return false
+    cancelSpatialQuery()
+    const revision = spatialRevision
     spatialLoading.value = true
     await new Promise(r => setTimeout(r, 250))
-    committedRadiusCenter.value = radiusCenter.value ? { ...radiusCenter.value } : null
-    committedRadiusKm.value = radiusKm.value
+    if (disposed || revision !== spatialRevision) return false
+    committedRadiusCenter.value = center
+    committedRadiusKm.value = km
     spatialLoading.value = false
+    return true
   }
 
   // ── رابطه مکانی (مبدأ = انتخاب‌شده‌ها یا کل لایه + لایه هدف + عملگر) ──
@@ -614,10 +743,9 @@ export function useWellQuery() {
   let relationReqId = 0
   let relationAbortCtrl = null
   // زیر این سقف جفت، مسیر همگام سریع کافی است؛ بالاتر chunked آسنکرون
-  const SYNC_PAIR_LIMIT = 100000
+  const SYNC_PAIR_LIMIT = 2000
 
-  async function computeRelationResults() {
-    const c = relationCommitted.value
+  async function computeRelationResults(c = relationCommitted.value) {
     const myId = ++relationReqId
     relationAbortCtrl?.abort()
     const ctrl = new AbortController()
@@ -628,9 +756,9 @@ export function useWellQuery() {
       relationProgress.value = { done: 0, total: 0 }
       return []
     }
-    const sourceRows = c.sourceKeys
-      ? findRelationRows(c.sourceLayerUuid).filter(row => c.sourceKeys.includes(rowKeyOf(row)))
-      : getRelationSourceRows(c.sourceLayerUuid, c.sourceMode || 'layer')
+    const sourceRows = c.sourceMode === 'selected'
+      ? (c.sourceLayerUuid ? findRelationRows(c.sourceLayerUuid) : allFeatures.value).filter(row => (c.sourceKeys ?? []).includes(rowKeyOf(row)))
+      : findRelationRows(c.sourceLayerUuid)
     if (!sourceRows.length) {
       if (myId === relationReqId) {
         relationResults.value = []
@@ -643,7 +771,7 @@ export function useWellQuery() {
     )
     // محدود کردن نامزدهای هدف به عوارض انتخاب‌شده (کوئری از روی انتخاب‌شده‌ها)
     if (c.targetOnlySelected) {
-      const set = new Set(c.targetKeys ?? selectedKeys.value)
+      const set = new Set(c.targetKeys ?? [])
       targets = targets.filter(r => set.has(rowKeyOf(r)))
     }
     if (!targets.length) {
@@ -660,7 +788,7 @@ export function useWellQuery() {
       if (pairs <= SYNC_PAIR_LIMIT) {
         // فرصت یک فریم تا اسپینر لودینگ واقعاً رندر شود، بعد محاسبه سریع
         await new Promise(r => setTimeout(r, 30))
-        if (ctrl.signal.aborted || myId !== relationReqId) return relationResults.value
+        if (ctrl.signal.aborted || myId !== relationReqId || disposed) return null
         out = findMatchingRowsMulti(sourceRows, targets, c.operator, relOpts)
       } else {
         relationProgress.value = { done: 0, total: targets.length }
@@ -673,7 +801,7 @@ export function useWellQuery() {
           },
         })
       }
-      if (myId === relationReqId && !ctrl.signal.aborted) {
+      if (myId === relationReqId && !ctrl.signal.aborted && !disposed) {
         relationResults.value = out
         relationProgress.value = { done: targets.length, total: targets.length }
         // اگر زوج‌های زیادی به‌خاطر هندسه نامعتبر رد شدند و نتیجه‌ای نیست، هشدار بده
@@ -684,14 +812,14 @@ export function useWellQuery() {
           }
         } catch {}
       }
-      return myId === relationReqId ? out : relationResults.value
+      return myId === relationReqId && !ctrl.signal.aborted && !disposed ? out : null
     } catch (e) {
-      if (e?.name === 'AbortError') return relationResults.value
+      if (e?.name === 'AbortError') return null
       if (myId === relationReqId) {
         relationError.value = e?.message ?? 'خطا در محاسبه رابطه مکانی'
         relationResults.value = []
       }
-      return []
+      return null
     }
   }
 
@@ -699,7 +827,9 @@ export function useWellQuery() {
   // نتایج را در پس‌زمینه بازمحاسبه کن تا شمارش‌ها درست بمانند
   let _relRetimer = null
   function maybeRecomputeRelation() {
+    cancelSpatialQuery()
     if (!relationCommitted.value) return
+    relationResults.value = []
     clearTimeout(_relRetimer)
     _relRetimer = setTimeout(() => { computeRelationResults() }, 60)
   }
@@ -709,52 +839,57 @@ export function useWellQuery() {
 
   // اعمال رابطه مکانی (با لودینگ؛ محاسبات سنگین تکه‌تکه بعد از رندر لودینگ انجام می‌شود)
   // مبدأ = عوارض انتخاب‌شده (حالت selected) یا کل لایه مبدأ (حالت layer)
-  async function commitRelationFilter() {
-    if (!relationTargetLayer.value) return false
-    if (!Array.isArray(relationOperator.value) || !relationOperator.value.length) return false
+  async function commitRelationFilter(snapshot = null) {
+    if (disposed) return false
+    if (!snapshot && !relationTargetLayer.value) return false
+    if (!snapshot && (!Array.isArray(relationOperator.value) || !relationOperator.value.length)) return false
     const mode = relationSourceMode.value || 'selected'
-    if (mode === 'selected') {
+    if (!snapshot && mode === 'selected') {
       if (!selectedKeys.value.size) return false
       // حداقل یک عارضه انتخاب‌شده باید در لایه مبدأ باشد
       const hasInSource = relationSourceLayer.value
         ? getRelationSourceRows(relationSourceLayer.value, 'selected').length > 0
         : selectedRows.value.length > 0
       if (!hasInSource) return false
-    } else if (!relationSourceLayer.value) {
+    } else if (!snapshot && !relationSourceLayer.value) {
       return false
     }
-    spatialLoading.value = true
-    relationProgress.value = { done: 0, total: 0 }
-    // اجازه بده اسپینر یک فریم رندر شود، بعد محاسبه سنگین شروع شود
-    await new Promise(r => setTimeout(r, 60))
-    // در حالت selected اگر لایه مبدأ مشخص نشده، از لایه اولین انتخاب‌شده استفاده می‌شود
-    let srcUuid = relationSourceLayer.value
-    if (mode === 'selected' && !srcUuid) {
-      srcUuid = selectedRows.value[0]?._layerUuid ?? null
-    }
-    relationCommitted.value = {
+    // در حالت انتخاب‌شده، نبود محدودیت لایه یعنی استفاده از همه انتخاب‌ها.
+    const srcUuid = relationSourceLayer.value
+    const sources = srcUuid ? getRelationSourceRows(srcUuid, mode) : selectedRows.value
+    const candidate = snapshot ? JSON.parse(JSON.stringify(snapshot)) : {
       sourceLayerUuid: srcUuid,
+      sourceLayerUuids: [...new Set(sources.map(row => row._layerUuid))],
       targetLayerUuid: relationTargetLayer.value,
       operator: [...relationOperator.value],
-      radiusKm: Number(relationRadiusKm.value) || 3,
+      radiusKm: Number(relationRadiusKm.value),
       sourceMode: mode,
-      sourceKeys: mode === 'selected' ? getRelationSourceRows(srcUuid, mode).map(rowKeyOf) : null,
+      sourceKeys: mode === 'selected' ? sources.map(rowKeyOf) : null,
       targetKeys: spatialTargetOnlySelected.value ? [...selectedKeys.value] : null,
       targetOnlySelected: !!spatialTargetOnlySelected.value,
     }
+    if ((!candidate.sourceLayerUuid && candidate.sourceMode !== 'selected') || !candidate.targetLayerUuid || !candidate.operator?.length) return false
+    if (candidate.operator.includes('within-distance') && (!Number.isFinite(candidate.radiusKm) || candidate.radiusKm <= 0)) return false
+    cancelSpatialQuery()
+    const revision = spatialRevision
+    spatialLoading.value = true
+    relationProgress.value = { done: 0, total: 0 }
+    // Snapshot the submitted form before yielding to render the spinner.
+    await new Promise(r => setTimeout(r, 60))
+    if (disposed || revision !== spatialRevision) return false
     attributeScope.value = 'all'
-    relationResults.value = []
     try {
-      await computeRelationResults()
+      const out = await computeRelationResults(candidate)
+      if (out === null || disposed || revision !== spatialRevision) return false
+      relationCommitted.value = candidate
+      return true
     } finally {
-      spatialLoading.value = false
+      if (revision === spatialRevision && !disposed) spatialLoading.value = false
     }
-    return true
   }
 
   function clearRelation() {
-    relationReqId++
-    relationAbortCtrl?.abort()
+    cancelSpatialQuery()
     relationSourceLayer.value = null
     relationTargetLayer.value = null
     relationOperator.value    = []
@@ -806,9 +941,11 @@ export function useWellQuery() {
       layer = vectorLayers.value.find(l => l.uuid === uuid)
       if (!layer) return null
       await addLayer(layer)
+      if (!activeLayers.value.some(l => l.uuid === uuid)) return null
     }
 
     appliedAttributeKeys.value = null
+    appliedAttributeLayers.value = new Set([...(appliedAttributeLayers.value ?? []), String(uuid)])
     layerConditions.value[uuid] = JSON.parse(JSON.stringify(safeConds))
     appliedConditions.value[uuid] = JSON.parse(JSON.stringify(safeConds))
     return uuid
@@ -825,11 +962,14 @@ export function useWellQuery() {
   }
 
   function clearLayers() {
+    cancelSpatialQuery()
+    layerRevision++
     // پاک کردن localStorage (کوئری‌های ذخیره‌شده + لایه‌های انتخاب‌شده)
     localStorage.removeItem(LS_KEYS.activeLayers)
     try { LEGACY_RADIUS_KEYS.forEach(k => localStorage.removeItem(k)) } catch {}
     for (const [, c] of inFlight) c.abort()
     inFlight.clear()
+    loadingFields.value = loadingFeatures.value = false
     // ریست state بدون reload
     activeLayers.value    = []
     hiddenLayers.value    = new Set()
@@ -845,11 +985,24 @@ export function useWellQuery() {
     clearSelection()
     attributeScope.value = 'all'
     appliedAttributeKeys.value = null
+    appliedAttributeLayers.value = null
     relationSourceMode.value = 'selected'
     spatialTargetOnlySelected.value = false
     _countCache.clear()
     rebuildAggregated()
   }
+
+  onScopeDispose(() => {
+    cancelSpatialQuery()
+    disposed = true
+    layerRevision++
+    relationReqId++
+    relationAbortCtrl?.abort()
+    clearTimeout(_relRetimer)
+    layersController?.abort()
+    for (const [, controller] of inFlight) controller.abort()
+    inFlight.clear()
+  })
 
   return {
     vectorLayers, activeLayers, selectedLayer,
@@ -863,10 +1016,11 @@ export function useWellQuery() {
     combinedResults, hasAnyFilter,
     getLayerConditions, getAppliedConditions, addLayerCondition, removeLayerCondition,
     applyAttributeConditions, removeAppliedCondition, clearAllConditions, getLayerResultCount,
-    computeAttributeRows, computeRelationRows,
+    computeAttributeRows, computeRelationRows, computeHistoryRows, captureAttributeQuery, restoreAttributeQuery, attributeQueryLayerUuids,
     radiusCenter, radiusKm,
     committedRadiusCenter, committedRadiusKm,
-    spatialLoading, commitSpatialFilter,
+    spatialLoading, commitSpatialFilter, clearSpatialFilter, cancelSpatialQuery,
+    hasAttributeFilter, hasSpatialFilter,
     relationSourceLayer, relationTargetLayer, relationOperator, relationRadiusKm,
     relationSourceMode, spatialTargetOnlySelected,
     selectedKeys, selectedIds, selectedRows, selectionCount,

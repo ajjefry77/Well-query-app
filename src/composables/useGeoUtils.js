@@ -3,6 +3,13 @@
 
 const EARTH_RADIUS_KM = 6371
 
+export function isValidLatLng(point) {
+  const valid = (value, limit) =>
+    (typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')) &&
+    Number.isFinite(Number(value)) && Math.abs(Number(value)) <= limit
+  return !!point && valid(point.lat, 90) && valid(point.lng, 180)
+}
+
 function toRad(deg) {
   return (deg * Math.PI) / 180
 }
@@ -23,7 +30,8 @@ export function haversineDistanceKm(pointA, pointB) {
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(rLat1) * Math.cos(rLat2) * Math.sin(dLng / 2) ** 2
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  const bounded = Math.max(0, Math.min(1, a))
+  const c = 2 * Math.atan2(Math.sqrt(bounded), Math.sqrt(1 - bounded))
 
   return EARTH_RADIUS_KM * c
 }
@@ -37,19 +45,22 @@ export function findWithinRadius(points, center, radiusKm) {
   const r = Number(radiusKm)
   if (!Number.isFinite(r) || r <= 0) return []
   const cLat = Number(center?.lat), cLng = Number(center?.lng)
-  if (!Number.isFinite(cLat) || !Number.isFinite(cLng)) return []
+  if (!isValidLatLng(center)) return []
   const normCenter = { lat: cLat, lng: cLng }
   // پیش‌فیلتر جعبه‌ای (bbox) ارزان قبل از هاورساین گران؛ فقط تطابق‌ها کلون می‌شوند
   // (قبلاً همه کاندیداها با spread کلون می‌شدند که روی لایه بزرگ فریز می‌داد)
-  const dLat = r / 111.32
-  const cosLat = Math.cos((cLat * Math.PI) / 180)
-  const dLng = Math.abs(cosLat) > 1e-6 ? r / (111.32 * Math.abs(cosLat)) : 180
+  const angularRadius = Math.min(Math.PI, r / EARTH_RADIUS_KM)
+  const dLat = angularRadius * 180 / Math.PI
+  const reachesPole = Math.abs(cLat) + dLat >= 90
+  const dLng = reachesPole ? 180 : Math.asin(Math.min(1,
+    Math.sin(angularRadius) / Math.cos(toRad(cLat)))) * 180 / Math.PI
   const out = []
   for (let i = 0; i < points.length; i++) {
     const p = points[i]
     const plat = +p.lat, plng = +p.lng
-    if (!Number.isFinite(plat) || !Number.isFinite(plng)) continue
-    if (Math.abs(plat - cLat) > dLat || Math.abs(plng - cLng) > dLng) continue
+    if (!isValidLatLng(p)) continue
+    const lngDelta = Math.abs(((plng - cLng + 540) % 360) - 180)
+    if (Math.abs(plat - cLat) > dLat + 1e-10 || lngDelta > dLng + 1e-10) continue
     const d = haversineDistanceKm(normCenter, p)
     if (d <= r) out.push({ ...p, distanceKm: d })
   }
@@ -66,7 +77,7 @@ export function toGeoJSON(wells) {
   return {
     type: 'FeatureCollection',
     features: wells
-      .filter((w) => w._geometry || (Number.isFinite(+w.lat) && Number.isFinite(+w.lng)))
+      .filter((w) => w._geometry || isValidLatLng(w))
       .map((w) => {
         const { _geometry, lat, lng, ...props } = w;
         return {

@@ -119,6 +119,8 @@
       </div>
     </Transition>
 
+    <div v-if="toolError" class="active-tool-chip" role="alert">{{ toolError }}</div>
+
     <div class="status-bar">
       <div class="status-group">
         <div class="status-chip">
@@ -148,6 +150,7 @@ import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import pointToLineDistance from "@turf/point-to-line-distance";
 import turfCircle from "@turf/circle";
 import turfBuffer from "@turf/buffer";
+import { createMapLifecycle } from "../composables/mapLifecycle.js";
 
 // ─── ابزارهای انتخاب عارضه (نقطه‌ای: کلیک اول + حرکت موس + کلیک دوم، بدون نیاز به درگ) ───
 const SELECT_TOOLS = [
@@ -370,6 +373,7 @@ function refreshSymLayers() {
 // mapbox-gl فقط وقتی این کامپوننت (async) باز شود دانلود می‌شود، نه در لود اول صفحه.
 let mapboxgl = null;
 let MapboxDraw = null;
+let drawLoadPromise = null;
 let utmMod = null;
 function ensureMapCss(href) {
   try {
@@ -447,6 +451,11 @@ const emit = defineEmits(["select-well", "map-empty-click", "update:selection-to
 const mapEl = ref(null);
 const activeMode = ref(null);
 const drawSubTool = ref(null);
+const toolError = ref(null);
+const mapLifecycle = createMapLifecycle();
+let drawRevision = 0;
+let drawReadyHandler = null;
+let styleLoadHandler = null;
 
 const selectedColor = ref("#3498db");
 
@@ -454,6 +463,7 @@ let map = null;
 let draw = null;
 let markers = [];
 let labelMarkers = [];
+let liveLabelMarker = null;
 let wellsGeoJSON = null;
 
 // ─── حالت انتخاب هوشمند نقطه مرکزی ───
@@ -681,7 +691,12 @@ function setSelectionToolActive(tool) {
   if (selDrag && (!tool || selDrag.type !== tool)) cancelSelDrag();
   if (!tool || (selAnchor && selAnchor.type !== tool)) clearSelAnchor();
   // تعارض با ترسیم/اندازه‌گیری و پیکر نقطه: فقط یکی فعال باشد
-  if (tool && draw && map?.hasControl?.(draw)) removeDraw();
+  if (tool) {
+    removeDraw();
+    clearLabelMarkers();
+    clearLiveLabel();
+    toolError.value = null;
+  }
   if (tool) {
     activeMode.value = null;
     drawSubTool.value = null;
@@ -927,12 +942,13 @@ let firstRender = true;
 let lastWellsKey = '';
 
 function scheduleRender(force = false) {
+  if (!mapLifecycle.active || !map) return;
   const key = props.wellsKey;
   if (!force && key === lastWellsKey && !firstRender) return;
   lastWellsKey = key;
   pendingWells = true;
   if (!renderRaf) {
-    renderRaf = requestAnimationFrame(() => {
+    renderRaf = mapLifecycle.frame(() => {
       renderRaf = null;
       if (pendingWells) {
         pendingWells = false;
@@ -945,9 +961,10 @@ function scheduleRender(force = false) {
 }
 
 function scheduleHighlight() {
+  if (!mapLifecycle.active || !map) return;
   pendingHighlight = true;
   if (!highlightRaf) {
-    highlightRaf = requestAnimationFrame(() => {
+    highlightRaf = mapLifecycle.frame(() => {
       highlightRaf = null;
       if (pendingHighlight) {
         pendingHighlight = false;
@@ -1045,7 +1062,7 @@ function initDrawnSource() {
 }
 
 function refreshDrawnSource() {
-  const src = map.getSource(DRAWN_SRC);
+  const src = map?.getSource(DRAWN_SRC);
   if (!src) return;
   src.setData({ type: "FeatureCollection", features: drawnFeatures });
 }
@@ -1151,6 +1168,11 @@ function clearLabelMarkers() {
   labelMarkers = [];
 }
 
+function clearLiveLabel() {
+  liveLabelMarker?.remove();
+  liveLabelMarker = null;
+}
+
 function makeLabelEl(text) {
   const el = document.createElement("div");
   el.className = "measure-label";
@@ -1206,7 +1228,9 @@ function updateLabels() {
 }
 
 function updateLiveLabel() {
-  if (activeMode.value !== "measure") return;
+  clearLiveLabel();
+  if (!mapLifecycle.active || !map || !draw || activeMode.value !== "measure") return;
+  if (!map.getSource("mapbox-gl-draw-cold") || !map.getSource("mapbox-gl-draw-hot")) return;
   const liveFeatures = map
     .querySourceFeatures("mapbox-gl-draw-cold")
     .concat(map.querySourceFeatures("mapbox-gl-draw-hot"));
@@ -1216,8 +1240,6 @@ function updateLiveLabel() {
         f.geometry.coordinates.length >= 2) ||
       (f.geometry.type === "Polygon" && f.geometry.coordinates[0]?.length >= 3),
   );
-  const existing = document.getElementById("live-measure-label");
-  if (existing) existing.remove();
   if (!live) return;
   let text = null;
   if (live.geometry.type === "LineString")
@@ -1232,8 +1254,7 @@ function updateLiveLabel() {
   const center = getFeatureCenter(live);
   if (!center) return;
   const el = makeLabelEl(text);
-  el.id = "live-measure-label";
-  new mapboxgl.Marker({ element: el, anchor: "center" })
+  liveLabelMarker = new mapboxgl.Marker({ element: el, anchor: "center" })
     .setLngLat(center)
     .addTo(map);
 }
@@ -1248,25 +1269,64 @@ function getDrawMode(subTool) {
 
 async function ensureDrawLoaded() {
   if (MapboxDraw) return;
-  ensureMapCss("https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css");
-  const m = await import("@mapbox/mapbox-gl-draw");
-  MapboxDraw = m.default ?? m;
+  if (!drawLoadPromise) {
+    drawLoadPromise = import("@mapbox/mapbox-gl-draw").then(m => {
+      MapboxDraw = m.default ?? m;
+    }).finally(() => { drawLoadPromise = null; });
+  }
+  await drawLoadPromise;
 }
 
-function createDrawInstance(mode, subTool) {
-  if (!MapboxDraw) { ensureDrawLoaded().then(() => createDrawInstance(mode, subTool)); return; }
-  draw = new MapboxDraw({
-    displayControlsDefault: false,
-    controls: {},
-    styles: makeDrawStyles(selectedColor.value),
+function scheduleDrawMode(mode, subTool) {
+  const currentDraw = draw;
+  mapLifecycle.frame(() => {
+    if (!currentDraw || draw !== currentDraw || activeMode.value !== mode || drawSubTool.value !== subTool) return;
+    currentDraw.changeMode(getDrawMode(subTool));
   });
-  map.addControl(draw, "top-left");
+}
 
-  map.on("draw.create", onDrawCreate);
-  map.on("draw.render", onDrawRender);
+async function createDrawInstance(mode, subTool) {
+  if (map && drawReadyHandler) map.off("idle", drawReadyHandler);
+  drawReadyHandler = null;
+  const revision = ++drawRevision;
+  const targetMap = map;
+  const current = () => mapLifecycle.active && map === targetMap && map && revision === drawRevision
+    && activeMode.value === mode && drawSubTool.value === subTool;
+  if (!current()) return;
+  try {
+    await ensureDrawLoaded();
+    if (!current()) return;
+    if (!map.isStyleLoaded()) {
+      drawReadyHandler = () => {
+        drawReadyHandler = null;
+        if (current()) createDrawInstance(mode, subTool);
+      };
+      map.once("idle", drawReadyHandler);
+      return;
+    }
+    draw = new MapboxDraw({
+      displayControlsDefault: false,
+      controls: {},
+      styles: makeDrawStyles(selectedColor.value),
+    });
+    map.addControl(draw, "top-left");
+    map.on("draw.create", onDrawCreate);
+    map.on("draw.render", onDrawRender);
+    scheduleDrawMode(mode, subTool);
+  } catch {
+    if (!current()) return;
+    removeDraw();
+    activeMode.value = null;
+    drawSubTool.value = null;
+    toolError.value = 'ابزار ترسیم بارگذاری نشد. دوباره تلاش کنید.';
+  }
 }
 
 function removeDraw() {
+  drawRevision++;
+  if (map && drawReadyHandler) map.off("idle", drawReadyHandler);
+  drawReadyHandler = null;
+  if (!map) { draw = null; return; }
   map.off("draw.create", onDrawCreate);
   map.off("draw.render", onDrawRender);
   try {
@@ -1276,6 +1336,8 @@ function removeDraw() {
 }
 
 function activateTool(mode, subTool) {
+  if (!mapLifecycle.active || !map) return;
+  toolError.value = null;
   // ابزار انتخاب با ترسیم/اندازه‌گیری هم‌زمان فعال نمی‌ماند
   clearSelAnchor();
   if (props.selectionTool) emit("update:selection-tool", null);
@@ -1288,22 +1350,16 @@ function activateTool(mode, subTool) {
   // draw وجود داره و فقط subTool عوض شده (همون mode) → فقط changeMode
   if (draw && map.hasControl(draw) && activeMode.value === mode) {
     drawSubTool.value = subTool;
-    requestAnimationFrame(() => {
-      if (!draw) return;
-      draw.changeMode(getDrawMode(subTool));
-    });
+    drawRevision++;
+    scheduleDrawMode(mode, subTool);
     return;
   }
 
   // اولین بار یا تغییر mode اصلی (draw↔measure)
-  if (draw && map.hasControl(draw)) removeDraw();
+  removeDraw();
   activeMode.value = mode;
   drawSubTool.value = subTool;
   createDrawInstance(mode, subTool);
-  requestAnimationFrame(() => {
-    if (!draw) return;
-    draw.changeMode(getDrawMode(subTool));
-  });
 }
 
 function onDrawCreate(e) {
@@ -1321,15 +1377,11 @@ function onDrawCreate(e) {
   });
   refreshDrawnSource();
 
-  const live = document.getElementById("live-measure-label");
-  if (live) live.remove();
+  clearLiveLabel();
   updateLabels();
 
   // بعد از ثبت شکل، دوباره mode رو فعال کن
-  requestAnimationFrame(() => {
-    if (!draw) return;
-    draw.changeMode(getDrawMode(drawSubTool.value));
-  });
+  scheduleDrawMode(activeMode.value, drawSubTool.value);
 }
 
 function onDrawRender() {
@@ -1339,24 +1391,20 @@ function onDrawRender() {
 function deactivateAll() {
   removeDraw();
   clearLabelMarkers();
-  const live = document.getElementById("live-measure-label");
-  if (live) live.remove();
+  clearLiveLabel();
+  toolError.value = null;
   activeMode.value = null;
   drawSubTool.value = null;
-  map.getCanvas().style.cursor = "";
+  if (map) map.getCanvas().style.cursor = "";
 }
 
 function clearAll() {
   drawnFeatures = [];
   refreshDrawnSource();
   clearLabelMarkers();
-  const live = document.getElementById("live-measure-label");
-  if (live) live.remove();
+  clearLiveLabel();
   // mode رو دوباره فعال کن
-  requestAnimationFrame(() => {
-    if (!draw || !drawSubTool.value) return;
-    draw.changeMode(getDrawMode(drawSubTool.value));
-  });
+  if (draw && drawSubTool.value) scheduleDrawMode(activeMode.value, drawSubTool.value);
 }
 
 // ─── رندر عوارض ───────────────────────────────────────────
@@ -1456,6 +1504,7 @@ function clearMarkers() {
 }
 
 function clearWellLayers() {
+  unbindWellEvents();
   WELL_LAYER_IDS.forEach(
     (id) => {
       if (map.getLayer(id)) map.removeLayer(id);
@@ -1589,6 +1638,11 @@ function onInfoPopupClose(popup) {
   } catch {}
 }
 function showStackedPopup(items, lngLat) {
+  if (lastInfoPopup) {
+    const previous = lastInfoPopup;
+    lastInfoPopup = null;
+    previous.remove();
+  }
   const popup = new mapboxgl.Popup({ maxWidth: "340px" })
     .setLngLat(lngLat)
     .setHTML(multiPopupHTML(items))
@@ -1600,6 +1654,16 @@ function showStackedPopup(items, lngLat) {
 }
 
 const boundWellLayers = new Set();
+let wellLayerListeners = [];
+function bindWellLayerEvent(type, layerId, handler) {
+  map.on(type, layerId, handler);
+  wellLayerListeners.push({ type, layerId, handler });
+}
+function unbindWellEvents() {
+  for (const { type, layerId, handler } of wellLayerListeners) map?.off(type, layerId, handler);
+  wellLayerListeners = [];
+  boundWellLayers.clear();
+}
 function bindWellEventsOnce() {
   // لایه‌هایی که بعداً ساخته می‌شوند (dash/dot/شکل نقطه‌ای) هم در رندرهای بعدی بایند می‌گیرند
   WELL_LAYER_IDS.forEach(
@@ -1609,7 +1673,7 @@ function bindWellEventsOnce() {
       try { has = !!map.getLayer(layerId); } catch {}
       if (!has) return;
       boundWellLayers.add(layerId);
-      map.on("click", layerId, (e) => {
+      bindWellLayerEvent("click", layerId, (e) => {
         if (activeMode.value) return;
         // در حالت انتخاب هوشمند، هندلر کلیک نقشه تصمیم می‌گیرد (جلوگیری از دابل‌فایر)
         if (picking) return;
@@ -1639,11 +1703,11 @@ function bindWellEventsOnce() {
           if (e.point) selectAtPixel(e.point.x, e.point.y, resolveSelMode(e), isContainedOnly(e));
         } catch {}
       });
-      map.on("mouseenter", layerId, () => {
+      bindWellLayerEvent("mouseenter", layerId, () => {
         if (selecting && props.selectionTool) return;
         map.getCanvas().style.cursor = "pointer";
       });
-      map.on("mouseleave", layerId, () => {
+      bindWellLayerEvent("mouseleave", layerId, () => {
         map.getCanvas().style.cursor = (selecting && props.selectionTool)
           ? (props.selectionTool === "info" ? "pointer" : "crosshair")
           : "";
@@ -2369,10 +2433,6 @@ function renderMarkers(fit = true) {
         const { _geometry, ...fp } = s;
         return { well: s, fp };
       });
-      const popup = new mapboxgl.Popup({ offset: 14, maxWidth: "340px" })
-        .setHTML(multiPopupHTML(markerItems));
-      popup.on("open", () => bindPopupTabs(popup));
-      popup.on("close", () => onInfoPopupClose(popup));
       el.addEventListener("click", (e) => {
         if (activeMode.value) {
           e.stopPropagation();
@@ -2389,8 +2449,7 @@ function renderMarkers(fit = true) {
           if (props.selectionTool === "info") {
             e.stopPropagation();
             emit("info-select", w);
-            popup.openPopup();
-            lastInfoPopup = popup;
+            showStackedPopup(markerItems, [+w.lng, +w.lat]);
             return;
           }
           e.stopPropagation();
@@ -2437,19 +2496,23 @@ function renderMarkers(fit = true) {
 
 // ─── mount ─────────────────────────────────────────────────
 let mouseRafPending = false;
+let mouseRevision = 0;
 function onMouseMove(e) {
+  if (!mapLifecycle.active) return;
   if (mouseRafPending) return;
   mouseRafPending = true;
-  requestAnimationFrame(async () => {
+  const revision = ++mouseRevision;
+  mapLifecycle.frame(async () => {
     mouseRafPending = false;
     mouse.value.lat = e.lngLat.lat.toFixed(6);
     mouse.value.lng = e.lngLat.lng.toFixed(6);
     try {
       if (!utmMod) utmMod = await import("utm");
+      if (!mapLifecycle.active || revision !== mouseRevision) return;
       const p = (utmMod.fromLatLon ?? utmMod.default?.fromLatLon)(e.lngLat.lat, e.lngLat.lng);
       mouse.value.utm = `Zone ${p.zoneNum}${p.zoneLetter} | E ${p.easting.toFixed(2)} | N ${p.northing.toFixed(2)}`;
     } catch {}
-    if (activeMode.value === "measure") updateLiveLabel();
+    if (mapLifecycle.active && activeMode.value === "measure") updateLiveLabel();
   });
 }
 
@@ -2457,6 +2520,7 @@ onMounted(async () => {
   const [{ default: mb }] = await Promise.all([
     import("mapbox-gl"),
   ]);
+  if (!mapLifecycle.active) return;
   mapboxgl = mb;
   ensureMapCss("https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css");
   mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN ?? "pk.YOUR_TOKEN_HERE";
@@ -2470,6 +2534,7 @@ onMounted(async () => {
     }
   } catch {}
   const weak = (() => { try { return (navigator?.deviceMemory ?? 8) <= 4 || (navigator?.hardwareConcurrency ?? 8) <= 4; } catch { return false; } })();
+  lastStyle = props.theme === "dark" ? DARK_STYLE : LIGHT_STYLE;
   map = new mapboxgl.Map({
     container: mapEl.value,
     style: lastStyle,
@@ -2537,6 +2602,7 @@ onMounted(async () => {
   try { map.touchPitch?.disable(); } catch {}
   try { map.touchZoomRotate?.disableRotation(); } catch {}
   map.on("load", () => {
+    if (!mapLifecycle.active) return;
     initDrawnSource();
     disableMapRotation();
     map.on("mousemove", onMouseMove);
@@ -2549,12 +2615,24 @@ onMounted(async () => {
     window.addEventListener("blur", onSelBlur);
     setSelectionToolActive(props.selectionTool);
     renderMarkers();
+    if (activeMode.value && !draw) createDrawInstance(activeMode.value, drawSubTool.value);
   });
 });
 
 onBeforeUnmount(() => {
+  mapLifecycle.dispose();
+  mouseRevision++;
+  picking = false;
+  pickerCb = null;
+  if (map && styleLoadHandler) map.off("style.load", styleLoadHandler);
+  removeDraw();
+  unbindWellEvents();
   clearMarkers();
   clearLabelMarkers();
+  clearLiveLabel();
+  lastInfoPopup?.remove();
+  lastInfoPopup = null;
+  map?._pickerMarker?.remove();
   clearSelAnchor();
   cancelSelDrag();
   try { window.removeEventListener("keydown", onSelKeyDown); } catch {}
@@ -2563,15 +2641,17 @@ onBeforeUnmount(() => {
   try { map?.getCanvas()?.removeEventListener("mousemove", onSelMouseMove); } catch {}
   try { map?.getCanvas()?.removeEventListener("mousedown", onSelMouseDown); } catch {}
   if (map) map.remove();
+  map = null;
 });
 
 watch(() => props.wells, () => scheduleRender());
 
 // وقتی فقط highlight یا filter عوض شد، فقط data رو آپدیت کن (سریع‌تر از renderMarkers کامل)
 function updateHighlightData() {
-  if (!map) return;
+  if (!mapLifecycle.active || !map) return;
   if (!wellsGeoJSON || !map.getSource("wells-src")) {
     if (!map.isStyleLoaded()) {
+      map.off("idle", scheduleHighlight);
       map.once("idle", scheduleHighlight);
       return;
     }
@@ -2616,7 +2696,7 @@ watch(() => props.selectedId, scheduleHighlight);
 watch(() => props.infoWellKey, scheduleHighlight);
 function schedulePreviewRefresh() {
   // حالت نقطه‌ای (بدون wells-src) نیاز به رندر کامل مارکرها دارد
-  if (!wellsGeoJSON || !map?.getSource?.("wells-src")) scheduleRender();
+  if (!wellsGeoJSON || !map?.getSource?.("wells-src")) scheduleRender(true);
   else scheduleHighlight();
 }
 watch(() => props.previewIds, schedulePreviewRefresh);
@@ -2651,8 +2731,9 @@ function symStructSig() {
 }
 let lastSymStruct = symStructSig()
 function updateSymData() {
-  if (!map) return
+  if (!mapLifecycle.active || !map) return
   if (!map.isStyleLoaded() && !map.getSource("wells-src")) {
+    map.off("idle", onSymChange)
     map.once("idle", onSymChange)
     return
   }
@@ -2709,33 +2790,29 @@ watch(() => props.symVersion, () => scheduleRender(true))
 
 // ─── تعویض تم نقشه (روشن ↔ تیره) ──────────────────────────
 function applyMapTheme(t) {
-  if (!map) return;
+  if (!mapLifecycle.active || !map) return;
   const next = t === "dark" ? DARK_STYLE : LIGHT_STYLE;
   if (next === lastStyle) return;
   lastStyle = next;
 
-  const wasActive = activeMode.value !== null;
-  const mode = activeMode.value;
-  const sub = drawSubTool.value;
-  if (draw && map.hasControl(draw)) removeDraw();
+  removeDraw();
+  clearLiveLabel();
+  if (styleLoadHandler) map.off("style.load", styleLoadHandler);
 
+  unbindWellEvents();
   map.setStyle(next);
-  boundWellLayers.clear();
-  map.once("style.load", () => {
+  styleLoadHandler = () => {
+    if (!mapLifecycle.active) return;
+    styleLoadHandler = null;
     initDrawnSource();
     refreshDrawnSource();
     renderMarkers(false);
     updateLabels();
-    if (wasActive) {
-      activeMode.value = mode;
-      drawSubTool.value = sub;
-      createDrawInstance(mode, sub);
-      requestAnimationFrame(() => {
-        if (!draw) return;
-        draw.changeMode(getDrawMode(sub));
-      });
+    if (activeMode.value && drawSubTool.value) {
+      createDrawInstance(activeMode.value, drawSubTool.value);
     }
-  });
+  };
+  map.once("style.load", styleLoadHandler);
 }
 watch(() => props.theme, applyMapTheme);
 

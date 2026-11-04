@@ -57,6 +57,7 @@
         @update:relation-target-layer="relationTargetLayer = $event"
         @update:relation-operator="relationOperator = $event"
         @apply-relation="onApplyRelation"
+        @cancel-relation="cancelSpatialQuery"
         @load-query="onLoadQuery"
         @delete-query="deleteSavedQuery"
         @clear-data="handleClearData"
@@ -69,7 +70,7 @@
            :wells="mapWells"
            :wells-key="mapWellsKey"
            :highlighted-ids="highlightedIds"
-            :has-filter="hasAnyFilter && selectionCount > 0"
+            :has-filter="hasAnyFilter"
             :filtered-layer-uuids="filteredLayerUuids"
             :radius-center="showRadiusOnMap ? committedRadiusCenter : null"
            :radius-km="committedRadiusKm"
@@ -268,13 +269,13 @@ const {
   loadVectorLayers,
   addLayer, removeLayer, setActiveLayers,
   isLayerVisible, toggleLayerVisibility,
-  computeAttributeRows, computeRelationRows,
+  computeHistoryRows, captureAttributeQuery, restoreAttributeQuery, attributeQueryLayerUuids,
   allWells, combinedResults, hasAnyFilter,
   getLayerConditions, getAppliedConditions, addLayerCondition, removeLayerCondition,
   applyAttributeConditions, removeAppliedCondition, clearAllConditions, getLayerResultCount,
   radiusCenter, radiusKm,
   committedRadiusCenter, committedRadiusKm,
-  spatialLoading, commitSpatialFilter,
+  spatialLoading, commitSpatialFilter, clearSpatialFilter, cancelSpatialQuery, hasAttributeFilter, hasSpatialFilter,
   relationSourceLayer, relationTargetLayer, relationOperator, relationRadiusKm,
   relationSourceMode, spatialTargetOnlySelected,
   selectedIds, selectedRows, selectionCount, attributeScope,
@@ -580,12 +581,11 @@ const hasActiveConditions = computed(() =>
 )
 
 // ── کوئری مکانی فعال + خلاصه آن برای پنل «شرط‌های فعال» ──
-const hasSpatialFilter = computed(() => radiusCenter.value !== null || relationCommitted.value !== null)
 const spatialSummaryRadius = computed(() =>
-  Number.isFinite(+radiusKm.value) ? Math.round(+radiusKm.value * 10) / 10 : 0
+  Number.isFinite(+committedRadiusKm.value) ? Math.round(+committedRadiusKm.value * 10) / 10 : 0
 )
 const spatialSummaryLabel = computed(() => {
-  const c = radiusCenter.value
+  const c = committedRadiusCenter.value
   if (!c) return ''
   if (c.id != null) {
     const layerName = c._layerName ?? activeLayers.value.find(l => String(l.uuid) === String(c._layerUuid))?.display_name ?? ''
@@ -604,7 +604,7 @@ const relationSummary = computed(() => {
     activeLayers.value.find(l => String(l.uuid) === String(uuid))?.display_name ?? ''
   const srcName = c.sourceLayerUuid ? layerNameOf(c.sourceLayerUuid) : ''
   const sourceText = c.sourceMode === 'selected'
-    ? (srcName ? `مبدأ: ${selectionCount.value} عارضه انتخاب‌شده (${srcName})` : `مبدأ: ${selectionCount.value} عارضه انتخاب‌شده`)
+    ? (srcName ? `مبدأ: ${c.sourceKeys?.length ?? 0} عارضه انتخاب‌شده (${srcName})` : `مبدأ: ${c.sourceKeys?.length ?? 0} عارضه انتخاب‌شده`)
     : `مبدأ: ${srcName} کل لایه`
   const targetText = `هدف: ${layerNameOf(c.targetLayerUuid)} — کل لایه`
   const operatorValue = Array.isArray(c.operator) ? c.operator : [c.operator]
@@ -752,7 +752,7 @@ function fairSamplePerLayer(src, cap) {
   }
   return out
 }
-const highlightedIds = computed(() => selectedIds.value)
+const highlightedIds = computed(() => hasAnyFilter.value ? displayRows.value.map(rowKey) : [])
 
 // لایه‌های مخفی (با آیکون چشم) از روی نقشه حذف می‌شوند؛ ولی داده‌های آن‌ها در نتایج/جدول باقی می‌ماند
 const visibleWells = computed(() =>
@@ -766,7 +766,14 @@ const MAP_RENDER_CAP = 8000
 const mapWells = computed(() => {
   const src = visibleWells.value
   if (src.length <= MAP_RENDER_CAP) return src
-  const out = fairSamplePerLayer(src, MAP_RENDER_CAP)
+  const resultKeys = new Set(hasAnyFilter.value ? highlightedIds.value : selectedIds.value)
+  const priority = src.filter(row => resultKeys.has(rowKey(row)))
+  const out = fairSamplePerLayer(priority, MAP_RENDER_CAP)
+  const kept = new Set(out.map(rowKey))
+  if (out.length < MAP_RENDER_CAP) {
+    const background = fairSamplePerLayer(src.filter(row => !kept.has(rowKey(row))), MAP_RENDER_CAP - out.length)
+    for (const row of background) out.push(row)
+  }
   const keep = activeWellId.value ?? selectedWellId.value ?? infoWellId.value
   if (keep) {
     let found = false
@@ -795,11 +802,12 @@ const visibleWellsKey = computed(() => {
   }
   return parts.join('|')
 })
+let mapWellsRevision = 0
 const mapWellsKey = computed(() => {
   const w = mapWells.value
   const f = w.length ? rowKey(w[0]) : ''
   const l = w.length > 1 ? rowKey(w[w.length - 1]) : ''
-  return `${hasAnyFilter.value ? 'f' : 'a'}|${visibleWellsKey.value}|${mapCappedTotal.value}|${w.length}|${f}|${l}`
+  return `${++mapWellsRevision}|${hasAnyFilter.value ? 'f' : 'a'}|${visibleWellsKey.value}|${mapCappedTotal.value}|${w.length}|${f}|${l}`
 })
 
 // لایه‌هایی که واقعاً فیلتر توصیفی فعال دارند (مبنای رنگ نقشه)
@@ -816,7 +824,7 @@ const filteredLayerUuids = computed(() => {
   if (hasSpatialFilter.value) {
     return activeLayers.value.filter(l => isLayerVisible(l.uuid)).map(l => String(l.uuid))
   }
-  return attributeFilteredUuids.value
+  return hasAttributeFilter.value ? attributeQueryLayerUuids.value : []
 })
 
 // مقادیر یکتای فیلدهای متنی لایه فعال (مبنای auto-search کوئری توصیفی)
@@ -972,6 +980,7 @@ function onClearPoint() {
   mapRef.value?.disablePointPicker()
 }
 function onClearSpatial() {
+  clearSpatialFilter()
   customPoint.value = null
   radiusCenter.value = null
   committedRadiusCenter.value = null
@@ -1020,7 +1029,7 @@ function zoomToSelection() {
   if (selectedRows.value.length) mapRef.value?.zoomToResults?.(selectedRows.value)
 }
 async function onApplySpatial() {
-  await commitSpatialFilter()
+  if (!await commitSpatialFilter()) return
   selectQueryResults()
   zoomToResults()
 }
@@ -1057,16 +1066,8 @@ function findLayerName(uuid) {
 }
 
 function recordAttributeHistory() {
-  const items = []
-  for (const layer of activeLayers.value) {
-    if (!isLayerVisible(layer.uuid)) continue
-    const conds = (getAppliedConditions(layer.uuid) ?? []).map(c => ({ ...c }))
-    items.push({
-      layerUuid: layer.uuid,
-      layerName: layer.display_name || layer.name,
-      conditions: conds,
-    })
-  }
+  const snapshot = captureAttributeQuery()
+  const items = snapshot.items
   if (!items.length) return
   const labels = items.map(item => {
     const active = item.conditions.filter(c => c.value !== '' && c.value !== null && c.value !== undefined)
@@ -1077,8 +1078,8 @@ function recordAttributeHistory() {
   })
   pushHistoryEntry({
     type: 'attribute',
-    scope: attributeScope.value === 'selected' ? 'selected' : 'all',
-    items,
+    ...snapshot,
+    spatial: { relation: relationCommitted.value, radius: captureRadius() },
     label: labels.join(' | ') + (attributeScope.value === 'selected' ? ' (انتخاب‌شده‌ها)' : ''),
     count: displayRows.value.length,
   })
@@ -1094,8 +1095,10 @@ function recordRelationHistory() {
   pushHistoryEntry({
     type: 'relation',
     params: JSON.parse(JSON.stringify(c)),
+    attribute: hasAttributeFilter.value ? captureAttributeQuery() : null,
+    radius: captureRadius(),
     label: `${opText} — از ${findLayerName(c.sourceLayerUuid)} به ${findLayerName(c.targetLayerUuid)}`,
-    count: relationResults.value.length,
+    count: displayRows.value.length,
   })
 }
 
@@ -1105,56 +1108,54 @@ async function onRerunHistory(entry) {
   historyRunning.value = true
   try {
     onClearAllQueries()
-    if (entry.type === 'attribute') await rerunAttributeEntry(entry)
-    else await rerunRelationEntry(entry)
+    await restoreHistoryEntry(entry)
+  } catch (error) {
+    alert(error.message ?? 'اجرای تاریخچه ناموفق بود.')
   } finally {
     historyRunning.value = false
   }
 }
 
 // کوئری توصیفی: شرط‌های ثبت‌شده روی همان لایه‌ها ست می‌شود و کوئری اجرا می‌شود
-async function rerunAttributeEntry(entry) {
-  for (const item of (entry.items ?? [])) {
-    // لایه اگر از قبل فعال نباشد، همین‌جا اضافه می‌شود و شرط‌ها ست می‌شوند
-    await loadSavedQuery({ layerUuid: item.layerUuid, conditions: item.conditions })
-    if (!isLayerVisible(item.layerUuid)) toggleLayerVisibility(item.layerUuid)
-  }
-  if (!entry.items?.length) return
-  attributeScope.value = 'all'
-  activeQueryLayer.value = entry.items[0].layerUuid
-  queryKind.value = 'attribute'
-  applyAttributeConditions()
-  selectQueryResults()
-  zoomToAttributeResults()
+function captureRadius() {
+  return committedRadiusCenter.value ? { center: { ...committedRadiusCenter.value }, radiusKm: committedRadiusKm.value } : null
 }
-
-// رابطه مکانی: پارامترها روی پنل مکانی ست و مجدداً اجرا می‌شود
-async function rerunRelationEntry(entry) {
-  const p = entry.params ?? {}
-  if (!p.targetLayerUuid) return
-  for (const uuid of new Set([p.sourceLayerUuid, p.targetLayerUuid].filter(Boolean))) {
-    await loadSavedQuery({ layerUuid: uuid, conditions: [] })
+async function restoreHistoryEntry(entry) {
+  const attribute = entry.type === 'attribute' ? entry : entry.attribute
+  const p = entry.type === 'relation' ? entry.params : entry.spatial?.relation
+  const radius = entry.type === 'relation' ? entry.radius : entry.spatial?.radius
+  if (attribute?.scope === 'selected' && !Array.isArray(attribute.selectionKeys)) {
+    throw new Error('انتخاب اولیه این تاریخچه قدیمی ذخیره نشده است؛ کوئری را دوباره بسازید.')
+  }
+  if (p?.sourceMode === 'selected' && !Array.isArray(p.sourceKeys)) {
+    throw new Error('انتخاب اولیه رابطه در این تاریخچه قدیمی موجود نیست.')
+  }
+  for (const uuid of new Set([p?.sourceLayerUuid, ...(p?.sourceLayerUuids ?? []), p?.targetLayerUuid].filter(Boolean))) {
+    if (!await loadSavedQuery({ layerUuid: uuid, conditions: [] })) throw new Error('لایه مورد نیاز تاریخچه در دسترس نیست.')
     if (!isLayerVisible(uuid)) toggleLayerVisibility(uuid)
   }
-  setSelectionKeys([...(p.sourceKeys ?? []), ...(p.targetKeys ?? [])])
-  spatialTargetOnlySelected.value = !!p.targetOnlySelected
-  queryKind.value = 'spatial'
-  // حالت «انتخاب‌شده‌ها» فقط وقتی معتبر است که هنوز عارضه‌ای انتخاب شده باشد؛
-  // وگرنه کوئری روی کل لایه مبدأ (همه عوارض) اجرا می‌شود
-  if ((p.sourceMode ?? 'selected') === 'selected' && !selectionCount.value) {
-    relationSourceMode.value = 'layer'
-  } else {
-    relationSourceMode.value = p.sourceMode || 'selected'
+  clearAllConditions()
+  if (attribute) {
+    await restoreAttributeQuery(attribute)
+    activeQueryLayer.value = attribute.items?.[0]?.layerUuid ?? null
   }
-  relationSourceLayer.value = p.sourceLayerUuid ?? null
-  relationTargetLayer.value = p.targetLayerUuid
-  relationOperator.value = normalizeRelationOperators(p.operator)
-  relationRadiusKm.value = Number.isFinite(+p.radiusKm) ? +p.radiusKm : 3
-  const ok = await commitRelationFilter()
-  if (ok) {
-    selectQueryResults()
-    zoomToResults()
+  if (radius) {
+    radiusCenter.value = { ...radius.center }
+    radiusKm.value = radius.radiusKm
+    if (!await commitSpatialFilter()) return
   }
+  if (p) {
+    spatialTargetOnlySelected.value = !!p.targetOnlySelected
+    relationSourceMode.value = p.sourceMode || 'layer'
+    relationSourceLayer.value = p.sourceLayerUuid ?? null
+    relationTargetLayer.value = p.targetLayerUuid
+    relationOperator.value = normalizeRelationOperators(p.operator)
+    relationRadiusKm.value = p.radiusKm
+    if (!await commitRelationFilter(p)) return
+  }
+  queryKind.value = entry.type === 'attribute' ? 'attribute' : 'spatial'
+  selectQueryResults()
+  zoomToResults()
 }
 
 // حذف مورد/کل تاریخچه
@@ -1171,23 +1172,15 @@ async function onExportHistoryShp(entry) {
   if (!entry || historyRunning.value || historyExporting.value) return
   historyExporting.value = true
   try {
-    const rows = []
-    if (entry.type === 'attribute') {
-      const scope = entry.scope === 'selected' ? 'selected' : 'all'
-      for (const item of (entry.items ?? [])) {
-        const part = computeAttributeRows(item.layerUuid, item.conditions, scope)
-        // push(...rows) روی آرایه‌های بزرگ استک را منفجر می‌کند؛ حلقه استفاده شد
-        for (const r of part) rows.push(r)
-      }
-    } else {
-      for (const r of computeRelationRows(entry.params)) rows.push(r)
-    }
-    if (!rows.length) {
+    const exported = computeHistoryRows(entry)
+    if (!exported.length) {
       alert('نتیجه‌ای برای این کوئری یافت نشد (مثلاً لایه حذف شده است).')
       return
     }
     const { exportData } = await import('../composables/useExport.js')
-    exportData('shp', rows, convertFeature, { crs: crs.value })
+    await exportData('shp', exported, convertFeature, { crs: crs.value })
+  } catch (error) {
+    alert(error.message ?? 'خروجی تاریخچه ناموفق بود.')
   } finally {
     historyExporting.value = false
   }
