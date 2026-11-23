@@ -6,7 +6,9 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: process.env.VITE_PROXY_TARGET || 'https://api.geobox.ir/v1',
+        target: /^https?:\/\//i.test(process.env.VITE_API_BASE || '')
+          ? process.env.VITE_API_BASE
+          : 'https://api.geobox.ir/v1',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
         timeout: 20000,

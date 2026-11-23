@@ -114,8 +114,8 @@ const collapsed = ref(false)
 const tabs = [
   { value: 'attribute',    label: 'کوئری توصیفی' },
   { value: 'spatial',      label: 'کوئری مکانی' },
-  { value: 'contour',      label: 'نقشه هم‌مقدار' },
-  { value: 'stratigraphy', label: 'چینه‌شناسی' },
+  // { value: 'contour',      label: 'نقشه هم‌مقدار' },
+  // { value: 'stratigraphy', label: 'چینه‌شناسی' },
 ]
 const crsOptions = [
   { value: 'wgs84', label: 'WGS84' },

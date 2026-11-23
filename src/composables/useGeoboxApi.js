@@ -2,7 +2,7 @@
 // Geobox API Composable
 // ===============================
 
-const API_BASE = (import.meta.env.VITE_API_BASE ?? '/api').replace(/\/$/, '')
+const API_BASE = (window.APP_CONFIG?.API_BASE || import.meta.env.VITE_API_BASE || '/api').replace(/\/$/, '')
 
 let accessToken = null;
 let tokenPromise = null;
