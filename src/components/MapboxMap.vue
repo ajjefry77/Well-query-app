@@ -144,6 +144,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
+import "mapbox-gl/dist/mapbox-gl.css";
 import { resolveFeatureStyle, rampStops, defaultSymbology, DEFAULT_FEATURE_COLOR } from "../composables/useSymbology.js";
 import { syncContourOverlay } from '../utils/contourOverlay.js';
 import booleanIntersects from "@turf/boolean-intersects";
@@ -376,16 +377,6 @@ let mapboxgl = null;
 let MapboxDraw = null;
 let drawLoadPromise = null;
 let utmMod = null;
-function ensureMapCss(href) {
-  try {
-    if (document.querySelector(`link[data-wqa="${href}"]`)) return;
-    const l = document.createElement("link");
-    l.rel = "stylesheet";
-    l.href = href;
-    l.dataset.wqa = href;
-    document.head.appendChild(l);
-  } catch {}
-}
 
 // ─── جایگزین سبک @turf/turf (حذف ~۶۰۰KB): هاورساین + مساحت پلانار ───
 const _R = 6371;
@@ -2545,7 +2536,6 @@ onMounted(async () => {
   ]);
   if (!mapLifecycle.active) return;
   mapboxgl = mb;
-  ensureMapCss("https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css");
   mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN ?? "pk.YOUR_TOKEN_HERE";
   try {
     if (mapboxgl.getRTLTextPluginStatus() === "unavailable") {

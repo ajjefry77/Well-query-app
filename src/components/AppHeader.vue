@@ -115,7 +115,6 @@ const tabs = [
   { value: 'attribute',    label: 'کوئری توصیفی' },
   { value: 'spatial',      label: 'کوئری مکانی' },
   { value: 'contour',      label: 'نقشه هم‌مقدار' },
-  { value: 'thematic',     label: 'نقشه موضوعی' },
   { value: 'stratigraphy', label: 'چینه‌شناسی' },
 ]
 const crsOptions = [

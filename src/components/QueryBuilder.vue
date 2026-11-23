@@ -1,7 +1,7 @@
 <template>
   <div class="qb">
     <div class="qb__header">
-      <h3>کوئری‌ساز توصیفی</h3>
+      <h2>کوئری‌ساز توصیفی</h2>
       <span class="qb__count mono">
         {{ resultCount }} / {{ totalCount }} نتیجه
       </span>
@@ -320,7 +320,7 @@ function handleSave() {
   align-items: baseline;
   justify-content: space-between;
 }
-.qb__header h3 {
+.qb__header h2 {
   margin: 0;
   font-size: 13px;
   font-weight: 700;

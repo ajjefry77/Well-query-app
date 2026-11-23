@@ -1,6 +1,6 @@
 <template>
   <div class="sv">
-    <h3>کوئری‌های ذخیره‌شده</h3>
+    <h2>کوئری‌های ذخیره‌شده</h2>
     <div v-if="queries.length" class="sv__list">
       <div v-for="q in queries" :key="q.id" class="sv__item">
         <button class="sv__load" @click="$emit('load', q)">
@@ -24,7 +24,7 @@ defineEmits(['load', 'delete'])
 
 <style scoped>
 .sv { display: flex; flex-direction: column; gap: 8px; }
-.sv h3 { margin: 0; font-size: 12px; font-weight: 700; color: var(--text-secondary); }
+.sv h2 { margin: 0; font-size: 12px; font-weight: 700; color: var(--text-secondary); }
 .sv__list { display: flex; flex-direction: column; gap: 6px; }
 .sv__item { display: flex; align-items: stretch; gap: 6px; }
 .sv__load {

@@ -16,7 +16,7 @@
     </div>
 
     <!-- صفحه اصلی -->
-    <main v-else class="app-main" :class="{ 'app-main--analysis': ['contour', 'thematic'].includes(queryKind) }" :style="isMobile ? { '--sheet-h': sheetHeight + 'px' } : {}">
+    <main v-else class="app-main" :class="{ 'app-main--analysis': queryKind === 'contour' }" :style="{ '--sheet-h': sheetHeight + 'px', '--query-width': queryKind === 'contour' ? '310px' : (queryPanelOpen ? '320px' : '36px'), '--results-width': resultsPanelOpen ? '270px' : '36px' }">
 
       <!-- پنل چپ: کوئری‌ساز -->
       <QueryPanel
@@ -63,17 +63,14 @@
         @clear-data="handleClearData"
       />
 
+      <KeepAlive>
       <ContourPanel
-        v-show="queryKind === 'contour' && (!isMobile || (sheetOpen && mobileTab === 'query'))"
+        v-if="queryKind === 'contour'"
+        v-show="!isMobile || (sheetOpen && mobileTab === 'query')"
         :layers="visibleActiveLayers" :rows-map="_layerFeaturesMap" :fields-map="_layerFieldsMap"
         v-model="contourLayer" @zoom="zoomContour"
       />
-      <ThematicPanel
-        v-show="queryKind === 'thematic' && (!isMobile || (sheetOpen && mobileTab === 'query'))"
-        :layers="visibleActiveLayers" :entries="legendEntries"
-        v-model="thematicPurpose"
-        @configure="onOpenSymbology" @reset="resetThematic"
-      />
+      </KeepAlive>
 
       <!-- نقشه + دکمه FAB نتایج -->
       <section class="map-panel">
@@ -109,7 +106,6 @@
           />
           <!-- لجند سیمبولوژی -->
           <MapLegend :entries="mapLegendEntries" />
-          <div v-if="queryKind === 'thematic' && thematicPurpose.trim()" class="analysis-map-title" :title="thematicPurpose">{{ thematicPurpose }}</div>
 
         <!-- لودینگ افزودن لایه تا آماده‌شدن نقشه -->
         <div v-if="mapLoading" class="map-loading-overlay">
@@ -177,11 +173,11 @@
 
       <!-- موبایل: نوار grab + تب‌های پنل پایین -->
       <MobileSheet
-        v-show="isMobile"
+        v-if="isMobile"
         :open="sheetOpen"
         :dragging="dragging"
         :mobile-tab="mobileTab"
-        :query-label="queryKind === 'contour' ? 'هم‌مقدار' : queryKind === 'thematic' ? 'موضوعی' : 'کوئری'"
+        :query-label="queryKind === 'contour' ? 'هم‌مقدار' : 'کوئری'"
         @update:mobile-tab="mobileTab = $event"
         @grab-start="onSheetGrabStart"
         @close="closeSheet"
@@ -272,7 +268,6 @@ const StratigraphyChart = defineAsyncComponent(() => import('../components/Strat
 const SymbologyModal = defineAsyncComponent(() => import('../components/SymbologyModal.vue'))
 const MapLegend = defineAsyncComponent(() => import('../components/MapLegend.vue'))
 const ContourPanel = defineAsyncComponent(() => import('../components/ContourPanel.vue'))
-const ThematicPanel = defineAsyncComponent(() => import('../components/ThematicPanel.vue'))
 
 const { crs, convertFeature } = useCoordinates()
 const { theme, toggle: toggleTheme } = useTheme()
@@ -324,7 +319,7 @@ function layerRows(uuid) {
 }
 
 // ── همگام‌سازی تب با URL (route managing) ──
-const VALID_VIEWS = ['attribute', 'spatial', 'stratigraphy', 'contour', 'thematic']
+const VALID_VIEWS = ['attribute', 'spatial', 'stratigraphy', 'contour']
 const route = useRoute()
 const router = useRouter()
 function viewFromUrl() {
@@ -892,7 +887,6 @@ const selectionLayerUuids = computed(() => {
 
 // ── سیمبولوژی به سبک ArcGIS (کلیک‌راست روی لایه) ──
 const contourLayer = shallowRef(null)
-const thematicPurpose = ref('')
 const visibleContourLayer = computed(() => {
   const layer = contourLayer.value
   return layer && isLayerVisible(layer.layerUuid) && activeLayers.value.some(l => String(l.uuid) === layer.layerUuid) ? layer : null
@@ -907,7 +901,6 @@ watch(() => activeLayers.value.map(l => String(l.uuid)), uuids => {
 function zoomContour(coordinates) {
   mapRef.value?.zoomToResults(coordinates.map(coordinate => ({ _geometry: { type: 'Point', coordinates: coordinate } })))
 }
-function resetThematic(uuid) { resetSymConfig(uuid, layerGeomKind(uuid)); symVersion.value++ }
 const {
   configs: symConfigs,
   getConfig: getSymConfig,
@@ -1340,7 +1333,6 @@ function handleClearLayers() {
 }
 
 /* ---------- نقشه ---------- */
-.analysis-map-title { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 500; max-width: 50%; padding: 8px 12px; background: var(--bg-panel); color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: 8px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .map-panel {
   min-height: 0;
   border-radius: var(--radius-md);
@@ -1434,6 +1426,12 @@ function handleClearLayers() {
 .strat-page { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
 
 /* ---------- ریسپانسیو ---------- */
+@media (min-width: 1025px) {
+  .app-main { grid-template-columns: var(--query-width) minmax(0, 1fr) var(--results-width); }
+  .app-main :deep(.side-panel), .app-main :deep(.analysis-panel) { grid-column: 1; grid-row: 1; }
+  .map-panel { grid-column: 2; grid-row: 1; }
+  .app-main :deep(.results-panel) { grid-column: 3; grid-row: 1; }
+}
 @media (max-width: 1024px) {
   .app-main {
     grid-template-columns: 1fr;
@@ -1453,7 +1451,7 @@ function handleClearLayers() {
 }
 @media (min-width: 761px) and (max-width: 1024px) {
   .app-main--analysis { grid-template-columns: 280px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
-  .app-main--analysis :deep(.analysis-panel), .app-main--analysis :deep(.thematic-panel) { width: 280px; }
+  .app-main--analysis :deep(.analysis-panel) { width: 280px; }
 }
 
 @media (max-width: 760px) {

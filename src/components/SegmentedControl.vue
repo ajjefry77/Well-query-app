@@ -1,16 +1,12 @@
 <template>
-  <div ref="el" class="sc" :class="[`sc--${size}`, { 'sc--ready': thumbReady }]">
-    <span
-      class="sc__thumb"
-      :style="thumbStyle"
-      aria-hidden="true"
-    ></span>
+  <div class="sc" :class="`sc--${size}`">
     <button
       v-for="opt in options"
       :key="opt.value"
-      ref="btns"
       class="sc__btn"
       :class="{ 'sc__btn--active': modelValue === opt.value }"
+      type="button"
+      :aria-pressed="modelValue === opt.value"
       @click="$emit('update:modelValue', opt.value)"
     >
       {{ opt.label }}
@@ -19,53 +15,13 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
-
-const props = defineProps({
+defineProps({
   modelValue: { type: String, required: true },
   options: { type: Array, required: true },
   size: { type: String, default: 'md' }, // 'md' | 'sm'
 })
 defineEmits(['update:modelValue'])
 
-const el         = ref(null)
-const btns       = ref([])
-const thumbReady = ref(false)
-const thumbStyle = ref({ transform: 'translateX(0px)', width: '0px', opacity: 0 })
-
-function positionThumb() {
-  const host = el.value
-  if (!host) return
-  const idx = props.options.findIndex(o => o.value === props.modelValue)
-  const btn = btns.value[idx]
-  if (!btn) return
-  const cRect = host.getBoundingClientRect()
-  const bRect = btn.getBoundingClientRect()
-  thumbStyle.value = {
-    transform: `translateX(${bRect.left - cRect.left - (host.clientLeft || 0)}px)`,
-    width: `${bRect.width}px`,
-    opacity: 1,
-  }
-  thumbReady.value = true
-}
-
-watch(() => props.modelValue, async () => {
-  await nextTick()
-  positionThumb()
-})
-
-watch(() => props.options, async () => {
-  await nextTick()
-  positionThumb()
-})
-
-onMounted(() => {
-  positionThumb()
-  window.addEventListener('resize', positionThumb)
-})
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', positionThumb)
-})
 </script>
 
 <style scoped>
@@ -78,25 +34,6 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
   overflow: hidden;
-}
-.sc__thumb {
-  position: absolute;
-  top: 3px;
-  bottom: 3px;
-  left: 0;
-  width: 0;
-  border-radius: 5px;
-  background: var(--bg-panel);
-  box-shadow: var(--shadow-xs), inset 0 0 0 1px var(--border-subtle);
-  z-index: 0;
-  pointer-events: none;
-  will-change: transform, width;
-  transition: none;
-}
-.sc--ready .sc__thumb {
-  transition:
-    transform 0.22s var(--ease-out),
-    width 0.22s var(--ease-out);
 }
 .sc__btn {
   position: relative;
@@ -118,6 +55,8 @@ onBeforeUnmount(() => {
 .sc__btn--active {
   color: var(--brand);
   font-weight: 700;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-xs), inset 0 0 0 1px var(--border-subtle);
 }
 
 /* واریانت کوچک (سوییچ نقشه و CRS) */

@@ -1,6 +1,6 @@
 <template>
   <section class="results-panel" :class="{ 'results-panel--collapsed': !open }">
-    <button class="results-toggle" @click="$emit('toggle')">
+    <button class="results-toggle" type="button" :aria-label="open ? 'بستن پنل نتایج' : 'باز کردن پنل نتایج'" :aria-expanded="open" @click="$emit('toggle')">
       <svg
         class="toggle-chevron"
         :class="{ 'is-closed': !open }"
@@ -421,7 +421,8 @@ const hasAttributeSummary = computed(() => summariesWithConds.value.length > 0)
 .add-layer-btn:hover:not(:disabled) {
   background: var(--brand-strong);
 }
-.add-layer-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+:global(:root[data-theme='dark']) .add-layer-btn:not(:disabled) { color: #10212b; }
+.add-layer-btn:disabled { background: var(--bg-panel-raised); border-color: var(--border-strong); color: var(--text-primary); cursor: not-allowed; }
 .layers-loading { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 12px; padding: 6px 0; }
 .active-layers-list {
   list-style: none; margin: 0; padding: 0;
